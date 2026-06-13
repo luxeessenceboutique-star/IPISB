@@ -1,33 +1,27 @@
-import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
-  LayoutDashboard,
-  BookOpen,
-  FileText,
-  GraduationCap,
-  CalendarDays,
-  Bell,
-  Users,
-  LogOut,
-  Video,
+  Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
+  Layers, Users, LogOut, X,
 } from "lucide-react";
-import { Logo } from "@/components/Logo";
-import { LangSwitcher } from "@/components/LangSwitcher";
-import { Button } from "@/components/ui/button";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { useI18n } from "@/lib/i18n";
+import { Wordmark } from "@/components/Wordmark";
+import { DashAvatar } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
+import { useI18n } from "@/lib/i18n";
+import { useBreakpoint } from "@/lib/useBreakpoint";
+
+const PAL = {
+  ink:     "oklch(22% 0.025 175)",
+  muted:   "oklch(48% 0.02 180)",
+  mid:     "oklch(62% 0.085 170)",
+  pale:    "oklch(94% 0.025 165)",
+  cream:   "oklch(97% 0.012 90)",
+  paper:   "oklch(99% 0.005 160)",
+  danger:  "oklch(64% 0.18 25)",
+  lineSoft:"oklch(92% 0.012 170)",
+};
+const sans = '"Manrope", system-ui, sans-serif';
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
@@ -37,90 +31,189 @@ export const Route = createFileRoute("/dashboard")({
   component: DashboardLayout,
 });
 
+type NavItem = { key: string; to: string; icon: typeof Home; exact?: boolean; badge?: boolean };
+
+// Order follows the IPISB Connect redesign handoff
+const SIDE_ITEMS: NavItem[] = [
+  { key: "dash.overview",      to: "/dashboard",               icon: Home,          exact: true },
+  { key: "dash.courses",       to: "/dashboard/courses",       icon: BookOpen                   },
+  { key: "dash.assignments",   to: "/dashboard/assignments",   icon: ClipboardList              },
+  { key: "dash.exams",         to: "/dashboard/exams",         icon: GraduationCap              },
+  { key: "dash.agenda",        to: "/dashboard/agenda",        icon: CalendarDays               },
+  { key: "dash.meetings",      to: "/dashboard/meetings",      icon: Video                      },
+  { key: "dash.notifications", to: "/dashboard/notifications", icon: Bell,          badge: true },
+];
+
 function DashboardLayout() {
-  const { t } = useI18n();
   const { user, roles, signOut } = useAuth();
+  const { t, lang } = useI18n();
+  const { isTablet } = useBreakpoint();
   const navigate = useNavigate();
+  const routerState = useRouterState();
+  const pathname = routerState.location.pathname;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+
+  // Close drawer on navigation
+  useEffect(() => { setDrawerOpen(false); }, [pathname]);
+  // Close drawer on Escape
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawerOpen(false); };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, []);
+
+  // Live unread-notification count for the sidebar badge
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const fetchUnread = async () => {
+      const { count } = await supabase
+        .from("notifications").select("*", { count: "exact", head: true })
+        .eq("user_id", user.id).eq("read", false);
+      if (active) setUnread(count ?? 0);
+    };
+    fetchUnread();
+    const channel = supabase.channel("sidebar-notifications")
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, fetchUnread)
+      .subscribe();
+    return () => { active = false; supabase.removeChannel(channel); };
+  }, [user, pathname]);
 
   const isAdmin = roles.includes("admin");
-  const isProf = roles.includes("professor");
-  const role = isAdmin ? "admin" : isProf ? "professor" : "student";
+  const isProf  = roles.includes("professor");
+  const roleLabel = isAdmin ? t("dash.role.admin") : isProf ? t("dash.role.professor") : t("dash.role.student");
+  const fullName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "?";
+  const spaceLabel = lang === "fr"
+    ? `Espace ${roleLabel.toLowerCase()}`
+    : lang === "ar" ? `فضاء ${roleLabel}` : `${roleLabel} space`;
 
-  const items = [
-    { to: "/dashboard", label: t("dash.overview"), icon: LayoutDashboard, exact: true },
-    { to: "/dashboard/courses", label: t("dash.courses"), icon: BookOpen },
-    { to: "/dashboard/assignments", label: t("dash.assignments"), icon: FileText },
-    { to: "/dashboard/exams", label: t("dash.exams"), icon: GraduationCap },
-    { to: "/dashboard/agenda", label: t("dash.agenda"), icon: CalendarDays },
-    { to: "/dashboard/notifications", label: t("dash.notifications"), icon: Bell },
-    { to: "/dashboard/meetings", label: t("dash.meetings"), icon: Video },
-    ...(isAdmin ? [{ to: "/dashboard/users", label: t("dash.users"), icon: Users }] : []),
-  ] as const;
+  const allItems: NavItem[] = [
+    ...SIDE_ITEMS,
+    ...((isAdmin || isProf) ? [
+      { key: "dash.classes", to: "/dashboard/classes", icon: Layers },
+      { key: "dash.users",   to: "/dashboard/users",   icon: Users  },
+    ] : []),
+  ];
 
   async function handleLogout() {
     await signOut();
     navigate({ to: "/" });
   }
 
-  return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-gradient-soft">
-        <Sidebar collapsible="icon">
-          <SidebarContent>
-            <div className="flex items-center gap-2.5 px-4 py-5">
-              <Logo size={30} />
-              <span className="font-display text-base font-semibold">IPISBE</span>
-            </div>
-            <SidebarGroup>
-              <SidebarGroupLabel>{t("nav.dashboard")}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {items.map((item) => (
-                    <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild>
-                        <Link
-                          to={item.to}
-                          activeOptions={{ exact: !!(item as { exact?: boolean }).exact }}
-                          activeProps={{ className: "bg-accent text-accent-foreground font-medium" }}
-                          className="hover:bg-muted/60"
-                        >
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.label}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-        </Sidebar>
-
-        <div className="flex flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-xl md:px-6">
-            <div className="flex items-center gap-3">
-              <SidebarTrigger />
-              <div className="hidden text-sm md:block">
-                <span className="text-muted-foreground">{t("dash.welcome")}, </span>
-                <span className="font-medium">{user?.user_metadata?.full_name || user?.email}</span>
-                <span className="ml-2 rounded-full bg-gradient-brand px-2.5 py-0.5 text-xs text-white">
-                  {t(`dash.role.${role}`)}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <LangSwitcher />
-              <Button variant="ghost" size="sm" onClick={handleLogout}>
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">{t("nav.logout")}</span>
-              </Button>
-            </div>
-          </header>
-          <main className="flex-1 p-4 md:p-8">
-            <Outlet />
-          </main>
-        </div>
+  const Sidebar = (
+    <aside style={{
+      background: PAL.paper,
+      borderInlineEnd: `1px solid ${PAL.lineSoft}`,
+      padding: "22px 16px",
+      display: "flex", flexDirection: "column", gap: 22,
+      width: isTablet ? 280 : "auto",
+      height: isTablet ? "100%" : "auto",
+      minHeight: 0,
+    }}>
+      <div style={{ padding: "0 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Link to="/" style={{ textDecoration: "none" }}>
+          <Wordmark size={36} />
+        </Link>
+        {isTablet && (
+          <button onClick={() => setDrawerOpen(false)} aria-label="Close" style={{
+            background: "none", border: 0, cursor: "pointer", color: PAL.muted, lineHeight: 1, display: "flex", padding: 4,
+          }}><X size={18} /></button>
+        )}
       </div>
-    </SidebarProvider>
+
+      <nav className="scroll-y" style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0 }}>
+        <span className="eyebrow" style={{ padding: "2px 12px 8px", fontSize: 9.5 }}>{spaceLabel}</span>
+        {allItems.map((it) => {
+          const isActive = it.exact ? pathname === it.to : pathname.startsWith(it.to);
+          const I = it.icon;
+          return (
+            <Link key={it.to} to={it.to as "/dashboard"}
+              className={isActive ? "side-link is-active" : "side-link"}
+              style={{ textDecoration: "none", fontFamily: sans }}>
+              <I size={17} strokeWidth={1.7} />
+              {t(it.key)}
+              {it.badge && unread > 0 && (
+                <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 800, color: PAL.paper, background: PAL.danger, padding: "2px 7px", borderRadius: 999 }}>{unread}</span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div style={{ height: 1, background: PAL.lineSoft }} />
+
+      {/* user card */}
+      <div style={{ padding: 12, borderRadius: 14, background: PAL.pale, display: "flex", flexDirection: "column", gap: 10 }}>
+        <Link to="/dashboard/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+          <DashAvatar name={fullName} size={34} tone="primary" />
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: PAL.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+              {fullName}
+            </span>
+            <span style={{ fontSize: 10.5, color: PAL.muted }}>{roleLabel}</span>
+          </div>
+        </Link>
+        <button onClick={handleLogout} className="btn-c btn-c-ghost btn-c-sm" style={{ width: "100%" }}>
+          <LogOut size={14} strokeWidth={1.7} />
+          {t("dash.logout")}
+        </button>
+      </div>
+    </aside>
+  );
+
+  // ── Mobile / tablet layout: top bar + drawer ──────────────────────
+  if (isTablet) {
+    return (
+      <div style={{ width: "100%", minHeight: "100vh", background: PAL.cream, fontFamily: sans }}>
+        {/* Top bar */}
+        <header style={{
+          position: "sticky", top: 0, zIndex: 30,
+          background: PAL.paper, borderBottom: `1px solid ${PAL.lineSoft}`,
+          padding: "12px 16px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <button onClick={() => setDrawerOpen(true)} aria-label="Menu" style={{
+            display: "flex", flexDirection: "column", gap: 4, background: "none", border: 0, cursor: "pointer", padding: 6,
+          }}>
+            {[0,1,2].map(i => <span key={i} style={{ width: 22, height: 2, background: PAL.ink, borderRadius: 2, display: "block" }} />)}
+          </button>
+          <Link to="/" style={{ textDecoration: "none" }}><Wordmark size={26} /></Link>
+          <Link to="/dashboard/profile" aria-label={t("dash.profile")} style={{ textDecoration: "none" }}>
+            <DashAvatar name={fullName} size={30} tone="primary" />
+          </Link>
+        </header>
+
+        {/* Drawer overlay */}
+        {drawerOpen && (
+          <>
+            <div onClick={() => setDrawerOpen(false)} className="anim-fade" style={{ position: "fixed", inset: 0, background: "oklch(0% 0 0 / .4)", zIndex: 40, backdropFilter: "blur(2px)" }} />
+            <div style={{ position: "fixed", top: 0, insetInlineStart: 0, bottom: 0, zIndex: 41, animation: "drawer-in .28s cubic-bezier(.22,1,.36,1)", boxShadow: "8px 0 32px oklch(0% 0 0 / .12)" }}>
+              <style>{`@keyframes drawer-in{from{transform:translateX(-100%)}to{transform:none}}`}</style>
+              {Sidebar}
+            </div>
+          </>
+        )}
+
+        {/* Main */}
+        <main style={{ padding: "20px 16px", overflow: "auto" }}>
+          <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ── Desktop layout ────────────────────────────────────────────────
+  return (
+    <div style={{ width: "100%", height: "100vh", overflow: "hidden", display: "grid", gridTemplateColumns: "248px 1fr", background: PAL.cream, fontFamily: sans }}>
+      {Sidebar}
+      <main className="scroll-y" style={{ minHeight: 0, padding: "30px 36px" }}>
+        <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
+          <Outlet />
+        </div>
+      </main>
+    </div>
   );
 }

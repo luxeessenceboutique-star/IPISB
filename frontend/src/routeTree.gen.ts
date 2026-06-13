@@ -9,26 +9,64 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TemoignagesRouteImport } from './routes/temoignages'
+import { Route as PlateformeRouteImport } from './routes/plateforme'
+import { Route as FormationsRouteImport } from './routes/formations'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ActualitesRouteImport } from './routes/actualites'
+import { Route as AProposRouteImport } from './routes/a-propos'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
+import { Route as DashboardProfileRouteImport } from './routes/dashboard.profile'
 import { Route as DashboardNotificationsRouteImport } from './routes/dashboard.notifications'
 import { Route as DashboardMeetingsRouteImport } from './routes/dashboard.meetings'
 import { Route as DashboardExamsRouteImport } from './routes/dashboard.exams'
 import { Route as DashboardCoursesRouteImport } from './routes/dashboard.courses'
+import { Route as DashboardClassesRouteImport } from './routes/dashboard.classes'
 import { Route as DashboardAssignmentsRouteImport } from './routes/dashboard.assignments'
 import { Route as DashboardAgendaRouteImport } from './routes/dashboard.agenda'
 
+const TemoignagesRoute = TemoignagesRouteImport.update({
+  id: '/temoignages',
+  path: '/temoignages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlateformeRoute = PlateformeRouteImport.update({
+  id: '/plateforme',
+  path: '/plateforme',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormationsRoute = FormationsRouteImport.update({
+  id: '/formations',
+  path: '/formations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ActualitesRoute = ActualitesRouteImport.update({
+  id: '/actualites',
+  path: '/actualites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AProposRoute = AProposRouteImport.update({
+  id: '/a-propos',
+  path: '/a-propos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -44,6 +82,11 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardProfileRoute = DashboardProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardNotificationsRoute = DashboardNotificationsRouteImport.update({
@@ -66,6 +109,11 @@ const DashboardCoursesRoute = DashboardCoursesRouteImport.update({
   path: '/courses',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardClassesRoute = DashboardClassesRouteImport.update({
+  id: '/classes',
+  path: '/classes',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAssignmentsRoute = DashboardAssignmentsRouteImport.update({
   id: '/assignments',
   path: '/assignments',
@@ -79,40 +127,64 @@ const DashboardAgendaRoute = DashboardAgendaRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/a-propos': typeof AProposRoute
+  '/actualites': typeof ActualitesRoute
   '/auth': typeof AuthRoute
+  '/contact': typeof ContactRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/formations': typeof FormationsRoute
+  '/plateforme': typeof PlateformeRoute
+  '/temoignages': typeof TemoignagesRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
+  '/dashboard/classes': typeof DashboardClassesRoute
   '/dashboard/courses': typeof DashboardCoursesRoute
   '/dashboard/exams': typeof DashboardExamsRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/a-propos': typeof AProposRoute
+  '/actualites': typeof ActualitesRoute
   '/auth': typeof AuthRoute
+  '/contact': typeof ContactRoute
+  '/formations': typeof FormationsRoute
+  '/plateforme': typeof PlateformeRoute
+  '/temoignages': typeof TemoignagesRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
+  '/dashboard/classes': typeof DashboardClassesRoute
   '/dashboard/courses': typeof DashboardCoursesRoute
   '/dashboard/exams': typeof DashboardExamsRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard': typeof DashboardIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/a-propos': typeof AProposRoute
+  '/actualites': typeof ActualitesRoute
   '/auth': typeof AuthRoute
+  '/contact': typeof ContactRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/formations': typeof FormationsRoute
+  '/plateforme': typeof PlateformeRoute
+  '/temoignages': typeof TemoignagesRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
+  '/dashboard/classes': typeof DashboardClassesRoute
   '/dashboard/courses': typeof DashboardCoursesRoute
   '/dashboard/exams': typeof DashboardExamsRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
@@ -120,51 +192,102 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/a-propos'
+    | '/actualites'
     | '/auth'
+    | '/contact'
     | '/dashboard'
+    | '/formations'
+    | '/plateforme'
+    | '/temoignages'
     | '/dashboard/agenda'
     | '/dashboard/assignments'
+    | '/dashboard/classes'
     | '/dashboard/courses'
     | '/dashboard/exams'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/profile'
     | '/dashboard/users'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/a-propos'
+    | '/actualites'
     | '/auth'
+    | '/contact'
+    | '/formations'
+    | '/plateforme'
+    | '/temoignages'
     | '/dashboard/agenda'
     | '/dashboard/assignments'
+    | '/dashboard/classes'
     | '/dashboard/courses'
     | '/dashboard/exams'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/profile'
     | '/dashboard/users'
     | '/dashboard'
   id:
     | '__root__'
     | '/'
+    | '/a-propos'
+    | '/actualites'
     | '/auth'
+    | '/contact'
     | '/dashboard'
+    | '/formations'
+    | '/plateforme'
+    | '/temoignages'
     | '/dashboard/agenda'
     | '/dashboard/assignments'
+    | '/dashboard/classes'
     | '/dashboard/courses'
     | '/dashboard/exams'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/profile'
     | '/dashboard/users'
     | '/dashboard/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AProposRoute: typeof AProposRoute
+  ActualitesRoute: typeof ActualitesRoute
   AuthRoute: typeof AuthRoute
+  ContactRoute: typeof ContactRoute
   DashboardRoute: typeof DashboardRouteWithChildren
+  FormationsRoute: typeof FormationsRoute
+  PlateformeRoute: typeof PlateformeRoute
+  TemoignagesRoute: typeof TemoignagesRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/temoignages': {
+      id: '/temoignages'
+      path: '/temoignages'
+      fullPath: '/temoignages'
+      preLoaderRoute: typeof TemoignagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/plateforme': {
+      id: '/plateforme'
+      path: '/plateforme'
+      fullPath: '/plateforme'
+      preLoaderRoute: typeof PlateformeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/formations': {
+      id: '/formations'
+      path: '/formations'
+      fullPath: '/formations'
+      preLoaderRoute: typeof FormationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -172,11 +295,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/actualites': {
+      id: '/actualites'
+      path: '/actualites'
+      fullPath: '/actualites'
+      preLoaderRoute: typeof ActualitesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/a-propos': {
+      id: '/a-propos'
+      path: '/a-propos'
+      fullPath: '/a-propos'
+      preLoaderRoute: typeof AProposRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -198,6 +342,13 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/dashboard/users'
       preLoaderRoute: typeof DashboardUsersRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/profile': {
+      id: '/dashboard/profile'
+      path: '/profile'
+      fullPath: '/dashboard/profile'
+      preLoaderRoute: typeof DashboardProfileRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/notifications': {
@@ -228,6 +379,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardCoursesRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/classes': {
+      id: '/dashboard/classes'
+      path: '/classes'
+      fullPath: '/dashboard/classes'
+      preLoaderRoute: typeof DashboardClassesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/assignments': {
       id: '/dashboard/assignments'
       path: '/assignments'
@@ -248,10 +406,12 @@ declare module '@tanstack/react-router' {
 interface DashboardRouteChildren {
   DashboardAgendaRoute: typeof DashboardAgendaRoute
   DashboardAssignmentsRoute: typeof DashboardAssignmentsRoute
+  DashboardClassesRoute: typeof DashboardClassesRoute
   DashboardCoursesRoute: typeof DashboardCoursesRoute
   DashboardExamsRoute: typeof DashboardExamsRoute
   DashboardMeetingsRoute: typeof DashboardMeetingsRoute
   DashboardNotificationsRoute: typeof DashboardNotificationsRoute
+  DashboardProfileRoute: typeof DashboardProfileRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
@@ -259,10 +419,12 @@ interface DashboardRouteChildren {
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAgendaRoute: DashboardAgendaRoute,
   DashboardAssignmentsRoute: DashboardAssignmentsRoute,
+  DashboardClassesRoute: DashboardClassesRoute,
   DashboardCoursesRoute: DashboardCoursesRoute,
   DashboardExamsRoute: DashboardExamsRoute,
   DashboardMeetingsRoute: DashboardMeetingsRoute,
   DashboardNotificationsRoute: DashboardNotificationsRoute,
+  DashboardProfileRoute: DashboardProfileRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }
@@ -273,8 +435,14 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AProposRoute: AProposRoute,
+  ActualitesRoute: ActualitesRoute,
   AuthRoute: AuthRoute,
+  ContactRoute: ContactRoute,
   DashboardRoute: DashboardRouteWithChildren,
+  FormationsRoute: FormationsRoute,
+  PlateformeRoute: PlateformeRoute,
+  TemoignagesRoute: TemoignagesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

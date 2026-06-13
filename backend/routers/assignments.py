@@ -3,6 +3,8 @@ from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import AssignmentCreate, SubmissionCreate, GradeInput
+from utils.notify import notify_users
+from utils.email import send_email
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
@@ -93,7 +95,55 @@ async def create_assignment(
             "course_id": body.course_id,
         }
     ).execute()
-    return res.data[0]
+    new_assignment = res.data[0]
+
+    # Notify all students enrolled in this course
+    try:
+        enrolled = (
+            db.from_("course_enrollments")
+            .select("student_id")
+            .eq("course_id", body.course_id)
+            .execute()
+            .data or []
+        )
+        student_ids = [r["student_id"] for r in enrolled]
+        notify_users(
+            db,
+            student_ids,
+            f"Nouveau devoir : {body.title}",
+            body.description or None,
+            "info",
+            "/dashboard/assignments",
+        )
+        # Email enrolled students
+        try:
+            if student_ids:
+                profiles = (
+                    db.from_("profiles")
+                    .select("email")
+                    .in_("id", student_ids)
+                    .execute()
+                    .data or []
+                )
+                emails = [p["email"] for p in profiles if p.get("email")]
+                if emails:
+                    due_label = body.due_date[:10] if body.due_date else "Non définie"
+                    send_email(
+                        emails,
+                        f"Nouveau devoir : {body.title}",
+                        (
+                            f"<h2>Nouveau devoir</h2>"
+                            f"<p><b>{body.title}</b> a été ajouté à votre cours.</p>"
+                            f"<p>Date limite : {due_label}</p>"
+                            f"<a href='https://ipisb.ma/dashboard/assignments'>Voir le devoir</a>"
+                        ),
+                    )
+        except Exception:
+            pass
+    except Exception:
+        pass  # notification failure must never break the main operation
+
+    return new_assignment
 
 
 @router.delete("/{assignment_id}")
@@ -115,6 +165,8 @@ async def submit_assignment(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
+    if user.can_create():
+        raise HTTPException(403, "Only students can submit assignments")
     existing = (
         db.from_("submissions")
         .select("id")
@@ -165,7 +217,64 @@ async def grade_submission(
 ):
     if not user.can_create():
         raise HTTPException(403, "Not authorized")
+
+    # Fetch submission details before updating so we can notify the student
+    submission_data = (
+        db.from_("submissions")
+        .select("student_id, assignment_id")
+        .eq("id", submission_id)
+        .execute()
+        .data
+    )
+
     db.from_("submissions").update({"grade": body.grade, "feedback": body.feedback}).eq(
         "id", submission_id
     ).execute()
+
+    # Notify the student that their submission has been graded
+    if submission_data and body.grade is not None:
+        try:
+            sub = submission_data[0]
+            assignment_data = (
+                db.from_("assignments")
+                .select("title")
+                .eq("id", sub["assignment_id"])
+                .execute()
+                .data
+            )
+            assignment_title = assignment_data[0]["title"] if assignment_data else "Devoir"
+            notify_users(
+                db,
+                [sub["student_id"]],
+                f"Devoir noté : {assignment_title}",
+                f"Votre note : {body.grade}/20",
+                "success",
+                "/dashboard/assignments",
+            )
+            # Email the student their grade
+            try:
+                profile = (
+                    db.from_("profiles")
+                    .select("email")
+                    .eq("id", sub["student_id"])
+                    .execute()
+                    .data
+                )
+                student_email = profile[0]["email"] if profile and profile[0].get("email") else None
+                if student_email:
+                    send_email(
+                        student_email,
+                        "Votre devoir a été noté",
+                        (
+                            f"<h2>Devoir noté</h2>"
+                            f"<p>Votre devoir <b>{assignment_title}</b> a été noté : "
+                            f"<b>{body.grade}/20</b>.</p>"
+                            f"<a href='https://ipisb.ma/dashboard/assignments'>Voir mes devoirs</a>"
+                        ),
+                    )
+            except Exception:
+                pass
+        except Exception:
+            pass  # notification failure must never break the main operation
+
     return {"ok": True}

@@ -10,7 +10,6 @@ type AuthCtx = {
   roles: AppRole[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -35,10 +34,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: sess } }) => {
       setSession(sess);
       setUser(sess?.user ?? null);
-      if (sess?.user) loadRoles(sess.user.id);
+      if (sess?.user) await loadRoles(sess.user.id);
       setLoading(false);
     });
 
@@ -52,18 +51,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  }
-
-  async function signUp(email: string, password: string, fullName: string) {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-        data: { full_name: fullName },
-      },
-    });
     if (error) throw error;
   }
 
@@ -84,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <Ctx.Provider value={{ user, session, roles, loading, signIn, signUp, signOut, resetPassword, updatePassword }}>
+    <Ctx.Provider value={{ user, session, roles, loading, signIn, signOut, resetPassword, updatePassword }}>
       {children}
     </Ctx.Provider>
   );

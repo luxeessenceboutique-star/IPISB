@@ -1,30 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useI18n } from "@/lib/i18n";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
-import { Video, Plus, Loader2, CalendarClock, Trash2, Users, Radio, Clock, X } from "lucide-react";
+import { Video, Plus, Clock, User as UserIcon, Trash2 } from "lucide-react";
+import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/meetings")({
   beforeLoad: async () => {
@@ -34,11 +15,30 @@ export const Route = createFileRoute("/dashboard/meetings")({
   component: MeetingsPage,
 });
 
+const PAL = {
+  ink:     "oklch(22% 0.025 175)",
+  text:    "oklch(34% 0.03 180)",
+  muted:   "oklch(48% 0.02 180)",
+  primary: "oklch(48% 0.085 175)",
+  mid:     "oklch(62% 0.085 170)",
+  soft:    "oklch(82% 0.045 165)",
+  pale:    "oklch(94% 0.025 165)",
+  cream:   "oklch(97% 0.012 90)",
+  paper:   "oklch(99% 0.005 160)",
+  danger:  "oklch(64% 0.18 25)",
+  success: "oklch(55% 0.14 150)",
+  line:    "oklch(88% 0.015 170)",
+};
+const sans  = '"Manrope", system-ui, sans-serif';
+const serif = '"Cormorant Garamond", Georgia, serif';
+const mono  = '"JetBrains Mono", ui-monospace, monospace';
+
 type Meeting = {
   id: string;
   title: string;
   description: string | null;
   course_id: string | null;
+  class_id: string | null;
   created_by: string | null;
   scheduled_at: string;
   duration_minutes: number;
@@ -46,57 +46,96 @@ type Meeting = {
   is_active: boolean;
   created_at: string;
   course_title?: string;
+  class_name?: string;
   host_name?: string;
 };
 
 type Course = { id: string; title: string };
+type ClassItem = { id: string; name: string };
 
-declare global {
-  interface Window {
-    JitsiMeetExternalAPI: any;
-  }
-}
-
-function meetingStatus(m: Meeting): "live" | "upcoming" | "past" {
+function meetingStatus(m: Meeting, now: Date): "live" | "upcoming" | "past" {
   const start = new Date(m.scheduled_at);
-  const end = new Date(start.getTime() + m.duration_minutes * 60 * 1000);
-  const now = new Date();
-  if (m.is_active || (now >= start && now <= end)) return "live";
-  if (now < start) return "upcoming";
-  return "past";
+  const end   = new Date(start.getTime() + m.duration_minutes * 60_000);
+  if (now > end)    return "past";
+  if (now >= start) return "live";
+  return "upcoming";
 }
 
+function fmtDate(d: string) {
+  return new Date(d).toLocaleDateString("fr-FR", {
+    weekday: "short", year: "numeric", month: "short",
+    day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+// ── Full-screen Jitsi room ────────────────────────────────────────────────────
+function JitsiRoom({ meeting, userName, onLeave }: { meeting: Meeting; userName: string; onLeave: () => void }) {
+  const src = `https://meet.jit.si/${meeting.room_id}#userInfo.displayName="${encodeURIComponent(userName)}"&config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_POWERED_BY=false`;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", background: "#0a0a0a" }}>
+      {/* top bar */}
+      <div style={{ height: 52, background: "#111", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 999, background: PAL.danger, boxShadow: `0 0 8px ${PAL.danger}` }} />
+          <span style={{ fontFamily: sans, fontSize: 14, fontWeight: 600, color: "#fff" }}>{meeting.title}</span>
+          {meeting.course_title && (
+            <span style={{ fontFamily: mono, fontSize: 11, color: "#666" }}>{meeting.course_title}</span>
+          )}
+        </div>
+        <button
+          onClick={onLeave}
+          style={{ fontFamily: sans, fontSize: 12, fontWeight: 600, color: "#fff", background: PAL.danger, border: 0, borderRadius: 8, padding: "8px 18px", cursor: "pointer" }}
+        >
+          Quitter ✕
+        </button>
+      </div>
+      <iframe
+        src={src}
+        allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
+        style={{ flex: 1, border: 0, width: "100%", background: "#0a0a0a" }}
+        title={meeting.title}
+      />
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 function MeetingsPage() {
-  const { t, lang } = useI18n();
   const { user, roles } = useAuth();
-  const isAdmin = roles.includes("admin");
-  const isProf = roles.includes("professor");
-  const canCreate = isAdmin || isProf;
 
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
-    title: "",
-    description: "",
-    course_id: "",
-    scheduled_at: "",
-    duration_minutes: "60",
-  });
+  const [courses,  setCourses]  = useState<Course[]>([]);
+  const [classes,  setClasses]  = useState<ClassItem[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [active,   setActive]   = useState<Meeting | null>(null);
+  const [now,      setNow]      = useState(() => new Date());
 
-  const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
-  const [jitsiReady, setJitsiReady] = useState(false);
-  const jitsiContainer = useRef<HTMLDivElement>(null);
-  const jitsiApi = useRef<any>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating,   setCreating]   = useState(false);
+  const [form, setForm] = useState({ title: "", description: "", course_id: "", class_id: "", scheduled_at: "", duration_minutes: "60" });
 
   async function load() {
     setLoading(true);
     try {
-      const [m, c] = await Promise.all([api.get("/api/meetings"), api.get("/api/courses/list")]);
-      setMeetings(m);
-      setCourses(c);
+      // Use the backend API so role-based filtering is enforced server-side.
+      // The backend returns meetings already enriched with course_title, class_name, host_name.
+      const data: Meeting[] = await api.get("/api/meetings");
+
+      // Auto-deactivate stale meetings client-side (no DB write needed here —
+      // the backend activate/deactivate endpoints handle state; this is purely
+      // a visual correction for meetings whose window has passed).
+      const now = new Date();
+      data.forEach((m) => {
+        if (m.is_active) {
+          const end = new Date(new Date(m.scheduled_at).getTime() + m.duration_minutes * 60_000);
+          if (now > end) m.is_active = false;
+        }
+      });
+
+      setMeetings(data);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du chargement des réunions.");
     } finally {
       setLoading(false);
     }
@@ -104,352 +143,300 @@ function MeetingsPage() {
 
   useEffect(() => {
     load();
+    api.get("/api/courses/list").then((d: Course[]) => setCourses(d ?? [])).catch(() => {});
+    api.get("/api/classes/all").then((d: ClassItem[]) => setClasses(d ?? [])).catch(() => {});
+
+    // Tick `now` every 30 s so status computations stay current without a reload.
+    const tick  = setInterval(() => setNow(new Date()), 30_000);
+    // Re-fetch from server every 60 s to sync is_active state.
+    const timer = setInterval(load, 60_000);
+    return () => { clearInterval(tick); clearInterval(timer); };
   }, []);
 
-  useEffect(() => {
-    if (!activeMeeting) {
-      if (jitsiApi.current) { jitsiApi.current.dispose(); jitsiApi.current = null; }
-      setJitsiReady(false);
-      return;
-    }
-    setJitsiReady(false);
+  if (!user) return null;
 
-    function initJitsi() {
-      if (!jitsiContainer.current) return;
-      jitsiApi.current = new window.JitsiMeetExternalAPI("meet.jit.si", {
-        roomName: activeMeeting!.room_id,
-        width: "100%",
-        height: "100%",
-        parentNode: jitsiContainer.current,
-        userInfo: {
-          displayName: user?.user_metadata?.full_name ?? user?.email ?? "Participant",
-          email: user?.email ?? "",
-        },
-        configOverwrite: {
-          startWithAudioMuted: false,
-          startWithVideoMuted: false,
-          prejoinPageEnabled: false,
-          disableDeepLinking: true,
-          defaultLanguage: lang === "fr" ? "fr" : "en",
-        },
-        interfaceConfigOverwrite: {
-          SHOW_JITSI_WATERMARK: false,
-          SHOW_BRAND_WATERMARK: false,
-          SHOW_POWERED_BY: false,
-          TOOLBAR_BUTTONS: ["microphone", "camera", "desktop", "fullscreen", "hangup", "chat", "raisehand", "tileview", "participants-pane"],
-        },
-      });
-      jitsiApi.current.addEventListener("readyToClose", () => leaveMeeting());
-      setJitsiReady(true);
-    }
+  const isAdmin   = roles.includes("admin");
+  const canCreate = isAdmin || roles.includes("professor");
+  const isStudent = !isAdmin && !roles.includes("professor");
+  const displayName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "Participant";
 
-    if (window.JitsiMeetExternalAPI) {
-      initJitsi();
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://meet.jit.si/external_api.js";
-      script.async = true;
-      script.onload = initJitsi;
-      document.body.appendChild(script);
+  async function joinMeeting(m: Meeting) {
+    if (meetingStatus(m, now) === "past") return; // expired — read-only
+    if (canCreate && !m.is_active) {
+      try {
+        await api.put(`/api/meetings/${m.id}/activate`);
+      } catch {
+        // Non-fatal: the meeting room still opens even if activation fails
+      }
     }
-
-    return () => {
-      if (jitsiApi.current) { jitsiApi.current.dispose(); jitsiApi.current = null; }
-    };
-  }, [activeMeeting]);
-
-  async function joinMeeting(meeting: Meeting) {
-    if (canCreate && !meeting.is_active) {
-      await api.put(`/api/meetings/${meeting.id}/activate`);
-    }
-    setActiveMeeting(meeting);
+    setActive(m);
   }
 
   async function leaveMeeting() {
-    if (jitsiApi.current) { jitsiApi.current.dispose(); jitsiApi.current = null; }
-    if (activeMeeting && canCreate && activeMeeting.created_by === user!.id) {
-      await api.put(`/api/meetings/${activeMeeting.id}/deactivate`);
+    if (active && canCreate && active.created_by === user?.id) {
+      try {
+        await api.put(`/api/meetings/${active.id}/deactivate`);
+      } catch {
+        // Non-fatal
+      }
     }
-    setActiveMeeting(null);
+    setActive(null);
     load();
   }
 
   async function deleteMeeting(id: string) {
     try {
       await api.delete(`/api/meetings/${id}`);
-      toast.success(t("meetings.deleted"));
+      toast.success("Réunion supprimée.");
       load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
     }
   }
 
   async function createMeeting() {
-    if (!form.title.trim()) { toast.error(t("meetings.title_required")); return; }
-    if (!form.scheduled_at) { toast.error(t("meetings.date_required")); return; }
+    if (!form.title.trim())    { toast.error("Le titre est requis."); return; }
+    if (!form.scheduled_at)    { toast.error("La date est requise."); return; }
     setCreating(true);
     try {
       await api.post("/api/meetings", {
-        title: form.title,
-        description: form.description || null,
-        course_id: form.course_id || null,
-        scheduled_at: form.scheduled_at,
+        title:            form.title,
+        description:      form.description || null,
+        course_id:        form.course_id   || null,
+        class_id:         form.class_id    || null,
+        scheduled_at:     new Date(form.scheduled_at).toISOString(),
         duration_minutes: parseInt(form.duration_minutes) || 60,
       });
-      toast.success(t("meetings.created"));
+      toast.success("Réunion créée !");
       setShowCreate(false);
-      setForm({ title: "", description: "", course_id: "", scheduled_at: "", duration_minutes: "60" });
+      setForm({ title: "", description: "", course_id: "", class_id: "", scheduled_at: "", duration_minutes: "60" });
       load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Error");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la création.");
     } finally {
       setCreating(false);
     }
   }
 
-  const fmt = (d: string) =>
-    new Date(d).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-  const statusBadge = (m: Meeting) => {
-    const s = meetingStatus(m);
-    if (s === "live")
-      return (
-        <Badge className="animate-pulse border-0 bg-red-100 text-red-700">
-          <Radio className="mr-1 h-3 w-3" />
-          {t("meetings.live")}
-        </Badge>
-      );
-    if (s === "upcoming")
-      return (
-        <Badge className="border-0 bg-blue-100 text-blue-700">
-          <Clock className="mr-1 h-3 w-3" />
-          {t("meetings.upcoming")}
-        </Badge>
-      );
-    return <Badge className="border-0 bg-muted text-muted-foreground">{t("meetings.past")}</Badge>;
-  };
-
-  // Full-screen Jitsi view
-  if (activeMeeting) {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-gray-950">
-        <div className="flex h-14 shrink-0 items-center justify-between bg-gray-900 px-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-brand">
-              <Video className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-white">{activeMeeting.title}</p>
-              {activeMeeting.course_title && (
-                <p className="text-xs text-gray-400">{activeMeeting.course_title}</p>
-              )}
-            </div>
-            <Badge className="ml-2 animate-pulse border-0 bg-red-600 text-white">
-              <Radio className="mr-1 h-3 w-3" />
-              {t("meetings.live")}
-            </Badge>
-          </div>
-          <Button variant="destructive" size="sm" className="gap-2" onClick={leaveMeeting}>
-            <X className="h-4 w-4" />
-            {t("meetings.leave")}
-          </Button>
-        </div>
-        <div className="relative flex-1">
-          {!jitsiReady && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gray-950 text-white">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="text-sm text-gray-400">{t("meetings.connecting")}</p>
-            </div>
-          )}
-          <div ref={jitsiContainer} className="h-full w-full" />
-        </div>
-      </div>
-    );
+  if (active) {
+    return <JitsiRoom meeting={active} userName={displayName} onLeave={leaveMeeting} />;
   }
 
-  const live = meetings.filter((m) => meetingStatus(m) === "live");
-  const upcoming = meetings.filter((m) => meetingStatus(m) === "upcoming");
-  const past = meetings.filter((m) => meetingStatus(m) === "past");
+  const live     = meetings.filter(m => meetingStatus(m, now) === "live");
+  const upcoming = meetings.filter(m => meetingStatus(m, now) === "upcoming");
+  const past     = meetings.filter(m => meetingStatus(m, now) === "past");
+  const hero     = live[0] ?? upcoming[0] ?? null;
+  const planned  = [...live, ...upcoming].filter(m => m.id !== hero?.id);
 
-  return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold md:text-3xl">{t("dash.meetings")}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("meetings.subtitle")}</p>
+  const meetingRow = (m: Meeting, inHistory = false) => {
+    const status = meetingStatus(m, now);
+    const isHost = m.created_by === user!.id;
+    const canDelete = !isStudent && canCreate && (isHost || isAdmin) && !inHistory;
+    return (
+      <div key={m.id} className="row-c flex-wrap" style={inHistory ? { opacity: 0.72 } : undefined}>
+        <span className="flex shrink-0" style={{ color: inHistory ? "var(--pal-muted)" : "var(--pal-primary)" }}>
+          <Video size={20} strokeWidth={1.7} />
+        </span>
+        <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: inHistory ? "var(--pal-muted)" : "var(--pal-ink)" }}>{m.title}</div>
+          <div className="mt-0.5" style={{ fontSize: 12, color: "var(--pal-muted)" }}>
+            {m.host_name}
+            {m.course_title ? ` · ${m.course_title}` : ""}
+            {m.class_name ? ` · ${m.class_name}` : ""}
+            {` · ${m.duration_minutes} min`}
+          </div>
+          {m.description && <div className="mt-0.5" style={{ fontSize: 12, color: "var(--pal-muted)" }}>{m.description}</div>}
         </div>
-        {canCreate && (
-          <Button onClick={() => setShowCreate(true)} className="shrink-0 border-0 bg-gradient-brand text-white">
-            <Plus className="h-4 w-4" />
-            {t("meetings.create")}
-          </Button>
+        <span className={`chip-c ${status === "live" ? "chip-c-red" : status === "upcoming" ? "chip-c-green" : ""}`}
+          style={inHistory ? { fontFamily: "var(--font-mono, monospace)", fontSize: 10, opacity: 0.7 } : undefined}>
+          {status === "live" ? "● En direct" : fmtDate(m.scheduled_at)}
+        </span>
+        {/* Expired meetings: no join button, read-only indicator */}
+        {inHistory ? (
+          <span style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 10, fontWeight: 600, color: "var(--pal-muted)", letterSpacing: ".06em", userSelect: "none" }}>
+            ARCHIVÉ
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={`btn-c btn-c-sm ${status === "live" ? "btn-c-green" : "btn-c-ghost"}`}
+            onClick={() => joinMeeting(m)}
+          >
+            {status === "live" ? "Rejoindre" : "Ouvrir la salle"}
+          </button>
+        )}
+        {canDelete && (
+          <button
+            type="button"
+            onClick={() => { if (window.confirm("Supprimer cette réunion ?")) deleteMeeting(m.id); }}
+            className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive"
+            aria-label="Supprimer"
+            title="Supprimer"
+          >
+            <Trash2 size={14} strokeWidth={1.7} />
+          </button>
         )}
       </div>
+    );
+  };
+
+  return (
+    <div style={{ fontFamily: sans }}>
+      <PageHead
+        eyebrow="Visioconférences"
+        title="Réunions"
+        sub="Vos sessions en ligne avec professeurs et administration."
+        actions={!isStudent ? (
+          <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-primary">
+            <Plus size={15} strokeWidth={1.7} />Nouvelle réunion
+          </button>
+        ) : undefined}
+      />
 
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin" />
+        <div className="dash-card" style={{ padding: 26 }}>
+          <div className="shimmer" style={{ height: 18, width: 180, borderRadius: 999 }} />
+          <div className="shimmer" style={{ height: 26, width: "55%", borderRadius: 8, marginTop: 14 }} />
+          <div className="shimmer" style={{ height: 13, width: "40%", borderRadius: 6, marginTop: 10 }} />
         </div>
       ) : meetings.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-border py-24 text-center">
-          <Video className="h-12 w-12 text-muted-foreground/30" />
-          <p className="mt-4 text-sm text-muted-foreground">{t("meetings.empty")}</p>
-          {canCreate && (
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => setShowCreate(true)}>
-              <Plus className="h-3.5 w-3.5" />
-              {t("meetings.create")}
-            </Button>
-          )}
+        <div className="dash-card">
+          <EmptyHint
+            icon={<Video size={28} strokeWidth={1.7} />}
+            text={
+              <span className="flex flex-col items-center gap-3">
+                Aucune réunion pour l'instant.
+                {!isStudent && (
+                  <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-ghost btn-c-sm">
+                    Créer une réunion
+                  </button>
+                )}
+              </span>
+            }
+          />
         </div>
       ) : (
-        <div className="space-y-8">
-          {live.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="flex items-center gap-2 font-display font-semibold">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          {/* Hero — imminent / live session (ink card) */}
+          {hero && (
+            <div className="dash-card card-pop" style={{ background: "var(--pal-ink)", border: 0, padding: 26, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <span className="eyebrow" style={{ color: "var(--pal-soft)" }}>
+                  {meetingStatus(hero, now) === "live" ? "En direct · " : "Prochaine session · "}{fmtDate(hero.scheduled_at)}
                 </span>
-                {t("meetings.live")}
-              </h2>
-              <MeetingGrid meetings={live} canCreate={canCreate} userId={user!.id} lang={lang} t={t} fmt={fmt} statusBadge={statusBadge} onJoin={joinMeeting} onDelete={deleteMeeting} />
-            </section>
+                <h2 className="h-serif" style={{ fontSize: 27, color: "var(--pal-paper)", margin: "8px 0 6px" }}>{hero.title}</h2>
+                <div style={{ color: "oklch(75% 0.03 170)", fontSize: 13, display: "flex", gap: 16, flexWrap: "wrap" }}>
+                  {hero.host_name && <span style={{ display: "flex", alignItems: "center", gap: 6 }}><UserIcon size={14} strokeWidth={1.7} />{hero.host_name}</span>}
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clock size={14} strokeWidth={1.7} />{hero.duration_minutes} min</span>
+                  {hero.course_title && <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Video size={14} strokeWidth={1.7} />{hero.course_title}</span>}
+                </div>
+              </div>
+              <button type="button" className="btn-c btn-c-green" style={{ fontSize: 14, padding: "12px 24px" }} onClick={() => joinMeeting(hero)}>
+                <Video size={17} strokeWidth={1.7} />Rejoindre la salle
+              </button>
+            </div>
           )}
-          {upcoming.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="font-display font-semibold">{t("meetings.upcoming")}</h2>
-              <MeetingGrid meetings={upcoming} canCreate={canCreate} userId={user!.id} lang={lang} t={t} fmt={fmt} statusBadge={statusBadge} onJoin={joinMeeting} onDelete={deleteMeeting} />
-            </section>
+
+          {planned.length > 0 && (
+            <div>
+              <SectionLabel>Sessions planifiées</SectionLabel>
+              <div className="dash-card overflow-hidden">{planned.map(m => meetingRow(m))}</div>
+            </div>
           )}
+
           {past.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="font-display font-semibold text-muted-foreground">{t("meetings.past")}</h2>
-              <MeetingGrid meetings={past} canCreate={canCreate} userId={user!.id} lang={lang} t={t} fmt={fmt} statusBadge={statusBadge} onJoin={joinMeeting} onDelete={deleteMeeting} />
-            </section>
+            <div>
+              <SectionLabel>
+                Historique
+                <span style={{ marginInlineStart: 8, fontFamily: "var(--font-mono, monospace)", fontSize: 10, fontWeight: 600, color: "var(--pal-muted)", letterSpacing: ".06em", verticalAlign: "middle" }}>
+                  · lecture seule
+                </span>
+              </SectionLabel>
+              <div className="dash-card overflow-hidden" style={{ borderStyle: "dashed", opacity: 0.9 }}>
+                {past.map(m => meetingRow(m, true))}
+              </div>
+            </div>
           )}
         </div>
       )}
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-display">{t("meetings.create")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">{t("meetings.form.title")} *</label>
-              <Input className="mt-1.5" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder={lang === "fr" ? "ex : Cours d'anatomie" : "e.g. Anatomy class"} />
+      {/* Create dialog */}
+      {showCreate && (
+        <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && setShowCreate(false)}>
+          <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
+            <h2 style={{ fontFamily: serif, fontSize: 28, fontWeight: 500, color: PAL.ink, margin: "0 0 24px" }}>Nouvelle réunion</h2>
+
+            <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex : Cours d'anatomie" />
+
+            {/* Class selector */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>
+                Classe concernée{classes.length === 0 ? " (aucune classe)" : ""}
+              </label>
+              <select
+                value={form.class_id}
+                onChange={e => setForm(f => ({ ...f, class_id: e.target.value }))}
+                className="u-input"
+                style={{ marginTop: 8, width: "100%", padding: "11px 14px", border: `1px solid ${form.class_id ? PAL.primary : PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: form.class_id ? PAL.ink : PAL.muted, background: PAL.paper, outline: "none", transition: "border-color .2s" }}
+              >
+                <option value="">— Sélectionner une classe (optionnel) —</option>
+                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              {form.class_id && (
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, fontFamily: sans, fontSize: 12, color: PAL.primary }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 999, background: PAL.primary }} />
+                  Classe : <strong>{classes.find(c => c.id === form.class_id)?.name}</strong>
+                </div>
+              )}
             </div>
-            <div>
-              <label className="text-sm font-medium">{t("meetings.form.description")}</label>
-              <Textarea className="mt-1.5" rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+
+            {/* Course selector */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>
+                Cours lié{courses.length === 0 ? " (aucun cours disponible)" : ""}
+              </label>
+              <select
+                value={form.course_id}
+                onChange={e => setForm(f => ({ ...f, course_id: e.target.value }))}
+                className="u-input"
+                style={{ marginTop: 8, width: "100%", padding: "11px 14px", border: `1px solid ${form.course_id ? PAL.primary : PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: form.course_id ? PAL.ink : PAL.muted, background: PAL.paper, outline: "none", transition: "border-color .2s" }}
+              >
+                <option value="">— Sélectionner un cours (optionnel) —</option>
+                {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+              {form.course_id && (
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, fontFamily: sans, fontSize: 12, color: PAL.primary }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 999, background: PAL.primary }} />
+                  Cours : <strong>{courses.find(c => c.id === form.course_id)?.title}</strong>
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium">{t("meetings.form.date")} *</label>
-                <Input className="mt-1.5" type="datetime-local" value={form.scheduled_at} onChange={(e) => setForm((f) => ({ ...f, scheduled_at: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-sm font-medium">{t("meetings.form.duration")}</label>
-                <Input className="mt-1.5" type="number" min="15" max="480" value={form.duration_minutes} onChange={(e) => setForm((f) => ({ ...f, duration_minutes: e.target.value }))} />
-              </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <Field label="Date & heure *" type="datetime-local" value={form.scheduled_at} onChange={v => setForm(f => ({ ...f, scheduled_at: v }))} />
+              <Field label="Durée (min)" type="number" value={form.duration_minutes} onChange={v => setForm(f => ({ ...f, duration_minutes: v }))} placeholder="60" />
             </div>
-            <div>
-              <label className="text-sm font-medium">{t("meetings.form.course")}</label>
-              <Select value={form.course_id} onValueChange={(v) => setForm((f) => ({ ...f, course_id: v === "none" ? "" : v }))}>
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue placeholder={lang === "fr" ? "Aucun cours lié" : "No linked course"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">{lang === "fr" ? "Aucun" : "None"}</SelectItem>
-                  {courses.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+
+            <Field label="Description" value={form.description} onChange={v => setForm(f => ({ ...f, description: v }))} placeholder="Optionnel" />
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setShowCreate(false)} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
+              <button onClick={createMeeting} disabled={creating} className="u-hover-lift" style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "10px 24px", cursor: creating ? "not-allowed" : "pointer", opacity: creating ? .6 : 1 }}>
+                {creating ? "Création…" : "Créer la réunion"}
+              </button>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>{lang === "fr" ? "Annuler" : "Cancel"}</Button>
-            <Button className="border-0 bg-gradient-brand text-white" disabled={creating} onClick={createMeeting}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : t("meetings.create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
 
-function MeetingGrid({
-  meetings, canCreate, userId, lang, t, fmt, statusBadge, onJoin, onDelete,
-}: {
-  meetings: Meeting[];
-  canCreate: boolean;
-  userId: string;
-  lang: string;
-  t: (k: string) => string;
-  fmt: (d: string) => string;
-  statusBadge: (m: Meeting) => JSX.Element;
-  onJoin: (m: Meeting) => void;
-  onDelete: (id: string) => void;
-}) {
+function Field({ label, type = "text", placeholder, value, onChange }: { label: string; type?: string; placeholder?: string; value: string; onChange: (v: string) => void }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {meetings.map((m) => {
-        const status = meetingStatus(m);
-        const isHost = m.created_by === userId;
-        const isPast = status === "past";
-        return (
-          <Card key={m.id} className={`border-0 p-5 shadow-card transition-all ${status === "live" ? "ring-2 ring-red-400/60" : ""}`}>
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-brand text-white">
-                <Video className="h-5 w-5" />
-              </div>
-              {statusBadge(m)}
-            </div>
-            <div className="mt-3">
-              <h3 className="font-display font-semibold leading-tight">{m.title}</h3>
-              {m.course_title && <p className="mt-0.5 text-xs text-muted-foreground">{m.course_title}</p>}
-              {m.description && <p className="mt-1.5 line-clamp-2 text-sm text-muted-foreground">{m.description}</p>}
-            </div>
-            <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <CalendarClock className="h-3.5 w-3.5" />
-                {fmt(m.scheduled_at)}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5" />
-                {m.duration_minutes} {t("meetings.duration")}
-                <span className="ml-auto flex items-center gap-1">
-                  <Users className="h-3.5 w-3.5" />
-                  {m.host_name}
-                </span>
-              </div>
-            </div>
-            <div className="mt-4 flex gap-2 border-t border-border pt-4">
-              {!isPast && (
-                <Button size="sm" className="h-8 flex-1 border-0 bg-gradient-brand text-xs text-white" onClick={() => onJoin(m)}>
-                  <Video className="h-3.5 w-3.5" />
-                  {status === "live" ? t("meetings.join") : t("meetings.start")}
-                </Button>
-              )}
-              {canCreate && isHost && (
-                <Button size="sm" variant="ghost" className="h-8 text-xs text-destructive hover:text-destructive" onClick={() => onDelete(m.id)}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          </Card>
-        );
-      })}
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>{label}</label>
+      <input type={type} placeholder={placeholder} value={value} onChange={e => onChange(e.target.value)} className="u-input" style={{ marginTop: 8, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const }} />
     </div>
   );
 }

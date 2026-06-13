@@ -9,6 +9,17 @@ class CourseCreate(BaseModel):
     semester: Optional[str] = None
     credits: int = 3
     cover_color: str = "blue"
+    class_ids: list[str] = []
+
+
+class CourseUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    code: Optional[str] = None
+    semester: Optional[str] = None
+    credits: Optional[int] = None
+    cover_color: Optional[str] = None
+    class_ids: Optional[list[str]] = None
 
 
 class AssignmentCreate(BaseModel):
@@ -53,6 +64,7 @@ class MeetingCreate(BaseModel):
     title: str
     description: Optional[str] = None
     course_id: Optional[str] = None
+    class_id: Optional[str] = None
     scheduled_at: str
     duration_minutes: int = 60
 
@@ -69,3 +81,18 @@ class EventCreate(BaseModel):
 class RoleAction(BaseModel):
     role: str
     action: str  # "add" or "remove"
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    full_name: str
+    password: str  # Temporary password set by creator
+
+
+class ClassCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class AddStudentRequest(BaseModel):
+    student_id: str

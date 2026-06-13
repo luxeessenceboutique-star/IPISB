@@ -3,6 +3,8 @@ from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import ExamCreate, QuestionCreate, ExamAnswers
+from utils.notify import notify_users
+from utils.email import send_email
 
 router = APIRouter(prefix="/exams", tags=["exams"])
 
@@ -177,11 +179,59 @@ async def toggle_publish(
 ):
     if not user.can_create():
         raise HTTPException(403, "Not authorized")
-    exam = db.from_("exams").select("is_published").eq("id", exam_id).execute().data
+    exam = db.from_("exams").select("is_published, title, course_id").eq("id", exam_id).execute().data
     if not exam:
         raise HTTPException(404, "Exam not found")
     new_val = not exam[0]["is_published"]
     db.from_("exams").update({"is_published": new_val}).eq("id", exam_id).execute()
+
+    # Notify enrolled students only when publishing (not when unpublishing)
+    if new_val:
+        try:
+            exam_title = exam[0]["title"]
+            course_id = exam[0]["course_id"]
+            enrolled = (
+                db.from_("course_enrollments")
+                .select("student_id")
+                .eq("course_id", course_id)
+                .execute()
+                .data or []
+            )
+            student_ids = [r["student_id"] for r in enrolled]
+            notify_users(
+                db,
+                student_ids,
+                f"Examen disponible : {exam_title}",
+                "Un nouvel examen est maintenant disponible.",
+                "success",
+                "/dashboard/exams",
+            )
+            # Email enrolled students about the newly published exam
+            try:
+                if student_ids:
+                    profiles = (
+                        db.from_("profiles")
+                        .select("email")
+                        .in_("id", student_ids)
+                        .execute()
+                        .data or []
+                    )
+                    emails = [p["email"] for p in profiles if p.get("email")]
+                    if emails:
+                        send_email(
+                            emails,
+                            f"Examen disponible : {exam_title}",
+                            (
+                                f"<h2>Nouvel examen</h2>"
+                                f"<p>L'examen <b>{exam_title}</b> est maintenant disponible.</p>"
+                                f"<a href='https://ipisb.ma/dashboard/exams'>Passer l'examen</a>"
+                            ),
+                        )
+            except Exception:
+                pass
+        except Exception:
+            pass  # notification failure must never break the main operation
+
     return {"is_published": new_val}
 
 
@@ -192,6 +242,8 @@ async def submit_exam(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
+    if user.can_create():
+        raise HTTPException(403, "Only students can take exams")
     questions = (
         db.from_("exam_questions").select("id, correct_index").eq("exam_id", exam_id).execute().data or []
     )

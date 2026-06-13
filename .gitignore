@@ -23,6 +23,21 @@ ENV/
 # Vite
 .vite/
 
+# Logs
+*.log
+*.log.*
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Temp / scratch scripts
+ss*.mjs
+ss*.js
+screenshot*.mjs
+verify_*.mjs
+audit_console.mjs
+
 # Editor
 .vscode/
 .idea/

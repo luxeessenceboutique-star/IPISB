@@ -10,7 +10,7 @@ load_dotenv()
 
 SUPABASE_URL: str = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY: str = os.environ["SUPABASE_SERVICE_KEY"]
-FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5178")
 
 
 @lru_cache(maxsize=1)
@@ -39,6 +39,13 @@ class CurrentUser:
 
     def can_create(self) -> bool:
         return self.is_admin() or self.is_prof()
+
+    def can_create_role(self) -> str | None:
+        if self.is_admin():
+            return "professor"
+        if self.is_prof():
+            return "student"
+        return None
 
 
 async def get_current_user(

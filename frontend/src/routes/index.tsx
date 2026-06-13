@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SiteNav } from "@/components/SiteNav";
-import { SiteFooter } from "@/components/SiteFooter";
+import { PageLayout } from "@/components/PageLayout";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
-import { Programs } from "@/components/landing/Programs";
-import { About } from "@/components/landing/About";
+import { ProgramsTeaser } from "@/components/landing/ProgramsTeaser";
+import { AboutTeaser } from "@/components/landing/AboutTeaser";
+import { TestimonialsTeaser } from "@/components/landing/TestimonialsTeaser";
+import { NewsTeaser } from "@/components/landing/NewsTeaser";
+import { Campuses } from "@/components/landing/Campuses";
 import { CtaBand } from "@/components/landing/CtaBand";
 
 export const Route = createFileRoute("/")({
@@ -13,16 +15,15 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   return (
-    <div className="flex min-h-screen flex-col">
-      <SiteNav />
-      <main className="flex-1">
-        <Hero />
-        <Features />
-        <Programs />
-        <About />
-        <CtaBand />
-      </main>
-      <SiteFooter />
-    </div>
+    <PageLayout>
+      <Hero />
+      <Features />
+      <ProgramsTeaser />
+      <AboutTeaser />
+      <TestimonialsTeaser />
+      <Campuses />
+      <NewsTeaser />
+      <CtaBand />
+    </PageLayout>
   );
 }
