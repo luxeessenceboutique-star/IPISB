@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { BookOpen, FileText, GraduationCap, CalendarDays, Bell, ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
+import { BookOpen, FileText, GraduationCap, CalendarDays, Bell, ChevronDown, ChevronRight, ArrowRight, Users, Activity } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -44,6 +44,22 @@ type CourseAnalytic = {
   enrolled_count: number;
   assignments: AssignmentAnalytic[];
   exams: ExamAnalytic[];
+};
+
+type AuditEntry = {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  created_at: string;
+};
+
+type AdminOverview = {
+  total_students: number;
+  students_by_class: { class_id: string; class_name: string; count: number }[];
+  documents_total: number;
+  documents_today: number;
+  recent_activity: AuditEntry[];
 };
 
 async function fetchStats(userId: string, roles: string[]): Promise<Stats> {
@@ -114,12 +130,30 @@ function DashboardHome() {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [expanded,         setExpanded]         = useState<Record<string, boolean>>({});
 
+  const [overview,        setOverview]        = useState<AdminOverview | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+
   useEffect(() => {
     if (!user) return;
     fetchStats(user.id, roles)
       .then(setStats)
       .finally(() => setLoading(false));
   }, [user, roles]);
+
+  // Admin real-time overview — effectifs, documents générés, activité récente.
+  // Poll every 30s; a future iteration can swap this for a Supabase Realtime
+  // subscription on the same tables (classes/documents/audit_log) for instant updates.
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    setOverviewLoading(true);
+    const load = () => api.get("/api/dashboard/admin-overview")
+      .then((data: AdminOverview) => setOverview(data))
+      .catch(() => setOverview(null))
+      .finally(() => setOverviewLoading(false));
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
+  }, [user, isAdmin]);
 
   useEffect(() => {
     if (!user || !canCreate) return;
@@ -245,6 +279,78 @@ function DashboardHome() {
           ))}
         </div>
       </div>
+
+      {/* ── Admin — L2 Gestion Administrative real-time overview ────────── */}
+      {isAdmin && (
+        <div>
+          <SectionLabel>Vue d'ensemble administrative</SectionLabel>
+
+          {overviewLoading && !overview ? (
+            <ListSkeleton rows={2} />
+          ) : overview ? (
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="dash-card p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--pal-pale)", color: "var(--pal-primary-deep)" }}>
+                    <Users className="h-4 w-4" strokeWidth={1.7} />
+                  </div>
+                  <span className="eyebrow">Effectifs</span>
+                </div>
+                <div className="stat-num mt-3">
+                  <CountUp value={overview.total_students} duration={700} />
+                </div>
+                <div className="mt-3 flex flex-col gap-1.5">
+                  {overview.students_by_class.slice(0, 5).map(c => (
+                    <div key={c.class_id} className="flex items-center justify-between text-xs" style={{ color: "var(--pal-muted)" }}>
+                      <span>{c.class_name}</span>
+                      <span style={{ fontWeight: 700, color: "var(--pal-ink)" }}>{c.count}</span>
+                    </div>
+                  ))}
+                  {overview.students_by_class.length === 0 && (
+                    <span className="text-xs" style={{ color: "var(--pal-muted)" }}>Aucune classe.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="dash-card p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--pal-pale)", color: "var(--pal-primary-deep)" }}>
+                    <FileText className="h-4 w-4" strokeWidth={1.7} />
+                  </div>
+                  <span className="eyebrow">Documents générés</span>
+                </div>
+                <div className="stat-num mt-3">
+                  <CountUp value={overview.documents_total} duration={700} />
+                </div>
+                <div className="mt-3 text-xs" style={{ color: "var(--pal-muted)" }}>
+                  {overview.documents_today} aujourd'hui
+                </div>
+              </div>
+
+              <div className="dash-card p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--pal-pale)", color: "var(--pal-primary-deep)" }}>
+                    <Activity className="h-4 w-4" strokeWidth={1.7} />
+                  </div>
+                  <span className="eyebrow">Activité récente</span>
+                </div>
+                <div className="mt-3 flex flex-col gap-1.5 max-h-[104px] overflow-y-auto">
+                  {overview.recent_activity.slice(0, 5).map(a => (
+                    <div key={a.id} className="text-xs" style={{ color: "var(--pal-muted)" }}>
+                      <span style={{ fontWeight: 700, color: "var(--pal-ink)" }}>{a.action}</span>
+                      {" · "}
+                      {new Date(a.created_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  ))}
+                  {overview.recent_activity.length === 0 && (
+                    <span className="text-xs" style={{ color: "var(--pal-muted)" }}>Aucune activité récente.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* ── Professor / Admin Analytics ─────────────────────────────────── */}
       {canCreate && (

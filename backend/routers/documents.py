@@ -1,0 +1,155 @@
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
+from supabase import Client
+from deps import get_current_user, get_db, CurrentUser, FRONTEND_URL
+from models import DocumentGenerate
+from utils.audit import log_audit
+from utils.documents import DOCUMENT_LABELS, new_verification_code, render_document_pdf
+
+router = APIRouter(prefix="/documents", tags=["documents"])
+
+BUCKET = "documents"
+SIGNED_URL_TTL = 60 * 60  # 1 hour
+
+
+@router.get("")
+async def list_documents(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    if not user.can_create():
+        raise HTTPException(403, "Professor or admin only")
+
+    query = db.from_("documents").select("*")
+    if not user.is_admin():
+        query = query.eq("generated_by", user.id)
+    docs = query.order("created_at", desc=True).execute().data or []
+
+    student_ids = list({d["student_id"] for d in docs if d.get("student_id")})
+    name_map: dict[str, str] = {}
+    if student_ids:
+        profiles = db.from_("profiles").select("id, full_name").in_("id", student_ids).execute().data or []
+        name_map = {p["id"]: p["full_name"] or "—" for p in profiles}
+
+    return [
+        {**d, "student_name": name_map.get(d.get("student_id", ""), "—"), "label": DOCUMENT_LABELS.get(d["type"], d["type"])}
+        for d in docs
+    ]
+
+
+@router.post("/generate")
+async def generate_document(
+    body: DocumentGenerate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    if not user.can_create():
+        raise HTTPException(403, "Professor or admin only")
+    if body.type not in DOCUMENT_LABELS:
+        raise HTTPException(400, f"Unknown document type. Use one of: {', '.join(DOCUMENT_LABELS)}")
+
+    student = (
+        db.from_("profiles").select("id, full_name, created_by").eq("id", body.student_id).execute().data
+    )
+    if not student:
+        raise HTTPException(404, "Student not found")
+    if not user.is_admin() and student[0].get("created_by") != user.id:
+        raise HTTPException(403, "Not authorized for this student")
+
+    code = new_verification_code()
+    verify_url = f"{FRONTEND_URL}/verify/{code}"
+    pdf_bytes = render_document_pdf(
+        doc_type=body.type,
+        student_name=student[0]["full_name"] or "—",
+        verification_code=code,
+        verify_url=verify_url,
+    )
+
+    file_path = f"{code}.pdf"
+    try:
+        db.storage.from_(BUCKET).upload(
+            file_path, pdf_bytes, {"content-type": "application/pdf"}
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Failed to store document: {str(e)}")
+
+    res = db.from_("documents").insert({
+        "type": body.type,
+        "student_id": body.student_id,
+        "file_path": file_path,
+        "statut": "valide",
+        "verification_code": code,
+        "generated_by": user.id,
+    }).execute()
+    new_doc = res.data[0]
+
+    log_audit(db, user.id, "document.generate", "document", new_doc["id"], {"type": body.type, "student_id": body.student_id})
+
+    signed = db.storage.from_(BUCKET).create_signed_url(file_path, SIGNED_URL_TTL)
+    return {**new_doc, "signed_url": signed.get("signedURL") or signed.get("signed_url")}
+
+
+@router.get("/{document_id}/download")
+async def get_download_url(
+    document_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    rows = db.from_("documents").select("*").eq("id", document_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Not found")
+    doc = rows[0]
+    if not user.is_admin() and doc.get("generated_by") != user.id:
+        raise HTTPException(403, "Not authorized")
+
+    signed = db.storage.from_(BUCKET).create_signed_url(doc["file_path"], SIGNED_URL_TTL)
+    return {"signed_url": signed.get("signedURL") or signed.get("signed_url")}
+
+
+@router.delete("/{document_id}")
+async def revoke_document(
+    document_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+    res = db.from_("documents").update({"statut": "revoque"}).eq("id", document_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Not found")
+    log_audit(db, user.id, "document.revoke", "document", document_id)
+    return {"ok": True}
+
+
+@router.get("/verify/{code}")
+async def verify_document(
+    code: str,
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Public endpoint — no auth. Powers the QR-code authenticity check.
+    Returns only enough to confirm authenticity, never the file itself."""
+    rows = (
+        db.from_("documents")
+        .select("type, statut, created_at, student_id")
+        .eq("verification_code", code)
+        .execute()
+        .data
+    )
+    if not rows:
+        return {"valid": False}
+    doc = rows[0]
+
+    student_name = "—"
+    if doc.get("student_id"):
+        profile = db.from_("profiles").select("full_name").eq("id", doc["student_id"]).execute().data
+        if profile:
+            student_name = profile[0]["full_name"] or "—"
+
+    return {
+        "valid": doc["statut"] == "valide",
+        "type": doc["type"],
+        "label": DOCUMENT_LABELS.get(doc["type"], doc["type"]),
+        "student_name": student_name,
+        "issued_at": doc["created_at"],
+        "institution": "IPISB",
+    }

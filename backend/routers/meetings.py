@@ -7,6 +7,7 @@ from deps import get_current_user, get_db, CurrentUser
 from models import MeetingCreate
 from utils.notify import notify_users
 from utils.email import send_email
+from utils.jaas import generate_jaas_token, JAAS_APP_ID
 
 
 def _is_expired(meeting: dict) -> bool:
@@ -229,6 +230,66 @@ async def activate(
         raise HTTPException(403, "Meeting has expired and can no longer be activated")
     db.from_("meetings").update({"is_active": True}).eq("id", meeting_id).execute()
     return {"ok": True}
+
+
+@router.get("/{meeting_id}/token")
+async def get_join_token(
+    meeting_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    rows = (
+        db.from_("meetings")
+        .select("room_id, created_by, class_id, scheduled_at, duration_minutes")
+        .eq("id", meeting_id)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(404, "Not found")
+    meeting = rows[0]
+
+    if _is_expired(meeting):
+        raise HTTPException(403, "Meeting has expired")
+
+    is_host = meeting["created_by"] == user.id
+    allowed = user.is_admin() or is_host
+    if not allowed and meeting["class_id"]:
+        if user.is_prof():
+            owned = (
+                db.from_("classes")
+                .select("id")
+                .eq("id", meeting["class_id"])
+                .eq("created_by", user.id)
+                .execute()
+                .data
+            )
+            allowed = bool(owned)
+        else:
+            enrolled = (
+                db.from_("class_students")
+                .select("student_id")
+                .eq("class_id", meeting["class_id"])
+                .eq("student_id", user.id)
+                .execute()
+                .data
+            )
+            allowed = bool(enrolled)
+    if not allowed:
+        raise HTTPException(403, "Not authorized")
+
+    moderator = user.is_admin() or is_host
+    profile = db.from_("profiles").select("full_name").eq("id", user.id).execute().data or []
+    name = (profile[0]["full_name"] if profile else None) or user.email or "Participant"
+
+    token = generate_jaas_token(
+        room=meeting["room_id"],
+        user_id=user.id,
+        name=name,
+        email=user.email,
+        moderator=moderator,
+    )
+    return {"token": token, "app_id": JAAS_APP_ID, "room": meeting["room_id"]}
 
 
 @router.put("/{meeting_id}/deactivate")

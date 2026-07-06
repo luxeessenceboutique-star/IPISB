@@ -100,6 +100,54 @@ async def get_stats(
         }
 
 
+@router.get("/admin-overview")
+async def get_admin_overview(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Admin/directeur real-time overview: effectifs par classe, documents
+    générés, activité récente. The frontend can subscribe to Supabase
+    Realtime on these same tables to keep this live without polling."""
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+    classes = db.from_("classes").select("id, name").execute().data or []
+    memberships = db.from_("class_students").select("class_id").execute().data or []
+    count_map: dict[str, int] = {}
+    for m in memberships:
+        count_map[m["class_id"]] = count_map.get(m["class_id"], 0) + 1
+    students_by_class = [
+        {"class_id": c["id"], "class_name": c["name"], "count": count_map.get(c["id"], 0)} for c in classes
+    ]
+
+    student_roles = db.from_("user_roles").select("user_id").eq("role", "student").execute().data or []
+    total_students = len(student_roles)
+
+    documents_total = len(db.from_("documents").select("id").execute().data or [])
+    documents_today = len(
+        db.from_("documents").select("id").gte("created_at", today_start).execute().data or []
+    )
+
+    recent_activity = (
+        db.from_("audit_log")
+        .select("*")
+        .order("created_at", desc=True)
+        .limit(10)
+        .execute()
+        .data or []
+    )
+
+    return {
+        "total_students": total_students,
+        "students_by_class": students_by_class,
+        "documents_total": documents_total,
+        "documents_today": documents_today,
+        "recent_activity": recent_activity,
+    }
+
+
 @router.get("/analytics")
 async def get_analytics(
     user: Annotated[CurrentUser, Depends(get_current_user)],

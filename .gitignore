@@ -20,6 +20,11 @@ ENV/
 .env.test.local
 .env.production.local
 
+# JaaS / Jitsi signing keys
+*.pk
+*.pub
+backend/secrets/
+
 # Vite
 .vite/
 

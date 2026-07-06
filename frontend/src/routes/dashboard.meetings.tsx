@@ -69,8 +69,12 @@ function fmtDate(d: string) {
 }
 
 // ── Full-screen Jitsi room ────────────────────────────────────────────────────
-function JitsiRoom({ meeting, userName, onLeave }: { meeting: Meeting; userName: string; onLeave: () => void }) {
-  const src = `https://meet.jit.si/${meeting.room_id}#userInfo.displayName="${encodeURIComponent(userName)}"&config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_POWERED_BY=false`;
+// Uses 8x8 JaaS (authenticated) instead of the public meet.jit.si server: an
+// unauthenticated meet.jit.si room with 3+ guests is cut off after ~5 minutes.
+// The signed JWT marks the room/user as authenticated from the start, which
+// removes that limit.
+function JitsiRoom({ meeting, userName, appId, token, onLeave }: { meeting: Meeting; userName: string; appId: string; token: string; onLeave: () => void }) {
+  const src = `https://8x8.vc/${appId}/${meeting.room_id}?jwt=${token}#userInfo.displayName="${encodeURIComponent(userName)}"&config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_POWERED_BY=false`;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", background: "#0a0a0a" }}>
@@ -109,6 +113,8 @@ function MeetingsPage() {
   const [classes,  setClasses]  = useState<ClassItem[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [active,   setActive]   = useState<Meeting | null>(null);
+  const [roomAuth, setRoomAuth] = useState<{ token: string; appId: string } | null>(null);
+  const [joining,  setJoining]  = useState(false);
   const [now,      setNow]      = useState(() => new Date());
 
   const [showCreate, setShowCreate] = useState(false);
@@ -169,7 +175,16 @@ function MeetingsPage() {
         // Non-fatal: the meeting room still opens even if activation fails
       }
     }
-    setActive(m);
+    setJoining(true);
+    try {
+      const auth = await api.get(`/api/meetings/${m.id}/token`);
+      setRoomAuth({ token: auth.token, appId: auth.app_id });
+      setActive(m);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Impossible de rejoindre la réunion.");
+    } finally {
+      setJoining(false);
+    }
   }
 
   async function leaveMeeting() {
@@ -181,6 +196,7 @@ function MeetingsPage() {
       }
     }
     setActive(null);
+    setRoomAuth(null);
     load();
   }
 
@@ -218,8 +234,16 @@ function MeetingsPage() {
     }
   }
 
-  if (active) {
-    return <JitsiRoom meeting={active} userName={displayName} onLeave={leaveMeeting} />;
+  if (active && roomAuth) {
+    return (
+      <JitsiRoom
+        meeting={active}
+        userName={displayName}
+        appId={roomAuth.appId}
+        token={roomAuth.token}
+        onLeave={leaveMeeting}
+      />
+    );
   }
 
   const live     = meetings.filter(m => meetingStatus(m, now) === "live");
@@ -259,10 +283,11 @@ function MeetingsPage() {
         ) : (
           <button
             type="button"
+            disabled={joining}
             className={`btn-c btn-c-sm ${status === "live" ? "btn-c-green" : "btn-c-ghost"}`}
             onClick={() => joinMeeting(m)}
           >
-            {status === "live" ? "Rejoindre" : "Ouvrir la salle"}
+            {joining ? "Connexion…" : status === "live" ? "Rejoindre" : "Ouvrir la salle"}
           </button>
         )}
         {canDelete && (
@@ -331,8 +356,8 @@ function MeetingsPage() {
                   {hero.course_title && <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Video size={14} strokeWidth={1.7} />{hero.course_title}</span>}
                 </div>
               </div>
-              <button type="button" className="btn-c btn-c-green" style={{ fontSize: 14, padding: "12px 24px" }} onClick={() => joinMeeting(hero)}>
-                <Video size={17} strokeWidth={1.7} />Rejoindre la salle
+              <button type="button" disabled={joining} className="btn-c btn-c-green" style={{ fontSize: 14, padding: "12px 24px" }} onClick={() => joinMeeting(hero)}>
+                <Video size={17} strokeWidth={1.7} />{joining ? "Connexion…" : "Rejoindre la salle"}
               </button>
             </div>
           )}

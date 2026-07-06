@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { useEffect, useState } from "react";
 import {
   Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
-  Layers, Users, LogOut, X,
+  Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -93,6 +93,14 @@ function DashboardLayout() {
     ...((isAdmin || isProf) ? [
       { key: "dash.classes", to: "/dashboard/classes", icon: Layers },
       { key: "dash.users",   to: "/dashboard/users",   icon: Users  },
+    ] : []),
+    // L2 Gestion Administrative — admin only
+    ...(isAdmin ? [
+      { key: "dash.students",      to: "/dashboard/students",      icon: IdCard        },
+      { key: "dash.documents",     to: "/dashboard/documents",     icon: FileText      },
+      { key: "dash.schedules",     to: "/dashboard/schedules",     icon: CalendarClock },
+      { key: "dash.announcements", to: "/dashboard/announcements", icon: Megaphone     },
+      { key: "dash.accounting",    to: "/dashboard/accounting",    icon: Wallet        },
     ] : []),
   ];
 
