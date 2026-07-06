@@ -7,7 +7,7 @@ from deps import get_current_user, get_db, CurrentUser
 from models import MeetingCreate
 from utils.notify import notify_users
 from utils.email import send_email
-from utils.jaas import generate_jaas_token, JAAS_APP_ID
+from utils.jaas import generate_jaas_token, jaas_app_id, JaasNotConfigured
 
 
 def _is_expired(meeting: dict) -> bool:
@@ -282,14 +282,18 @@ async def get_join_token(
     profile = db.from_("profiles").select("full_name").eq("id", user.id).execute().data or []
     name = (profile[0]["full_name"] if profile else None) or user.email or "Participant"
 
-    token = generate_jaas_token(
-        room=meeting["room_id"],
-        user_id=user.id,
-        name=name,
-        email=user.email,
-        moderator=moderator,
-    )
-    return {"token": token, "app_id": JAAS_APP_ID, "room": meeting["room_id"]}
+    try:
+        token = generate_jaas_token(
+            room=meeting["room_id"],
+            user_id=user.id,
+            name=name,
+            email=user.email,
+            moderator=moderator,
+        )
+        app_id = jaas_app_id()
+    except JaasNotConfigured as e:
+        raise HTTPException(503, f"Meeting video is not configured: {e}")
+    return {"token": token, "app_id": app_id, "room": meeting["room_id"]}
 
 
 @router.put("/{meeting_id}/deactivate")
