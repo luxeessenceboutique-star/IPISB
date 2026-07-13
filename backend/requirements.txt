@@ -14,3 +14,7 @@ resend>=2.0.0
 PyJWT[crypto]>=2.9.0
 reportlab>=4.2.0
 qrcode[pil]>=7.4.2
+python-docx>=1.1.2
+pdfplumber>=0.11.4
+pypdf>=5.1.0
+rapidocr-onnxruntime>=1.4.4

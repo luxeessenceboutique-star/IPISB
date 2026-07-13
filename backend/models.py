@@ -175,6 +175,10 @@ class PurchaseCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class TemplateGenerate(BaseModel):
+    student_id: str
+
+
 class PurchaseUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None

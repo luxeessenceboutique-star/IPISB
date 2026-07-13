@@ -106,18 +106,43 @@ async def get_download_url(
     return {"signed_url": signed.get("signedURL") or signed.get("signed_url")}
 
 
-@router.delete("/{document_id}")
+@router.post("/{document_id}/revoke")
 async def revoke_document(
     document_id: str,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
+    """Mark invalid but keep the registry row — the public QR check must keep
+    answering 'revoked' for codes already printed on paper."""
     if not user.is_admin():
         raise HTTPException(403, "Admin only")
     res = db.from_("documents").update({"statut": "revoque"}).eq("id", document_id).execute()
     if not res.data:
         raise HTTPException(404, "Not found")
     log_audit(db, user.id, "document.revoke", "document", document_id)
+    return {"ok": True}
+
+
+@router.delete("/{document_id}")
+async def delete_document(
+    document_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Hard delete: removes the row AND the stored file. The QR code (if any
+    was distributed) will verify as 'invalid' with no trace — prefer revoke
+    for documents that actually left the building."""
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+    rows = db.from_("documents").select("file_path").eq("id", document_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Not found")
+    try:
+        db.storage.from_(BUCKET).remove([rows[0]["file_path"]])
+    except Exception:
+        pass  # storage cleanup is best-effort — don't block the row delete on it
+    db.from_("documents").delete().eq("id", document_id).execute()
+    log_audit(db, user.id, "document.delete", "document", document_id)
     return {"ok": True}
 
 

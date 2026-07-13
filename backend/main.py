@@ -8,6 +8,7 @@ from routers import courses, assignments, exams, meetings, agenda, notifications
 from routers import chatbot, resources, classes
 from routers import students, documents, schedules, announcements
 from routers import accounting_categories, accounting_suppliers, accounting_purchases
+from routers import document_templates
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -65,6 +66,7 @@ app.include_router(announcements.router, prefix="/api")
 app.include_router(accounting_categories.router, prefix="/api")
 app.include_router(accounting_suppliers.router, prefix="/api")
 app.include_router(accounting_purchases.router, prefix="/api")
+app.include_router(document_templates.router, prefix="/api")
 
 
 @app.get("/health")
