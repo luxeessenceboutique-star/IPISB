@@ -1,0 +1,270 @@
+import io
+from datetime import datetime, timezone
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
+
+def fmt_mad(value) -> str:
+    try:
+        val = float(value or 0)
+        return f"{val:,.2f} MAD".replace(",", " ").replace(".", ",")
+    except Exception:
+        return "0,00 MAD"
+
+def draw_header(c, title: str):
+    width, height = A4
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(20 * mm, height - 25 * mm, "IPISB")
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 30 * mm, "Institut Privé d'Innovation en Santé et Bien-être")
+    c.drawString(20 * mm, height - 34 * mm, "Rabat, Maroc")
+    
+    c.setFont("Helvetica-Bold", 14)
+    c.drawRightString(width - 20 * mm, height - 25 * mm, title)
+    
+    # Horizontal line
+    c.setLineWidth(0.5)
+    c.setStrokeColorRGB(0.7, 0.7, 0.7)
+    c.line(20 * mm, height - 40 * mm, width - 20 * mm, height - 40 * mm)
+
+def draw_footer(c, page_num: int = 1):
+    width, height = A4
+    c.setLineWidth(0.5)
+    c.setStrokeColorRGB(0.7, 0.7, 0.7)
+    c.line(20 * mm, 20 * mm, width - 20 * mm, 20 * mm)
+    c.setFont("Helvetica-Oblique", 8)
+    c.drawString(20 * mm, 15 * mm, f"Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}")
+    c.drawRightString(width - 20 * mm, 15 * mm, f"Page {page_num}")
+
+def render_purchase_order_pdf(purchase: dict, supplier: dict) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    
+    draw_header(c, "BON DE COMMANDE")
+    
+    # Metadata block
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, height - 50 * mm, "Informations Commande :")
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 56 * mm, f"N° Commande : {purchase.get('purchase_number', 'N/A')}")
+    c.drawString(20 * mm, height - 61 * mm, f"Date d'émission : {purchase.get('purchase_date', 'N/A')}")
+    c.drawString(20 * mm, height - 66 * mm, f"Statut Paiement : {purchase.get('payment_status', 'N/A').upper()}")
+
+    # Supplier block
+    c.setFont("Helvetica-Bold", 10)
+    c.drawRightString(width - 20 * mm, height - 50 * mm, "Fournisseur :")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 20 * mm, height - 56 * mm, f"{supplier.get('company_name', 'N/A')}")
+    c.drawRightString(width - 20 * mm, height - 61 * mm, f"Contact : {supplier.get('contact_person', 'N/A') or '—'}")
+    c.drawRightString(width - 20 * mm, height - 66 * mm, f"Email : {supplier.get('email', 'N/A') or '—'}")
+    c.drawRightString(width - 20 * mm, height - 71 * mm, f"ICE : {supplier.get('tax_number', 'N/A') or '—'}")
+
+    # Section Table
+    y = height - 85 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, y, "Détail de la commande :")
+    
+    y -= 8 * mm
+    # Table Header
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Description")
+    c.drawString(100 * mm, y, "Quantité")
+    c.drawString(125 * mm, y, "Prix Unitaire")
+    c.drawRightString(width - 20 * mm, y, "Total HT")
+    
+    c.setLineWidth(0.5)
+    c.line(20 * mm, y - 2 * mm, width - 20 * mm, y - 2 * mm)
+    
+    # Table Row
+    y -= 10 * mm
+    c.setFont("Helvetica", 9)
+    # Wrap text for title
+    title = purchase.get("title", "")
+    if len(title) > 40:
+        title = title[:37] + "..."
+    c.drawString(20 * mm, y, title)
+    qty = float(purchase.get("quantity") or 0)
+    up = float(purchase.get("unit_price") or 0)
+    c.drawString(100 * mm, y, f"{qty:.2f}")
+    c.drawString(125 * mm, y, fmt_mad(up))
+    c.drawRightString(width - 20 * mm, y, fmt_mad(qty * up))
+    
+    # Totals block
+    y -= 20 * mm
+    c.setLineWidth(0.5)
+    c.line(100 * mm, y + 5 * mm, width - 20 * mm, y + 5 * mm)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(100 * mm, y, "Total HT")
+    c.drawRightString(width - 20 * mm, y, fmt_mad(qty * up))
+    
+    y -= 6 * mm
+    vat_percent = float(purchase.get("vat_percent") or 0)
+    c.setFont("Helvetica", 9)
+    c.drawString(100 * mm, y, f"TVA ({vat_percent:.0f} %)")
+    c.drawRightString(width - 20 * mm, y, fmt_mad(qty * up * (vat_percent / 100)))
+    
+    y -= 6 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(100 * mm, y, "Total TTC")
+    c.drawRightString(width - 20 * mm, y, fmt_mad(purchase.get("total_incl_vat", qty * up * (1 + vat_percent / 100))))
+    
+    # Signatures
+    y -= 30 * mm
+    c.setLineWidth(0.5)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Signature Responsable")
+    c.drawRightString(width - 20 * mm, y, "Signature Comptable")
+    
+    c.setFont("Helvetica", 8)
+    val_resp = purchase.get("valide_responsable_at")
+    val_comp = purchase.get("valide_comptable_at")
+    if val_resp:
+        c.drawString(20 * mm, y - 5 * mm, f"Validé le {datetime.fromisoformat(val_resp).strftime('%d/%m/%Y')}")
+    else:
+        c.drawString(20 * mm, y - 5 * mm, "En attente de validation")
+        
+    if val_comp:
+        c.drawRightString(width - 20 * mm, y - 5 * mm, f"Validé le {datetime.fromisoformat(val_comp).strftime('%d/%m/%Y')}")
+    else:
+        c.drawRightString(width - 20 * mm, y - 5 * mm, "En attente de validation")
+        
+    c.rect(20 * mm, y - 30 * mm, 50 * mm, 22 * mm)
+    c.rect(width - 70 * mm, y - 30 * mm, 50 * mm, 22 * mm)
+
+    draw_footer(c)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+def render_purchase_request_pdf(pr: dict, quotes: list) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    
+    draw_header(c, "DEMANDE D'ACHAT")
+    
+    # Request Info
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, height - 50 * mm, "Informations de la demande :")
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 56 * mm, f"N° DA : {pr.get('request_number', 'N/A')}")
+    c.drawString(20 * mm, height - 61 * mm, f"Statut : {pr.get('status', 'N/A').replace('_', ' ').upper()}")
+    c.drawString(20 * mm, height - 66 * mm, f"Demandeur : {pr.get('requester_name', 'N/A') or '—'}")
+    c.drawString(20 * mm, height - 71 * mm, f"Service : {pr.get('service', 'N/A') or '—'}")
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawRightString(width - 20 * mm, height - 50 * mm, "Détail Budget :")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 20 * mm, height - 56 * mm, f"Type : {pr.get('request_type', 'N/A').replace('_', ' ').title()}")
+    c.drawRightString(width - 20 * mm, height - 61 * mm, f"Catégorie : {pr.get('asset_category', 'N/A').title()}")
+    c.drawRightString(width - 20 * mm, height - 66 * mm, f"Est. Budgétaire : {fmt_mad(pr.get('budget_estimate', 0))}")
+
+    # Justification
+    y = height - 85 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, y, "Justification du besoin :")
+    c.setFont("Helvetica", 9)
+    just = pr.get("justification", "—")
+    # Wrap text simple
+    lines = [just[i:i+80] for i in range(0, len(just), 80)]
+    for line in lines[:3]:
+        y -= 5 * mm
+        c.drawString(20 * mm, y, line)
+
+    # Devis comparatifs
+    y -= 12 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, y, "Synthèse des devis comparatifs :")
+    
+    y -= 8 * mm
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Rang")
+    c.drawString(35 * mm, y, "Fournisseur")
+    c.drawString(95 * mm, y, "N° Devis")
+    c.drawString(135 * mm, y, "Montant")
+    c.drawRightString(width - 20 * mm, y, "Retenu ?")
+    
+    c.setLineWidth(0.5)
+    c.line(20 * mm, y - 2 * mm, width - 20 * mm, y - 2 * mm)
+    
+    c.setFont("Helvetica", 9)
+    for q_item in quotes[:5]:
+        y -= 7 * mm
+        c.drawString(20 * mm, y, f"Devis {q_item.get('rank', 1)}")
+        c.drawString(35 * mm, y, q_item.get("supplier_name", "—") or "—")
+        c.drawString(95 * mm, y, q_item.get("quote_number", "—"))
+        c.drawString(135 * mm, y, fmt_mad(q_item.get("amount", 0)))
+        c.drawRightString(width - 20 * mm, y, "OUI" if q_item.get("retenu") else "Non")
+
+    # Décisions
+    y -= 20 * mm
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, y, "Décision Expression de besoin :")
+    c.setFont("Helvetica", 9)
+    dec = pr.get("need_decision", "En attente")
+    comment = pr.get("need_decision_comment", "")
+    c.drawString(20 * mm, y - 6 * mm, f"Décision : {dec.upper()} {f'({comment})' if comment else ''}")
+
+    draw_footer(c)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+def render_accounting_report_pdf(summary: dict) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    
+    draw_header(c, "SYNTHÈSE COMPTABLE & FINANCIÈRE")
+    
+    y = height - 55 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "Indicateurs Clés (KPIs)")
+    
+    y -= 10 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(20 * mm, y, "Trésorerie nette :")
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(65 * mm, y, fmt_mad(summary.get("net_treasury", 0)))
+    
+    y -= 8 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(20 * mm, y, "Recettes encaissées :")
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(65 * mm, y, fmt_mad(summary.get("total_revenues_received", 0)))
+    
+    y -= 8 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(20 * mm, y, "Total sorties (Achats + Dépenses) :")
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(65 * mm, y, fmt_mad(summary.get("total_outflow", 0)))
+    
+    y -= 8 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(20 * mm, y, "Factures clients impayées :")
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(65 * mm, y, fmt_mad(summary.get("unpaid_invoices", 0)))
+
+    # Outflow by category
+    y -= 18 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "Répartition des Sorties par Catégorie")
+    
+    y -= 8 * mm
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Catégorie")
+    c.drawRightString(width - 20 * mm, y, "Montant")
+    c.setLineWidth(0.5)
+    c.line(20 * mm, y - 2 * mm, width - 20 * mm, y - 2 * mm)
+    
+    c.setFont("Helvetica", 9)
+    for cat in (summary.get("expenses_by_category") or [])[:8]:
+        y -= 6 * mm
+        c.drawString(20 * mm, y, cat.get("name", "—"))
+        c.drawRightString(width - 20 * mm, y, fmt_mad(cat.get("value", 0)))
+
+    draw_footer(c)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
