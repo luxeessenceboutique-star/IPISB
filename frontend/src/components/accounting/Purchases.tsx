@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, ShoppingCart, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, ShoppingCart, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Check, Pencil } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -33,6 +33,9 @@ type Purchase = {
   payment_status: "pending" | "partially_paid" | "paid";
   payment_method: string | null;
   notes: string | null;
+  purchase_request_id: string | null;
+  valide_responsable_at: string | null;
+  valide_comptable_at: string | null;
 };
 type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
 
@@ -184,6 +187,31 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
   const [uploadKind, setUploadKind] = useState("quotation");
   const [uploading, setUploading] = useState(false);
 
+  // Phase 3 states for receptions
+  const [receptions, setReceptions] = useState<any[]>([]);
+  const [loadingReceptions, setLoadingReceptions] = useState(true);
+  const [showAddReception, setShowAddReception] = useState(false);
+  const [recForm, setRecForm] = useState({
+    received_quantity: "1",
+    quality_status: "conforme",
+    comment: "",
+    qhse_checked: false,
+    inclure_rapport_comptable: false,
+    validation_cg: false,
+  });
+  const [savingReception, setSavingReception] = useState(false);
+
+  // Édition QHSE d'une réception existante
+  const [editingRecId, setEditingRecId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    quality_status: "conforme",
+    comment: "",
+    qhse_checked: false,
+    validation_cg: false,
+    inclure_rapport_comptable: false,
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
   async function loadAttachments() {
     setLoading(true);
     try {
@@ -196,7 +224,22 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
     }
   }
 
-  useEffect(() => { loadAttachments(); }, [purchase.id]);
+  async function loadReceptions() {
+    setLoadingReceptions(true);
+    try {
+      const res = await api.get(`/api/accounting/receptions?purchase_id=${purchase.id}`);
+      setReceptions(res.items ?? []);
+    } catch {
+      setReceptions([]);
+    } finally {
+      setLoadingReceptions(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAttachments();
+    loadReceptions();
+  }, [purchase.id]);
 
   async function uploadFile(file: File) {
     if (file.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
@@ -252,12 +295,105 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
     }
   }
 
+  async function handleSaveReception() {
+    const qty = parseFloat(recForm.received_quantity);
+    if (isNaN(qty) || qty <= 0) { toast.error("La quantité reçue doit être supérieure à zéro."); return; }
+    setSavingReception(true);
+    try {
+      await api.post("/api/accounting/receptions", {
+        purchase_id: purchase.id,
+        received_quantity: qty,
+        quality_status: recForm.quality_status,
+        comment: recForm.comment || null,
+        qhse_checked: recForm.qhse_checked,
+        inclure_rapport_comptable: recForm.inclure_rapport_comptable,
+        validation_cg: recForm.validation_cg,
+      });
+      toast.success("Réception enregistrée !");
+      setShowAddReception(false);
+      setRecForm({
+        received_quantity: "1",
+        quality_status: "conforme",
+        comment: "",
+        qhse_checked: false,
+        inclure_rapport_comptable: false,
+        validation_cg: false,
+      });
+      loadReceptions();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'enregistrement.");
+    } finally {
+      setSavingReception(false);
+    }
+  }
+
+  function startEditReception(r: any) {
+    setEditingRecId(r.id);
+    setEditForm({
+      quality_status: r.quality_status ?? "conforme",
+      comment: r.comment ?? "",
+      qhse_checked: !!r.qhse_checked,
+      validation_cg: !!r.validation_cg,
+      inclure_rapport_comptable: !!r.inclure_rapport_comptable,
+    });
+  }
+
+  async function handleUpdateReception() {
+    if (!editingRecId) return;
+    setSavingEdit(true);
+    try {
+      await api.patch(`/api/accounting/receptions/${editingRecId}`, {
+        quality_status: editForm.quality_status,
+        comment: editForm.comment,
+        qhse_checked: editForm.qhse_checked,
+        validation_cg: editForm.validation_cg,
+        inclure_rapport_comptable: editForm.inclure_rapport_comptable,
+      });
+      toast.success("Réception mise à jour.");
+      setEditingRecId(null);
+      loadReceptions();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la mise à jour.");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteReception(id: string) {
+    if (!window.confirm("Supprimer cette réception ?")) return;
+    try {
+      await api.delete(`/api/accounting/receptions/${id}`);
+      toast.success("Réception supprimée.");
+      loadReceptions();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  async function downloadPO() {
+    try {
+      await api.download(`/api/accounting/purchases/${purchase.id}/pdf`, `Bon_de_commande_${(purchase as any).purchase_number ?? "CMD"}.pdf`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du téléchargement.");
+    }
+  }
+
   return (
     <div className="dash-card" style={{ flex: "1 1 340px", minWidth: 0, padding: "20px 22px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
-          <div style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 10.5, color: PAL.muted }}>{purchase.purchase_number}</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink }}>{purchase.title}</div>
+          <div style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 10.5, color: PAL.muted, display: "flex", alignItems: "center", gap: 8 }}>
+            {purchase.purchase_number}
+            {purchase.valide_comptable_at && (
+              <button onClick={downloadPO} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "2px 6px", fontSize: 10 }}>
+                Bon de commande PDF
+              </button>
+            )}
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink, marginTop: 4 }}>{purchase.title}</div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button onClick={removePurchase} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
@@ -275,9 +411,142 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         <Row label="Quantité × Prix" value={`${purchase.quantity} × ${fmtMAD(purchase.unit_price)}`} />
         <Row label="Total TTC" value={fmtMAD(purchase.total_incl_vat)} />
         <Row label="Statut" value={STATUS_LABEL[purchase.payment_status]} />
+        {purchase.purchase_request_id && (
+          <>
+            <Row label="Validation responsable" value={purchase.valide_responsable_at ? new Date(purchase.valide_responsable_at).toLocaleDateString("fr-FR") : "En attente"} />
+            <Row label="Validation comptable" value={purchase.valide_comptable_at ? new Date(purchase.valide_comptable_at).toLocaleDateString("fr-FR") : "En attente"} />
+          </>
+        )}
       </div>
 
       <div style={{ height: 1, background: PAL.line, margin: "4px 0 16px" }} />
+
+      {/* Receptions Section (Phase 3) */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>
+          Réceptions & QHSE
+        </div>
+        {purchase.valide_comptable_at && !showAddReception && (
+          <button onClick={() => setShowAddReception(true)} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "4px 8px", fontSize: 11 }}>
+            <Plus size={11} /> Réceptionner
+          </button>
+        )}
+      </div>
+
+      {showAddReception && (
+        <div style={{ background: "var(--pal-pale)", padding: 12, borderRadius: 8, marginBottom: 12, fontSize: 12.5 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+            <div>
+              <label style={{ fontSize: 10.5, color: PAL.muted }}>Qté Reçue</label>
+              <input type="number" step="any" value={recForm.received_quantity} onChange={e => setRecForm(rf => ({ ...rf, received_quantity: e.target.value }))} className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10.5, color: PAL.muted }}>Conformité</label>
+              <select value={recForm.quality_status} onChange={e => setRecForm(rf => ({ ...rf, quality_status: e.target.value }))} className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6 }}>
+                <option value="conforme">Conforme</option>
+                <option value="non_conforme_partiel">Non Conforme Partiel</option>
+                <option value="non_conforme_total">Non Conforme Total</option>
+                <option value="retourne">Retourné</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ fontSize: 10.5, color: PAL.muted }}>Note / Commentaire qualité</label>
+            <textarea value={recForm.comment} onChange={e => setRecForm(rf => ({ ...rf, comment: e.target.value }))} rows={2} placeholder="Observations..." className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6, resize: "none" }} />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+              <input type="checkbox" checked={recForm.qhse_checked} onChange={e => setRecForm(rf => ({ ...rf, qhse_checked: e.target.checked }))} />
+              Contrôle QHSE effectué
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+              <input type="checkbox" checked={recForm.validation_cg} onChange={e => setRecForm(rf => ({ ...rf, validation_cg: e.target.checked }))} />
+              Validation CG (Conditions Générales)
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+              <input type="checkbox" checked={recForm.inclure_rapport_comptable} onChange={e => setRecForm(rf => ({ ...rf, inclure_rapport_comptable: e.target.checked }))} />
+              Inclure au rapport comptable
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+            <button onClick={() => setShowAddReception(false)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "4px 8px" }}>Annuler</button>
+            <button disabled={savingReception} onClick={handleSaveReception} className="btn-c btn-c-sm btn-c-primary" style={{ padding: "4px 12px" }}>Enregistrer</button>
+          </div>
+        </div>
+      )}
+
+      {loadingReceptions ? (
+        <div className="shimmer" style={{ height: 30, borderRadius: 8, marginBottom: 12 }} />
+      ) : receptions.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "8px 0", color: PAL.muted, fontSize: 12.5, marginBottom: 12 }}>Aucune réception enregistrée.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+          {receptions.map(r => (
+            <div key={r.id} style={{ padding: 8, borderRadius: 8, border: `1px solid ${PAL.line}`, background: "var(--pal-pale)", fontSize: 12 }}>
+              {editingRecId === r.id ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 10.5, color: PAL.muted }}>Conformité</label>
+                    <select value={editForm.quality_status} onChange={e => setEditForm(f => ({ ...f, quality_status: e.target.value }))} className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6 }}>
+                      <option value="conforme">Conforme</option>
+                      <option value="non_conforme_partiel">Non Conforme Partiel</option>
+                      <option value="non_conforme_total">Non Conforme Total</option>
+                      <option value="retourne">Retourné</option>
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                      <input type="checkbox" checked={editForm.qhse_checked} onChange={e => setEditForm(f => ({ ...f, qhse_checked: e.target.checked }))} />
+                      Contrôle QHSE effectué
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                      <input type="checkbox" checked={editForm.validation_cg} onChange={e => setEditForm(f => ({ ...f, validation_cg: e.target.checked }))} />
+                      Validation CG (Conditions Générales)
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                      <input type="checkbox" checked={editForm.inclure_rapport_comptable} onChange={e => setEditForm(f => ({ ...f, inclure_rapport_comptable: e.target.checked }))} />
+                      Inclure au rapport comptable
+                    </label>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10.5, color: PAL.muted }}>Note / Commentaire qualité</label>
+                    <textarea value={editForm.comment} onChange={e => setEditForm(f => ({ ...f, comment: e.target.value }))} rows={2} placeholder="Observations..." className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6, resize: "none" }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <button onClick={() => setEditingRecId(null)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "4px 8px" }}>Annuler</button>
+                    <button disabled={savingEdit} onClick={handleUpdateReception} className="btn-c btn-c-sm btn-c-primary" style={{ padding: "4px 12px" }}>Enregistrer</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, color: PAL.ink }}>
+                    <span>Reçu : {r.received_quantity} u</span>
+                    <span style={{ fontSize: 11, color: "var(--pal-primary)" }}>{r.quality_status.replace(/_/g, " ").toUpperCase()}</span>
+                  </div>
+                  <div style={{ color: PAL.muted, fontSize: 11, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
+                    <span>{new Date(r.received_at).toLocaleDateString("fr-FR")}</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {r.qhse_checked && <span title="QHSE OK">✓ QHSE</span>}
+                      {r.validation_cg && <span title="CG OK">✓ CG</span>}
+                      {r.inclure_rapport_comptable && <span title="Inclus au rapport comptable">✓ Rapport</span>}
+                      <button onClick={() => startEditReception(r)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, padding: 0 }} title="Modifier">
+                        <Pencil size={12} />
+                      </button>
+                      <button onClick={() => handleDeleteReception(r.id)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", padding: 0 }} title="Supprimer">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  {r.comment && <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 4, color: PAL.ink }}>Note : {r.comment}</div>}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 10 }}>
         Documents
@@ -446,6 +715,13 @@ export function AccountingPurchases() {
                   <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>
                     {fmtMAD(p.total_incl_vat)}
                   </span>
+                  {p.purchase_request_id && (
+                    p.valide_comptable_at
+                      ? <span className="chip-c chip-c-green" title="Commande validée (responsable + comptable)">Commande validée</span>
+                      : p.valide_responsable_at
+                        ? <span className="chip-c chip-c-blue" title="Validée responsable — en attente comptable">Attente comptable</span>
+                        : <span className="chip-c chip-c-amber" title="Commande issue d'une DA — à valider">À valider</span>
+                  )}
                   <span className={`chip-c ${STATUS_TONE[p.payment_status]}`}>{STATUS_LABEL[p.payment_status]}</span>
                 </div>
               ))}

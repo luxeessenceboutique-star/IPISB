@@ -1,12 +1,21 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { LayoutGrid, ShoppingCart, Building2, Tags } from "lucide-react";
+import { LayoutGrid, ShoppingCart, Building2, Tags, TrendingUp, Receipt, FileText, PiggyBank, BarChart3, ClipboardList, History, CreditCard, Package } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 import { AccountingOverview } from "@/components/accounting/Overview";
+import { AccountingAnalytics } from "@/components/accounting/Analytics";
 import { AccountingPurchases } from "@/components/accounting/Purchases";
+import { AccountingPurchaseRequests } from "@/components/accounting/PurchaseRequests";
 import { AccountingSuppliers } from "@/components/accounting/Suppliers";
 import { AccountingCategories } from "@/components/accounting/Categories";
+import { AccountingRevenues } from "@/components/accounting/Revenues";
+import { AccountingExpenses } from "@/components/accounting/Expenses";
+import { AccountingInvoices } from "@/components/accounting/Invoices";
+import { AccountingBudgets } from "@/components/accounting/Budgets";
+import { AccountingJournal } from "@/components/accounting/Journal";
+import { AccountingPayments } from "@/components/accounting/Payments";
+import { AccountingInventory } from "@/components/accounting/Inventory";
 
 export const Route = createFileRoute("/dashboard/accounting")({
   beforeLoad: async () => {
@@ -24,13 +33,22 @@ export const Route = createFileRoute("/dashboard/accounting")({
 
 const sans = '"Manrope", system-ui, sans-serif';
 
-type Tab = "overview" | "purchases" | "suppliers" | "categories";
+type Tab = "overview" | "analytics" | "revenues" | "expenses" | "invoices" | "purchase_requests" | "purchases" | "payments" | "inventory" | "budgets" | "suppliers" | "categories" | "journal";
 
 const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
-  { key: "overview",  label: "Vue d'ensemble", icon: LayoutGrid   },
-  { key: "purchases", label: "Achats",         icon: ShoppingCart },
-  { key: "suppliers", label: "Fournisseurs",   icon: Building2    },
-  { key: "categories",label: "Catégories",     icon: Tags         },
+  { key: "overview",          label: "Vue d'ensemble",   icon: LayoutGrid    },
+  { key: "analytics",         label: "Analytique",       icon: BarChart3     },
+  { key: "revenues",          label: "Recettes",         icon: TrendingUp    },
+  { key: "expenses",          label: "Dépenses",         icon: Receipt       },
+  { key: "invoices",          label: "Factures",         icon: FileText      },
+  { key: "purchase_requests", label: "Demandes d'achat", icon: ClipboardList },
+  { key: "purchases",         label: "Achats",           icon: ShoppingCart  },
+  { key: "payments",          label: "Paiements",        icon: CreditCard    },
+  { key: "inventory",         label: "Inventaire",       icon: Package       },
+  { key: "budgets",           label: "Budgets",          icon: PiggyBank     },
+  { key: "suppliers",         label: "Fournisseurs",     icon: Building2     },
+  { key: "categories",        label: "Catégories",       icon: Tags          },
+  { key: "journal",           label: "Journal",          icon: History       },
 ];
 
 function AccountingPage() {
@@ -69,10 +87,20 @@ function AccountingPage() {
         })}
       </div>
 
-      {tab === "overview"   && <AccountingOverview />}
-      {tab === "purchases"  && <AccountingPurchases />}
-      {tab === "suppliers"  && <AccountingSuppliers />}
-      {tab === "categories" && <AccountingCategories />}
+      {tab === "overview"          && <AccountingOverview />}
+      {tab === "analytics"         && <AccountingAnalytics />}
+      {tab === "revenues"          && <AccountingRevenues />}
+      {tab === "expenses"          && <AccountingExpenses />}
+      {tab === "invoices"          && <AccountingInvoices />}
+      {tab === "purchase_requests" && <AccountingPurchaseRequests />}
+      {tab === "purchases"         && <AccountingPurchases />}
+      {tab === "payments"          && <AccountingPayments />}
+      {tab === "inventory"         && <AccountingInventory />}
+      {tab === "budgets"           && <AccountingBudgets />}
+      {tab === "suppliers"         && <AccountingSuppliers />}
+      {tab === "categories"        && <AccountingCategories />}
+      {tab === "journal"           && <AccountingJournal />}
     </div>
   );
 }
+

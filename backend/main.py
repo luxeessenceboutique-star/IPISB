@@ -9,6 +9,10 @@ from routers import chatbot, resources, classes
 from routers import students, documents, schedules, announcements
 from routers import accounting_categories, accounting_suppliers, accounting_purchases
 from routers import document_templates
+from routers import accounting_invoices, accounting_expenses, accounting_revenues
+from routers import accounting_budgets, accounting_dashboard, accounting_analytics
+from routers import accounting_purchase_requests, accounting_quotations
+from routers import accounting_receptions, accounting_payments, accounting_inventory
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -67,6 +71,17 @@ app.include_router(accounting_categories.router, prefix="/api")
 app.include_router(accounting_suppliers.router, prefix="/api")
 app.include_router(accounting_purchases.router, prefix="/api")
 app.include_router(document_templates.router, prefix="/api")
+app.include_router(accounting_invoices.router, prefix="/api")
+app.include_router(accounting_expenses.router, prefix="/api")
+app.include_router(accounting_revenues.router, prefix="/api")
+app.include_router(accounting_budgets.router, prefix="/api")
+app.include_router(accounting_dashboard.router, prefix="/api")
+app.include_router(accounting_analytics.router, prefix="/api")
+app.include_router(accounting_purchase_requests.router, prefix="/api")
+app.include_router(accounting_quotations.router, prefix="/api")
+app.include_router(accounting_receptions.router, prefix="/api")
+app.include_router(accounting_payments.router, prefix="/api")
+app.include_router(accounting_inventory.router, prefix="/api")
 
 
 @app.get("/health")

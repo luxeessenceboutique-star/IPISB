@@ -1,0 +1,492 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
+import { Plus, Search, TrendingUp, Trash2, ChevronLeft, ChevronRight, Pencil, Upload, Download, FileText, X } from "lucide-react";
+import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { fmtMAD } from "./Overview";
+
+const PAL = {
+  ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
+};
+const sans = '"Manrope", system-ui, sans-serif';
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
+const PAYMENT_METHODS = ["Virement", "Chèque", "Espèces", "Carte bancaire", "Prélèvement"];
+
+const TYPE_LABEL: Record<string, string> = {
+  tuition: "Scolarité", subsidy: "Subvention", donation: "Don", service: "Prestation", other: "Autre",
+};
+const STATUS_LABEL: Record<string, string> = { expected: "Attendu", received: "Encaissé", cancelled: "Annulé" };
+const STATUS_TONE: Record<string, string> = { expected: "chip-c-amber", received: "chip-c-green", cancelled: "chip-c-red" };
+
+type Category = { id: string; name: string };
+type Revenue = {
+  id: string;
+  revenue_number: string;
+  title: string;
+  revenue_type: string;
+  category_id: string | null;
+  category_name: string | null;
+  amount: number;
+  vat_percent: number;
+  total_incl_vat: number;
+  payment_method: string | null;
+  status: string;
+  revenue_date: string;
+  description: string | null;
+  class_id: string | null;
+  student_id: string | null;
+};
+type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
+type ClassOpt = { id: string; name: string };
+type StudentOpt = { id: string; full_name: string | null; email: string };
+
+const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
+const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
+const ATTACHMENT_KINDS = [
+  { value: "invoice", label: "Facture" },
+  { value: "receipt", label: "Reçu" },
+  { value: "document", label: "Autre document" },
+];
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+}
+
+function FormModal({ categories, classes, editing, onClose, onSaved }: {
+  categories: Category[]; classes: ClassOpt[]; editing: Revenue | null; onClose: () => void; onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    title: editing?.title ?? "",
+    revenue_type: editing?.revenue_type ?? "tuition",
+    category_id: editing?.category_id ?? "",
+    amount: editing ? String(editing.amount) : "0",
+    vat_percent: editing ? String(editing.vat_percent) : "0",
+    payment_method: editing?.payment_method ?? "",
+    status: editing?.status ?? "received",
+    revenue_date: editing?.revenue_date ?? new Date().toISOString().slice(0, 10),
+    description: editing?.description ?? "",
+    class_id: editing?.class_id ?? "",
+    student_id: editing?.student_id ?? "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [students, setStudents] = useState<StudentOpt[]>([]);
+
+  // Load the promo's students whenever a promo is picked (for the "élève" link).
+  useEffect(() => {
+    if (!form.class_id) { setStudents([]); return; }
+    api.get(`/api/classes/${form.class_id}/students`).then(setStudents).catch(() => setStudents([]));
+  }, [form.class_id]);
+
+  const amount = parseFloat(form.amount) || 0;
+  const vat = parseFloat(form.vat_percent) || 0;
+  const ttc = amount * (1 + vat / 100);
+
+  async function submit() {
+    if (!form.title.trim()) { toast.error("Le libellé est requis."); return; }
+    setBusy(true);
+    const payload = {
+      title: form.title,
+      revenue_type: form.revenue_type,
+      category_id: form.category_id || null,
+      amount, vat_percent: vat,
+      payment_method: form.payment_method || null,
+      status: form.status,
+      revenue_date: form.revenue_date,
+      description: form.description || null,
+      class_id: form.class_id || null,
+      student_id: form.class_id ? (form.student_id || null) : null,
+    };
+    try {
+      if (editing) await api.patch(`/api/accounting/revenues/${editing.id}`, payload);
+      else await api.post("/api/accounting/revenues", payload);
+      toast.success(editing ? "Recette modifiée !" : "Recette créée !");
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'enregistrement.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 500, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
+        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
+          {editing ? "Modifier la recette" : "Nouvelle recette"}
+        </h2>
+
+        <label style={labelStyle}>Libellé *</label>
+        <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="u-input" style={fieldStyle} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Type</label>
+            <select value={form.revenue_type} onChange={e => setForm(f => ({ ...f, revenue_type: e.target.value }))} className="u-input" style={fieldStyle}>
+              {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Catégorie</label>
+            <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))} className="u-input" style={fieldStyle}>
+              <option value="">— Aucune —</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Montant HT (MAD)</label>
+            <input type="number" min="0" step="any" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>TVA (%)</label>
+            <input type="number" min="0" step="any" value={form.vat_percent} onChange={e => setForm(f => ({ ...f, vat_percent: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 13, color: PAL.muted, marginBottom: 16, padding: "10px 14px", background: "var(--pal-pale)", borderRadius: 10 }}>
+          <span>Total TTC : <strong style={{ color: PAL.ink }}>{fmtMAD(ttc)}</strong></span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Date</label>
+            <input type="date" value={form.revenue_date} onChange={e => setForm(f => ({ ...f, revenue_date: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Statut</label>
+            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="u-input" style={fieldStyle}>
+              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <label style={labelStyle}>Mode d'encaissement</label>
+        <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
+          <option value="">— Non précisé —</option>
+          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, margin: "4px 0 10px" }}>
+          Rattachement formation (analytique)
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Promo</label>
+            <select value={form.class_id} onChange={e => setForm(f => ({ ...f, class_id: e.target.value, student_id: "" }))} className="u-input" style={fieldStyle}>
+              <option value="">— Aucune —</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Élève</label>
+            <select value={form.student_id} onChange={e => setForm(f => ({ ...f, student_id: e.target.value }))} disabled={!form.class_id} className="u-input" style={{ ...fieldStyle, opacity: form.class_id ? 1 : 0.5 }}>
+              <option value="">— Aucun —</option>
+              {students.map(s => <option key={s.id} value={s.id}>{s.full_name || s.email}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <label style={labelStyle}>Description</label>
+        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
+          <button onClick={submit} disabled={busy} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "10px 24px", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>
+            {busy ? "Enregistrement…" : editing ? "Enregistrer" : "Créer la recette"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailPanel({ revenue, onClose, onChanged }: { revenue: Revenue; onClose: () => void; onChanged: () => void }) {
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploadKind, setUploadKind] = useState("invoice");
+  const [uploading, setUploading] = useState(false);
+
+  async function loadAttachments() {
+    setLoading(true);
+    try {
+      const detail = await api.get(`/api/accounting/revenues/${revenue.id}`);
+      setAttachments(detail.attachments ?? []);
+    } catch {
+      setAttachments([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadAttachments(); }, [revenue.id]);
+
+  async function uploadFile(file: File) {
+    if (file.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", uploadKind);
+      const res = await fetch(`${BASE}/api/accounting/revenues/${revenue.id}/attachments`, {
+        method: "POST",
+        headers: await authHeaders(),
+        body: fd,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success("Document ajouté.");
+      loadAttachments();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'envoi.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function download(a: Attachment) {
+    try {
+      const res = await api.get(`/api/accounting/revenues/attachments/${a.id}/download`);
+      if (res.signed_url) window.open(res.signed_url, "_blank");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du téléchargement.");
+    }
+  }
+
+  async function removeAttachment(a: Attachment) {
+    if (!window.confirm(`Supprimer « ${a.file_name} » ?`)) return;
+    try {
+      await api.delete(`/api/accounting/revenues/attachments/${a.id}`);
+      toast.success("Document supprimé.");
+      loadAttachments();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  async function removeRevenue() {
+    if (!window.confirm(`Supprimer la recette « ${revenue.title} » et ses documents ?`)) return;
+    try {
+      await api.delete(`/api/accounting/revenues/${revenue.id}`);
+      toast.success("Recette supprimée.");
+      onChanged();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  return (
+    <div className="dash-card" style={{ flex: "1 1 340px", minWidth: 0, padding: "20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink }}>{revenue.title}</div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={removeRevenue} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
+            <Trash2 size={15} strokeWidth={1.7} />
+          </button>
+          <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}>
+            <X size={18} strokeWidth={1.7} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 16 }}>
+        <Row label="Type" value={TYPE_LABEL[revenue.revenue_type] ?? revenue.revenue_type} />
+        <Row label="Catégorie" value={revenue.category_name} />
+        <Row label="Montant TTC" value={fmtMAD(revenue.total_incl_vat)} />
+        <Row label="Statut" value={STATUS_LABEL[revenue.status]} />
+        <Row label="Date" value={new Date(revenue.revenue_date).toLocaleDateString("fr-FR")} />
+      </div>
+
+      <div style={{ height: 1, background: PAL.line, margin: "4px 0 16px" }} />
+
+      <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 10 }}>
+        Documents
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <select value={uploadKind} onChange={e => setUploadKind(e.target.value)} className="u-input" style={{ padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, background: PAL.paper }}>
+          {ATTACHMENT_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+        </select>
+        <label className="btn-c btn-c-sm btn-c-ghost" style={{ cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? 0.6 : 1 }}>
+          <Upload size={13} strokeWidth={1.7} />
+          {uploading ? "Envoi…" : "Ajouter (PDF/JPG/PNG, 20 Mo max)"}
+          <input
+            type="file"
+            accept="application/pdf,image/jpeg,image/png"
+            style={{ display: "none" }}
+            disabled={uploading}
+            onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+          />
+        </label>
+      </div>
+
+      {loading ? (
+        <div className="shimmer" style={{ height: 40, borderRadius: 8 }} />
+      ) : attachments.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "16px 0", color: PAL.muted, fontSize: 13 }}>Aucun document.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {attachments.map(a => (
+            <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: `1px solid ${PAL.line}`, background: "var(--pal-pale)" }}>
+              <FileText size={14} strokeWidth={1.7} style={{ color: "var(--pal-primary)", flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: PAL.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{a.file_name}</div>
+                <div style={{ fontSize: 10.5, color: PAL.muted }}>{ATTACHMENT_KINDS.find(k => k.value === a.kind)?.label ?? a.kind} · {(a.file_size / 1024).toFixed(0)} Ko</div>
+              </div>
+              <button onClick={() => download(a)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-primary)" }} title="Télécharger">
+                <Download size={14} strokeWidth={1.7} />
+              </button>
+              <button onClick={() => removeAttachment(a)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
+                <Trash2 size={13} strokeWidth={1.7} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ color: "var(--pal-muted)" }}>{label}</span>
+      <span style={{ color: "var(--pal-ink)", fontWeight: 600, textAlign: "right" }}>{value || "—"}</span>
+    </div>
+  );
+}
+
+export function AccountingRevenues() {
+  const [revenues, setRevenues] = useState<Revenue[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [classes, setClasses] = useState<ClassOpt[]>([]);
+  const [modal, setModal] = useState<{ open: boolean; editing: Revenue | null }>({ open: false, editing: null });
+  const [selected, setSelected] = useState<Revenue | null>(null);
+
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+      if (q) params.set("q", q);
+      if (statusFilter) params.set("status", statusFilter);
+      if (typeFilter) params.set("revenue_type", typeFilter);
+      const res = await api.get(`/api/accounting/revenues?${params.toString()}`);
+      setRevenues(res.items ?? []);
+      setTotal(res.total ?? 0);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du chargement.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(load, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, statusFilter, typeFilter, page]);
+
+  useEffect(() => {
+    api.get("/api/accounting/categories").then(setCategories).catch(() => {});
+    api.get("/api/classes/all").then(setClasses).catch(() => {});
+  }, []);
+
+  async function remove(r: Revenue) {
+    if (!window.confirm(`Supprimer la recette « ${r.title} » ?`)) return;
+    try {
+      await api.delete(`/api/accounting/revenues/${r.id}`);
+      toast.success("Recette supprimée.");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  return (
+    <div>
+      {modal.open && (
+        <FormModal categories={categories} classes={classes} editing={modal.editing} onClose={() => setModal({ open: false, editing: null })} onSaved={load} />
+      )}
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: "1 1 220px" }}>
+          <Search size={15} strokeWidth={1.7} style={{ position: "absolute", insetInlineStart: 14, top: "50%", transform: "translateY(-50%)", color: PAL.muted }} />
+          <input type="text" value={q} onChange={e => { setPage(1); setQ(e.target.value); }} placeholder="Rechercher une recette…" className="u-input" style={{ width: "100%", padding: "10px 14px 10px 38px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13.5, background: PAL.paper, outline: "none", boxSizing: "border-box" as const }} />
+        </div>
+        <select value={typeFilter} onChange={e => { setPage(1); setTypeFilter(e.target.value); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
+          <option value="">Tous types</option>
+          {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => { setPage(1); setStatusFilter(e.target.value); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
+          <option value="">Tous statuts</option>
+          {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <button type="button" onClick={() => setModal({ open: true, editing: null })} className="btn-c btn-c-primary">
+          <Plus size={15} strokeWidth={1.7} />Nouvelle recette
+        </button>
+      </div>
+
+      <SectionLabel>{total} recette{total !== 1 ? "s" : ""}</SectionLabel>
+
+      {loading ? (
+        <div className="dash-card" style={{ padding: 26 }}>
+          <div className="shimmer" style={{ height: 18, width: 180, borderRadius: 999 }} />
+        </div>
+      ) : revenues.length === 0 ? (
+        <div className="dash-card">
+          <EmptyHint icon={<TrendingUp size={28} strokeWidth={1.7} />} text="Aucune recette trouvée." />
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 360px", minWidth: 0 }}>
+            <div className="dash-card overflow-hidden">
+              {revenues.map(r => (
+                <div key={r.id} className="row-c flex-wrap" onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.id === r.id ? "var(--pal-pale)" : undefined }}>
+                  <span className="flex shrink-0" style={{ color: "var(--pal-good)" }}>
+                    <TrendingUp size={18} strokeWidth={1.7} />
+                  </span>
+                  <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{r.title}</div>
+                    <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
+                      {TYPE_LABEL[r.revenue_type] ?? r.revenue_type}{r.category_name ? ` · ${r.category_name}` : ""} · {new Date(r.revenue_date).toLocaleDateString("fr-FR")}
+                    </div>
+                  </div>
+                  <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(r.total_incl_vat)}</span>
+                  <span className={`chip-c ${STATUS_TONE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
+                  <button onClick={(event) => { event.stopPropagation(); setModal({ open: true, editing: r }); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
+                  <button onClick={(event) => { event.stopPropagation(); remove(r); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 16 }}>
+              <button type="button" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="btn-c btn-c-sm btn-c-ghost" style={{ opacity: page <= 1 ? 0.4 : 1 }}><ChevronLeft size={14} strokeWidth={1.7} /></button>
+              <span style={{ fontFamily: sans, fontSize: 12.5, color: PAL.muted }}>Page {page} / {totalPages}</span>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="btn-c btn-c-sm btn-c-ghost" style={{ opacity: page >= totalPages ? 0.4 : 1 }}><ChevronRight size={14} strokeWidth={1.7} /></button>
+            </div>
+          </div>
+
+          {selected && (
+            <DetailPanel revenue={selected} onClose={() => setSelected(null)} onChanged={load} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -18,13 +18,21 @@ type Supplier = {
   phone: string | null;
   address: string | null;
   tax_number: string | null;
+  legal_form: string | null;
+  rib: string | null;
+  bank: string | null;
+  bank_branch: string | null;
+  payment_terms_days: number | null;
   notes: string | null;
   total_purchases: number;
   total_spent: number;
   last_purchase: string | null;
 };
 
-const emptyForm = { company_name: "", contact_person: "", email: "", phone: "", address: "", tax_number: "", notes: "" };
+const emptyForm = {
+  company_name: "", contact_person: "", email: "", phone: "", address: "", tax_number: "",
+  legal_form: "", rib: "", bank: "", bank_branch: "", payment_terms_days: "", notes: "",
+};
 
 function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState(emptyForm);
@@ -35,12 +43,17 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
     setBusy(true);
     try {
       await api.post("/api/accounting/suppliers", {
-        ...form,
+        company_name: form.company_name,
         contact_person: form.contact_person || null,
         email: form.email || null,
         phone: form.phone || null,
         address: form.address || null,
         tax_number: form.tax_number || null,
+        legal_form: form.legal_form || null,
+        rib: form.rib || null,
+        bank: form.bank || null,
+        bank_branch: form.bank_branch || null,
+        payment_terms_days: form.payment_terms_days ? parseInt(form.payment_terms_days, 10) : null,
         notes: form.notes || null,
       });
       toast.success("Fournisseur créé !");
@@ -83,8 +96,34 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
         <label style={labelStyle}>Adresse</label>
         <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="u-input" style={fieldStyle} />
 
-        <label style={labelStyle}>Numéro fiscal (IF/ICE)</label>
-        <input type="text" value={form.tax_number} onChange={e => setForm(f => ({ ...f, tax_number: e.target.value }))} className="u-input" style={fieldStyle} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Numéro fiscal (IF/ICE)</label>
+            <input type="text" value={form.tax_number} onChange={e => setForm(f => ({ ...f, tax_number: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Forme juridique</label>
+            <input type="text" value={form.legal_form} onChange={e => setForm(f => ({ ...f, legal_form: e.target.value }))} placeholder="SARL, SA, auto-entrepreneur…" className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>RIB</label>
+        <input type="text" value={form.rib} onChange={e => setForm(f => ({ ...f, rib: e.target.value }))} placeholder="24 chiffres" className="u-input" style={fieldStyle} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Banque</label>
+            <input type="text" value={form.bank} onChange={e => setForm(f => ({ ...f, bank: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Agence</label>
+            <input type="text" value={form.bank_branch} onChange={e => setForm(f => ({ ...f, bank_branch: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Délai paiement (j)</label>
+            <input type="number" min="0" step="1" value={form.payment_terms_days} onChange={e => setForm(f => ({ ...f, payment_terms_days: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
 
         <label style={labelStyle}>Notes</label>
         <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
@@ -209,7 +248,20 @@ export function AccountingSuppliers() {
                 <Row label="Téléphone" value={selected.phone} />
                 <Row label="Adresse" value={selected.address} />
                 <Row label="N° fiscal" value={selected.tax_number} />
+                <Row label="Forme juridique" value={selected.legal_form} />
               </div>
+
+              {(selected.rib || selected.bank || selected.bank_branch || selected.payment_terms_days != null) && (
+                <>
+                  <div style={{ height: 1, background: PAL.line, margin: "16px 0" }} />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                    <Row label="RIB" value={selected.rib} />
+                    <Row label="Banque" value={selected.bank} />
+                    <Row label="Agence" value={selected.bank_branch} />
+                    <Row label="Délai paiement" value={selected.payment_terms_days != null ? `${selected.payment_terms_days} j` : null} />
+                  </div>
+                </>
+              )}
 
               <div style={{ height: 1, background: PAL.line, margin: "16px 0" }} />
 

@@ -26,10 +26,31 @@ async function request(method: string, path: string, body?: unknown) {
   return ct.includes("application/json") ? res.json() : null;
 }
 
+// Télécharge un fichier binaire (PDF/CSV) depuis un endpoint protégé.
+// window.open() ne transmet pas le header Authorization → il faut fetch()
+// avec le token puis déclencher le download via un blob.
+async function download(path: string, filename: string) {
+  const res = await fetch(`${BASE}${path}`, { headers: await getHeaders() });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const api = {
   get: (path: string) => request("GET", path),
   post: (path: string, body: unknown) => request("POST", path, body),
   put: (path: string, body?: unknown) => request("PUT", path, body),
   patch: (path: string, body?: unknown) => request("PATCH", path, body),
   delete: (path: string) => request("DELETE", path),
+  download,
 };

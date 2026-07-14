@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form, Response
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import PurchaseCreate, PurchaseUpdate
 from utils.audit import log_audit
 from utils.uploads import validate_and_read
+from utils.pdf_generators import render_purchase_order_pdf
 
 router = APIRouter(prefix="/accounting/purchases", tags=["accounting"])
 
@@ -187,6 +188,65 @@ async def delete_purchase(
     return {"ok": True}
 
 
+# ── Commande : double validation (responsable → comptable) ──────────────────
+
+@router.post("/{purchase_id}/validate-responsable")
+async def validate_responsable(
+    purchase_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    rows = db.from_("purchases").select("id, valide_responsable_at").eq("id", purchase_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Not found")
+    if rows[0].get("valide_responsable_at"):
+        raise HTTPException(400, "Déjà validé par le responsable.")
+    now = datetime.now(timezone.utc).isoformat()
+    res = db.from_("purchases").update(
+        {"valide_responsable_by": user.id, "valide_responsable_at": now}
+    ).eq("id", purchase_id).execute()
+    log_audit(db, user.id, "purchase.validate_responsable", "purchase", purchase_id)
+    return res.data[0]
+
+
+@router.post("/{purchase_id}/validate-comptable")
+async def validate_comptable(
+    purchase_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Seconde validation. Garde-fou : la validation responsable doit précéder.
+    Une fois les deux validations posées, la DA liée passe à 'commande_emise'."""
+    _require_admin(user)
+    rows = (
+        db.from_("purchases")
+        .select("id, valide_responsable_at, valide_comptable_at, purchase_request_id")
+        .eq("id", purchase_id).execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Not found")
+    p = rows[0]
+    if not p.get("valide_responsable_at"):
+        raise HTTPException(400, "La validation du responsable est requise avant celle du comptable.")
+    if p.get("valide_comptable_at"):
+        raise HTTPException(400, "Déjà validé par le comptable.")
+
+    now = datetime.now(timezone.utc).isoformat()
+    res = db.from_("purchases").update(
+        {"valide_comptable_by": user.id, "valide_comptable_at": now}
+    ).eq("id", purchase_id).execute()
+
+    # Les deux validations posées → la commande est émise.
+    pr_id = p.get("purchase_request_id")
+    if pr_id:
+        db.from_("purchase_requests").update({"status": "commande_emise"}).eq("id", pr_id).execute()
+        log_audit(db, user.id, "purchase_request.order_emitted", "purchase_request", pr_id,
+                  {"purchase_id": purchase_id})
+    log_audit(db, user.id, "purchase.validate_comptable", "purchase", purchase_id)
+    return res.data[0]
+
+
 # ── Attachments ────────────────────────────────────────────────────────────
 
 @router.post("/{purchase_id}/attachments")
@@ -297,3 +357,32 @@ async def dashboard_summary(
         "supplier_count": supplier_count,
         "purchase_request_count": total_purchases,
     }
+
+
+@router.get("/{purchase_id}/pdf")
+async def export_purchase_pdf(
+    purchase_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    p_rows = db.from_("purchases").select("*").eq("id", purchase_id).execute().data
+    if not p_rows:
+        raise HTTPException(404, "Achat introuvable")
+    purchase = p_rows[0]
+
+    supplier = {}
+    if purchase.get("supplier_id"):
+        s_rows = db.from_("suppliers").select("*").eq("id", purchase["supplier_id"]).execute().data
+        if s_rows:
+            supplier = s_rows[0]
+
+    pdf_bytes = render_purchase_order_pdf(purchase, supplier)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=Bon_de_commande_{purchase.get('purchase_number', 'CMD')}.pdf"
+        }
+    )
+
