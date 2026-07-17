@@ -8,7 +8,7 @@ from routers import courses, assignments, exams, meetings, agenda, notifications
 from routers import chatbot, resources, classes
 from routers import students, documents, schedules, announcements
 from routers import accounting_categories, accounting_suppliers, accounting_purchases
-from routers import document_templates
+from routers import document_templates, student_files
 from routers import accounting_invoices, accounting_expenses, accounting_revenues
 from routers import accounting_budgets, accounting_dashboard, accounting_analytics
 from routers import accounting_purchase_requests, accounting_quotations
@@ -71,6 +71,7 @@ app.include_router(accounting_categories.router, prefix="/api")
 app.include_router(accounting_suppliers.router, prefix="/api")
 app.include_router(accounting_purchases.router, prefix="/api")
 app.include_router(document_templates.router, prefix="/api")
+app.include_router(student_files.router, prefix="/api")
 app.include_router(accounting_invoices.router, prefix="/api")
 app.include_router(accounting_expenses.router, prefix="/api")
 app.include_router(accounting_revenues.router, prefix="/api")

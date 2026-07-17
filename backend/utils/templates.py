@@ -51,10 +51,14 @@ CONTENT_TYPE_TO_KIND = {
 }
 
 SUPPORTED_FIELDS = {
-    "student_name": "le nom complet de la personne concernée par ce document",
+    "student_name": "le nom complet de la personne concernée (nom ET prénom ensemble)",
+    "last_name": "le nom de famille SEUL, quand le document sépare « Nom » et « Prénom(s) »",
+    "first_name": "le ou les prénoms SEULS, quand ils sont séparés du nom de famille",
     "student_email": "son adresse email",
     "class_name": "sa classe, filière ou promotion",
     "date_of_birth": "sa date de naissance",
+    "place_of_birth": "son lieu de naissance",
+    "city": "la ville où le document est établi/signé (ex. la ville après « Fait à »)",
     "issue_date": "la date d'émission / de délivrance du document",
     "academic_year": "l'année scolaire concernée (ex. 2025-2026)",
     "establishment_name": "le nom de l'établissement scolaire (école, institut, université)",
@@ -64,9 +68,14 @@ SUPPORTED_FIELDS = {
         "PAS une adresse — c'est other_personal"
     ),
     "verification_code": "un code de référence ou de vérification déjà présent sur le document",
+    "cin": "son numéro de carte d'identité nationale (CIN)",
+    "matricule": (
+        "son numéro d'inscription / matricule / numéro d'étudiant attribué par "
+        "l'établissement (ex. numéro Apogée, CNE, code étudiant)"
+    ),
     "other_personal": (
         "toute AUTRE donnée spécifique à l'exemple qui ne correspond à aucun champ "
-        "ci-dessus : numéro d'étudiant/Apogée, CIN, téléphone, niveau d'études, "
+        "ci-dessus : téléphone, niveau d'études, "
         "faculté/département, noms des signataires, et pour un stage TOUTES les "
         "informations du stage (nom de l'entreprise, numéro d'immatriculation/RC, "
         "adresse de l'entreprise, dates et durée du stage, sujet du stage, "
@@ -77,14 +86,21 @@ SUPPORTED_FIELDS = {
 
 FIELD_LABELS = {
     "student_name": "Nom complet",
+    "last_name": "Nom de famille",
+    "first_name": "Prénom",
     "student_email": "Email",
     "class_name": "Classe / filière",
     "date_of_birth": "Date de naissance",
+    "place_of_birth": "Lieu de naissance",
+    "city": "Ville",
+    "establishment_phone": "Téléphone de l'établissement",
     "issue_date": "Date d'émission",
     "academic_year": "Année scolaire",
     "establishment_name": "Nom de l'établissement",
     "establishment_address": "Adresse de l'établissement",
     "verification_code": "Code de vérification",
+    "cin": "N° CIN",
+    "matricule": "Matricule",
     "other_personal": "Donnée de l'exemple (effacée)",
     "photo_zone": "Photo du stagiaire",
     "qr_zone": "QR de vérification",
@@ -164,6 +180,97 @@ def _extract_pdf_text(file_bytes: bytes) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Jinja-style placeholder templates — {{ variable }} markers mean the
+# template is machine-made, so detection can be fully deterministic: map
+# each variable name to a field, erase anything we can't map. No LLM at
+# all, and text outside the placeholders is guaranteed untouched.
+# ─────────────────────────────────────────────────────────────────────────
+
+_JINJA_RE = re.compile(r"\{\{\s*([A-Za-z0-9_]+)\s*\}\}")
+
+_JINJA_EXACT = {
+    "nom_etudiant": "last_name",
+    "prenom_etudiant": "first_name",
+    "nom_prenom": "student_name",
+    "nom_complet": "student_name",
+    "date_naissance": "date_of_birth",
+    "lieu_naissance": "place_of_birth",
+    "cin_etudiant": "cin",
+    "carte_nationale": "cin",
+    "code_massar": "matricule",
+    "cne": "matricule",
+    "numero_etudiant": "matricule",
+    "annee_universitaire": "academic_year",
+    "annee_scolaire": "academic_year",
+    "filiere_etudes": "class_name",
+    "email_etudiant": "student_email",
+    "date_edition": "issue_date",
+    "date_emission": "issue_date",
+    "ville_edition": "city",
+    "fait_a": "city",
+    "nom_etablissement": "establishment_name",
+    "adresse_etablissement": "establishment_address",
+    "telephone_etablissement": "establishment_phone",
+    "code_verification": "verification_code",
+}
+
+
+def _jinja_field_key(var: str) -> str:
+    v = var.lower()
+    if v in _JINJA_EXACT:
+        return _JINJA_EXACT[v]
+    # Fuzzy fallbacks for template authors' naming variations. Order matters:
+    # the most specific signal wins (e.g. "lieu_de_naissance" is naissance
+    # AND lieu — place beats date).
+    if "massar" in v or "cne" in v or "apogee" in v or "matricule" in v:
+        return "matricule"
+    if "cin" in v:
+        return "cin"
+    if "naissance" in v:
+        return "place_of_birth" if "lieu" in v else "date_of_birth"
+    if "annee" in v:
+        return "academic_year"
+    if "filiere" in v or "classe" in v:
+        return "class_name"
+    if "email" in v or "mail" in v:
+        return "student_email"
+    if "ville" in v:
+        return "city"
+    if "adresse" in v:
+        return "establishment_address" if "etablissement" in v else "other_personal"
+    if "telephone" in v or "tel" in v:
+        return "establishment_phone" if "etablissement" in v else "other_personal"
+    if "date" in v:
+        return "issue_date"
+    if "prenom" in v:
+        return "first_name"
+    if "nom" in v:
+        return "establishment_name" if "etablissement" in v else "last_name"
+    # Unknown variable (autorisation number, signataire…) — data we don't
+    # hold, erased to a visible blank rather than leaving "{{ ... }}".
+    return "other_personal"
+
+
+def _detect_fields_jinja(text: str) -> list[dict] | None:
+    """[{'key', 'mode', 'anchor_text'}, …] for every {{ placeholder }} in the
+    text, or None if the document has none (→ LLM detection instead)."""
+    matches = list(_JINJA_RE.finditer(text))
+    if not matches:
+        return None
+    fields, seen = [], set()
+    for m in matches:
+        anchor = m.group(0)
+        if anchor in seen:
+            continue  # replace-all handles repeats of the same placeholder
+        seen.add(anchor)
+        # "jinja": the anchor is placeholder markup (often monospace/colored),
+        # so generation must NOT imitate its typography — see _sample_font.
+        fields.append({"key": _jinja_field_key(m.group(1)), "mode": "replace", "anchor_text": anchor, "jinja": True})
+    log.info("Jinja template detected: %d placeholders mapped deterministically", len(fields))
+    return fields
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Field detection — one LLM call per NEW template only
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -190,9 +297,16 @@ def _detect_fields_from_text(text: str) -> list[dict]:
         "champ de la liste, on les ignore dans un formulaire vierge.\n\n"
         "RÈGLES IMPORTANTES pour un document déjà rempli :\n"
         "- Si le nom est séparé en deux (ex. \"Nom : BELHADJ\" puis \"Prénoms : "
-        "Karim\"), renvoie la valeur du nom de famille comme student_name et la "
-        "valeur des prénoms comme other_personal (elle sera effacée, le nom "
-        "complet remplaçant le nom de famille).\n"
+        "Karim\"), renvoie la valeur du nom de famille comme last_name et celle "
+        "des prénoms comme first_name. N'utilise student_name que pour un nom "
+        "complet écrit d'un seul tenant.\n"
+        "- La ville où le document est établi (ex. \"Rabat\" dans \"Fait à "
+        "Rabat, le …\") → city en mode replace, la ville SEULE sans la date.\n"
+        "- Les noms des SIGNATAIRES en bas du document (doyen, directeur, "
+        "chef de scolarité, responsable… ex. \"Pr. EL HADJ Mohamed\") → une "
+        "entrée other_personal PAR NOM, TOUJOURS — ne les oublie jamais, ce "
+        "sont des personnes de l'exemple qui ne doivent pas apparaître dans "
+        "le document réutilisé.\n"
         "- Le nom et l'adresse de l'établissement de l'EXEMPLE (même s'il "
         "s'agit d'une autre école ou université) doivent être tagués "
         "establishment_name / establishment_address en mode replace — ils "
@@ -203,13 +317,17 @@ def _detect_fields_from_text(text: str) -> list[dict]:
         "l'entreprise, chaque date du stage, durée, sujet, chaque encadrant. "
         "Sois exhaustif — aucune donnée de l'exemple ne doit survivre dans le "
         "document réutilisé.\n"
-        "- Le niveau ou l'année d'études de l'exemple (ex. \"3ème Année "
-        "(Licence Professionnelle)\") → other_personal s'il ne correspond pas "
-        "exactement à class_name.\n"
+        "- Le niveau, cycle ou l'année d'études de l'exemple (ex. \"3ème Année "
+        "(Licence Professionnelle)\", \"Licence\", \"Master\", \"1ere année\", "
+        "\"2ème année\") → une entrée other_personal PAR VALEUR s'il ne "
+        "correspond pas exactement à class_name — ne saute JAMAIS ces valeurs, "
+        "même écrites seules après un label comme \"Cycle d'étude\" ou "
+        "\"Niveau\".\n"
         "- La filière/spécialité/le domaine d'études de l'exemple (ex. "
         "\"Biologie Médicale\") → class_name en mode replace, JAMAIS "
         "other_personal.\n"
-        "- Le lieu de naissance de l'exemple → other_personal.\n"
+        "- Le lieu de naissance de l'exemple (ou son label seul, ex. \"Lieu "
+        "de naissance :\") → place_of_birth, JAMAIS other_personal.\n"
         "- Le nom d'établissement figurant dans l'en-tête du document → "
         "establishment_name, même s'il est écrit en majuscules ou collé sans "
         "espaces (le texte peut provenir d'une reconnaissance optique).\n"
@@ -241,10 +359,10 @@ def _detect_fields_from_text(text: str) -> list[dict]:
             log.warning("Field detection JSON parse failed. original=%r stripped=%r", original, raw)
             return []
 
-    # Two passes, merged: the model's recall fluctuates between runs even at
+    # Three passes, merged: the model's recall fluctuates between runs even at
     # temperature 0, and detection happens only once per template — a missed
-    # field here stays missed forever. The union recovers what either pass saw.
-    data = one_pass(7) + one_pass(1337)
+    # field here stays missed forever. The union recovers what any pass saw.
+    data = one_pass(7) + one_pass(1337) + one_pass(42)
 
     by_anchor: dict[str, dict] = {}
     for f in data:
@@ -417,9 +535,38 @@ def _vision_detect_fields(png_bytes: bytes, width: int, height: int) -> list[dic
     return fields
 
 
+def _suppress_nested_pdf_hits(located: list[dict]) -> list[dict]:
+    """Drop replace-hits contained inside a bigger replace-hit on the same
+    page. Example: 'RABAT' matched by the city field inside the header line
+    'UNIVERSITÉ MOHAMMED V DE RABAT' already covered by establishment_name —
+    the big span's replacement wins, the inner one would double-print."""
+    def area(b):
+        return max(0.0, b["x1"] - b["x0"]) * max(0.0, b["bottom"] - b["top"])
+
+    keep = []
+    for i, f in enumerate(located):
+        if f["mode"] == "replace":
+            bi, ai, nested = f["bbox"], area(f["bbox"]), False
+            for j, g in enumerate(located):
+                if i == j or g["mode"] != "replace" or g["page"] != f["page"]:
+                    continue
+                bj = g["bbox"]
+                if area(bj) <= ai:
+                    continue
+                ox = max(0.0, min(bi["x1"], bj["x1"]) - max(bi["x0"], bj["x0"]))
+                oy = max(0.0, min(bi["bottom"], bj["bottom"]) - max(bi["top"], bj["top"]))
+                if ai > 0 and ox * oy / ai > 0.6:
+                    nested = True
+                    break
+            if nested:
+                continue
+        keep.append(f)
+    return keep
+
+
 def _detect_fields_pdf_via_text(file_bytes: bytes, text: str) -> list[dict]:
     import pdfplumber
-    fields = _detect_fields_from_text(text)
+    fields = _detect_fields_jinja(text) or _detect_fields_from_text(text)
     located: list[dict] = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for field in fields:
@@ -450,7 +597,7 @@ def _detect_fields_pdf_via_text(file_bytes: bytes, text: str) -> list[dict]:
                 # entry per occurrence.
                 for page_num, bbox in hits:
                     located.append({**field, "page": page_num, "bbox": bbox})
-    return located
+    return _suppress_nested_pdf_hits(located)
 
 
 def _detect_fields_pdf_via_vision(file_bytes: bytes) -> list[dict]:
@@ -726,7 +873,7 @@ def detect_fields(file_bytes: bytes, file_kind: str, content_type: str = "") -> 
     try:
         if file_kind == "docx":
             text = _extract_docx_text(file_bytes)
-            return _detect_fields_from_text(text)
+            return _detect_fields_jinja(text) or _detect_fields_from_text(text)
         if file_kind == "pdf":
             return _detect_fields_pdf(file_bytes)
         if file_kind == "image":
@@ -831,9 +978,90 @@ def _generate_docx(file_bytes: bytes, fields: list[dict], context: dict) -> byte
     return out.getvalue()
 
 
+def _map_to_base14(fontname: str) -> str:
+    """Closest reportlab built-in to an embedded PDF font name (often a
+    subset like 'ABCDEF+Arial-BoldMT'). Exact match is impossible without
+    embedding the original font; family + weight + slant gets close enough
+    that an inserted value no longer stands out."""
+    n = fontname.split("+")[-1].lower()
+    bold = any(w in n for w in ("bold", "black", "heavy", "semibold", "demi"))
+    italic = "italic" in n or "oblique" in n
+    if any(w in n for w in ("times", "serif", "georgia", "garamond", "book")):
+        if bold and italic:
+            return "Times-BoldItalic"
+        return "Times-Bold" if bold else ("Times-Italic" if italic else "Times-Roman")
+    if "courier" in n or "mono" in n:
+        suffix = "-BoldOblique" if bold and italic else "-Bold" if bold else "-Oblique" if italic else ""
+        return "Courier" + suffix
+    suffix = "-BoldOblique" if bold and italic else "-Bold" if bold else "-Oblique" if italic else ""
+    return "Helvetica" + suffix
+
+
+def _color_to_rgb(color) -> tuple[float, float, float]:
+    if color is None:
+        return (0.0, 0.0, 0.0)
+    if isinstance(color, (int, float)):
+        return (float(color),) * 3
+    vals = [float(v) for v in color]
+    if len(vals) == 1:
+        return (vals[0],) * 3
+    if len(vals) == 3:
+        return (vals[0], vals[1], vals[2])
+    if len(vals) == 4:  # CMYK
+        c, m, y, k = vals
+        return ((1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k))
+    return (0.0, 0.0, 0.0)
+
+
+def _sample_font(plumber_page, bbox: dict, exclude_rects: list[dict] | None = None) -> dict | None:
+    """Dominant font name / size / fill colour of the template's own
+    characters inside `bbox` — or, for append fields whose bbox covers empty
+    space, of the characters sharing that text line. `exclude_rects` (jinja
+    templates: EVERY placeholder region on the page) keeps `{{ marker }}`
+    markup — often monospace/colored, and there may be several on one line —
+    out of the sample so only the document's real typography is copied."""
+    from collections import Counter
+
+    def chars_in(x0, x1, top, bottom):
+        found = []
+        for ch in plumber_page.chars:
+            cx = (ch["x0"] + ch["x1"]) / 2
+            cy = (ch["top"] + ch["bottom"]) / 2
+            if exclude_rects and any(
+                r["x0"] - 1 <= cx <= r["x1"] + 1 and r["top"] - 1 <= cy <= r["bottom"] + 1
+                for r in exclude_rects
+            ):
+                continue
+            if x0 - 1 <= cx <= x1 + 1 and top - 1 <= cy <= bottom + 1:
+                found.append(ch)
+        return found
+
+    hits = [] if exclude_rects else chars_in(bbox["x0"], bbox["x1"], bbox["top"], bbox["bottom"])
+    if not hits:  # blank space or markup anchor — copy the line's font
+        hits = chars_in(0, plumber_page.width, bbox["top"], bbox["bottom"])
+    if not hits:
+        return None
+    fontname = Counter(ch.get("fontname") or "" for ch in hits).most_common(1)[0][0]
+    sizes = sorted(float(ch.get("size") or 0) for ch in hits)
+    size = sizes[len(sizes) // 2]
+    def col_key(ch):
+        c = ch.get("non_stroking_color")
+        return tuple(c) if isinstance(c, (list, tuple)) else (c,)
+    color = Counter(col_key(ch) for ch in hits).most_common(1)[0][0]
+    rgb = _color_to_rgb(color[0] if len(color) == 1 else color)
+    # A near-white fill would make the inserted value invisible on paper —
+    # only trust sampled colours that would actually read as ink.
+    if min(rgb) > 0.85:
+        rgb = (0.0, 0.0, 0.0)
+    return {"font": _map_to_base14(fontname), "size": size, "rgb": rgb}
+
+
 def _generate_pdf(file_bytes: bytes, fields: list[dict], context: dict) -> bytes:
+    import pdfplumber
+
     reader = PdfReader(io.BytesIO(file_bytes))
     writer = PdfWriter()
+    plumber = pdfplumber.open(io.BytesIO(file_bytes))
 
     fields_by_page: dict[int, list[dict]] = {}
     for field in fields:
@@ -844,6 +1072,42 @@ def _generate_pdf(file_bytes: bytes, fields: list[dict], context: dict) -> bytes
         if page_fields:
             width = float(page.mediabox.width)
             height = float(page.mediabox.height)
+            # Every rect that gets whited out on this page — characters in
+            # these zones no longer exist, so they must not count as
+            # obstacles when measuring how much room a new value has.
+            erased_rects = [
+                w
+                for f in page_fields
+                if f["mode"] == "replace"
+                for w in (f.get("words") or [f["bbox"]])
+            ]
+
+            def _avail_width(first_word):
+                """Room from the write position to the next character that
+                survives generation on the same line. Writing over blank
+                space is fine; writing over kept text is what makes a
+                document look tampered with."""
+                if page_num >= len(plumber.pages):
+                    return None
+                obstacle = None
+                for ch in plumber.pages[page_num].chars:
+                    if ch["x0"] <= first_word["x0"] + 1:
+                        continue
+                    cy = (ch["top"] + ch["bottom"]) / 2
+                    if not (first_word["top"] - 1 <= cy <= first_word["bottom"] + 1):
+                        continue
+                    cx = (ch["x0"] + ch["x1"]) / 2
+                    if any(
+                        r["x0"] - 1 <= cx <= r["x1"] + 1 and r["top"] - 1 <= cy <= r["bottom"] + 1
+                        for r in erased_rects
+                    ):
+                        continue
+                    if obstacle is None or ch["x0"] < obstacle:
+                        obstacle = ch["x0"]
+                if obstacle is None:
+                    return None
+                return max(obstacle - first_word["x0"] - 2, 30)
+
             buf = io.BytesIO()
             c = canvas.Canvas(buf, pagesize=(width, height))
             for field in page_fields:
@@ -866,17 +1130,33 @@ def _generate_pdf(file_bytes: bytes, fields: list[dict], context: dict) -> bytes
                             fill=1, stroke=0,
                         )
                 first = (field.get("words") or [bbox])[0]
-                line_h = first["bottom"] - first["top"]
-                # Cap at 12pt: body text in these documents runs 10-11pt, and a
-                # 14pt insert visibly shouts next to it.
-                font_size = max(8, min(12, line_h * 0.85))
-                # Shrink to fit the available slot so a long real name doesn't
-                # spill over table borders or off the page.
-                avail = max(bbox["x1"] - bbox["x0"], 160)
-                while font_size > 6.5 and stringWidth(new_value, "Helvetica", font_size) > avail:
+                # Imitate the template's own typography at this exact spot so
+                # the inserted value doesn't read as an insertion.
+                sampled = None
+                if page_num < len(plumber.pages):
+                    try:
+                        sampled = _sample_font(plumber.pages[page_num], bbox, exclude_rects=erased_rects if field.get("jinja") else None)
+                    except Exception:
+                        sampled = None
+                if sampled:
+                    font_name = sampled["font"]
+                    font_size = max(6.5, min(30, sampled["size"]))
+                    rgb = sampled["rgb"]
+                else:
+                    line_h = first["bottom"] - first["top"]
+                    font_name = "Helvetica"
+                    font_size = max(8, min(12, line_h * 0.85))
+                    rgb = (0, 0, 0)
+                # Shrink to fit the actual free space so a long value neither
+                # spills over kept text (measured obstacle) nor over table
+                # borders / off the page (fallback slot width).
+                avail = _avail_width(first)
+                if avail is None:
+                    avail = max(bbox["x1"] - bbox["x0"], 160)
+                while font_size > 6.5 and stringWidth(new_value, font_name, font_size) > avail:
                     font_size -= 0.5
-                c.setFillColorRGB(0, 0, 0)
-                c.setFont("Helvetica", font_size)
+                c.setFillColorRGB(*rgb)
+                c.setFont(font_name, font_size)
                 c.drawString(first["x0"], height - first["bottom"] + pad, new_value)
             c.save()
             buf.seek(0)
@@ -884,6 +1164,7 @@ def _generate_pdf(file_bytes: bytes, fields: list[dict], context: dict) -> bytes
             page.merge_page(overlay)
         writer.add_page(page)
 
+    plumber.close()
     out = io.BytesIO()
     writer.write(out)
     return out.getvalue()

@@ -104,6 +104,19 @@ class StudentUpdate(BaseModel):
     photo_url: Optional[str] = None
 
 
+class StudentDetailsUpdate(BaseModel):
+    nom: Optional[str] = None
+    prenom: Optional[str] = None
+    date_naissance: Optional[str] = None  # ISO AAAA-MM-JJ
+    lieu_naissance: Optional[str] = None
+    cin: Optional[str] = None
+    matricule: Optional[str] = None
+    telephone: Optional[str] = None
+    email_personnel: Optional[str] = None
+    adresse: Optional[str] = None
+    bac_annee: Optional[str] = None
+
+
 class DocumentGenerate(BaseModel):
     type: str  # 'attestation_scolarite' | 'certificat' | 'convocation'
     student_id: str

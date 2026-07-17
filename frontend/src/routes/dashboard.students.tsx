@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
@@ -117,6 +117,7 @@ function EditDrawer({ student, onClose, onSaved }: { student: Student; onClose: 
 }
 
 function StudentsPage() {
+  const navigate = useNavigate();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -194,13 +195,35 @@ function StudentsPage() {
       ) : (
         <div className="dash-card overflow-hidden">
           {students.map(s => (
-            <div key={s.id} className="row-c flex-wrap" onClick={() => setEditing(s)} style={{ cursor: "pointer" }}>
-              <DashAvatar name={s.full_name || s.email || "?"} size={34} tone="mid" />
+            <div
+              key={s.id}
+              className="row-c flex-wrap"
+              onClick={() => navigate({ to: "/dashboard/students/$studentId", params: { studentId: s.id } })}
+              style={{ cursor: "pointer" }}
+            >
+              {s.photo_url ? (
+                <img
+                  src={s.photo_url}
+                  alt=""
+                  style={{ width: 34, height: 34, borderRadius: 999, objectFit: "cover", flexShrink: 0 }}
+                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              ) : (
+                <DashAvatar name={s.full_name || s.email || "?"} size={34} tone="mid" />
+              )}
               <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{s.full_name || "—"}</div>
                 <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>{s.email}</div>
               </div>
               <span className={`chip-c ${statutTone(s.statut)}`}>{STATUT_LABEL[s.statut] ?? s.statut}</span>
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); setEditing(s); }}
+                className="btn-c btn-c-sm btn-c-ghost"
+                title="Modifier statut/photo"
+              >
+                Modifier
+              </button>
             </div>
           ))}
         </div>

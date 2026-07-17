@@ -96,6 +96,38 @@ async def upload_template(
     }
 
 
+@router.post("/{template_id}/redetect")
+async def redetect_template_fields(
+    template_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Re-run field detection on a stored template. Needed when the field
+    vocabulary grows (e.g. cin/matricule added): templates detected before
+    the change keep their old field map until re-detected here."""
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+
+    rows = db.from_("document_templates").select("*").eq("id", template_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Modèle introuvable")
+    template = rows[0]
+
+    try:
+        data = db.storage.from_(TEMPLATE_BUCKET).download(template["file_path"])
+    except Exception as e:
+        raise HTTPException(500, f"Échec du chargement du modèle : {str(e)}")
+
+    fields = detect_fields(data, template["file_kind"], template["content_type"])
+    db.from_("document_templates").update({"fields": fields}).eq("id", template_id).execute()
+
+    log_audit(db, user.id, "document_template.redetect", "document_template", template_id, {"fields": len(fields)})
+    return {
+        **template,
+        "fields": [{**f, "label": FIELD_LABELS.get(f["key"], f["key"])} for f in fields],
+    }
+
+
 @router.delete("/{template_id}")
 async def delete_template(
     template_id: str,
@@ -136,6 +168,8 @@ def _resolve_class_name(db: Client, student_id: str) -> str:
 # Institution constants — same facts already hardcoded in chatbot/knowledge.py.
 ESTABLISHMENT_NAME = "IPISB"
 ESTABLISHMENT_ADDRESS = "El Jadida, Maroc"
+ESTABLISHMENT_CITY = "El Jadida"
+ESTABLISHMENT_PHONE = "+212 5 23 00 00 00"
 
 
 def _current_academic_year() -> str:
@@ -173,22 +207,55 @@ async def generate_document_from_template(
     except Exception as e:
         raise HTTPException(500, f"Échec du chargement du modèle : {str(e)}")
 
+    details_rows = db.from_("student_details").select("nom, prenom, date_naissance, lieu_naissance, cin, matricule").eq("student_id", body.student_id).execute().data
+    details = details_rows[0] if details_rows else {}
+    date_naissance = details.get("date_naissance") or ""
+    if date_naissance:
+        # PostgREST returns the date column as ISO AAAA-MM-JJ.
+        date_naissance = datetime.strptime(date_naissance, "%Y-%m-%d").strftime("%d/%m/%Y")
+
+    # Profile photo, falling back to the dossier's photo file — covers
+    # students whose photo was uploaded before the profile wiring existed.
+    photo_url = student.get("photo_url") or ""
+    if not photo_url:
+        photo_files = (
+            db.from_("student_files").select("file_path")
+            .eq("student_id", body.student_id).eq("type", "photo")
+            .order("created_at", desc=True).limit(1).execute().data
+        )
+        if photo_files:
+            try:
+                signed = db.storage.from_("student-files").create_signed_url(photo_files[0]["file_path"], 3600)
+                photo_url = signed.get("signedURL") or signed.get("signed_url") or ""
+            except Exception:
+                pass  # no photo is a visible-but-acceptable outcome; a crash is not
+
     code = new_verification_code()
     context = {
         "student_name": student.get("full_name") or "",
+        # Split name for {{ nom }} / {{ prenom }} templates — the fiche is
+        # authoritative; full_name backs up the family-name slot so machine
+        # templates never print a blank where a name belongs.
+        "last_name": details.get("nom") or student.get("full_name") or "",
+        "first_name": details.get("prenom") or "",
         "student_email": student.get("email") or "",
         "class_name": _resolve_class_name(db, body.student_id),
-        # Not collected anywhere in the system today (no column on `profiles`) —
-        # always resolves to the visible blank placeholder until that changes.
-        "date_of_birth": "",
+        # Filled from the fiche administrative when it's been saved; blank
+        # placeholder otherwise (the pre-details behaviour).
+        "date_of_birth": date_naissance,
+        "place_of_birth": details.get("lieu_naissance") or "",
+        "cin": details.get("cin") or "",
+        "matricule": details.get("matricule") or "",
         "issue_date": datetime.now(timezone.utc).strftime("%d/%m/%Y"),
         "academic_year": _current_academic_year(),
         "establishment_name": ESTABLISHMENT_NAME,
         "establishment_address": ESTABLISHMENT_ADDRESS,
+        "city": ESTABLISHMENT_CITY,
+        "establishment_phone": ESTABLISHMENT_PHONE,
         "verification_code": code,
         # Image-zone replacements (student cards): the profile photo and a
         # fresh QR pointing at this document's public verification page.
-        "student_photo_url": student.get("photo_url") or "",
+        "student_photo_url": photo_url,
         "verify_url": f"{FRONTEND_URL}/verify/{code}",
     }
 
