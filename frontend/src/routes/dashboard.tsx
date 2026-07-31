@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import {
   Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
   Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet,
+  UserCog,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
+import { PlatformCopilot } from "@/components/PlatformCopilot";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
@@ -101,6 +103,7 @@ function DashboardLayout() {
       { key: "dash.schedules",     to: "/dashboard/schedules",     icon: CalendarClock },
       { key: "dash.announcements", to: "/dashboard/announcements", icon: Megaphone     },
       { key: "dash.accounting",    to: "/dashboard/accounting",    icon: Wallet        },
+      { key: "dash.rh",            to: "/dashboard/rh",            icon: UserCog       },
     ] : []),
   ];
 
@@ -209,6 +212,7 @@ function DashboardLayout() {
             <Outlet />
           </div>
         </main>
+        <PlatformCopilot />
       </div>
     );
   }
@@ -222,6 +226,7 @@ function DashboardLayout() {
           <Outlet />
         </div>
       </main>
+      <PlatformCopilot />
     </div>
   );
 }

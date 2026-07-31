@@ -13,6 +13,10 @@ from routers import accounting_invoices, accounting_expenses, accounting_revenue
 from routers import accounting_budgets, accounting_dashboard, accounting_analytics
 from routers import accounting_purchase_requests, accounting_quotations
 from routers import accounting_receptions, accounting_payments, accounting_inventory
+from routers import rh_employees, rh_leaves, rh_payroll, rh_performance
+from routers import rh_departments, rh_contract_types, rh_assets, rh_onboarding
+from routers import rh_recruitment, rh_orgchart, rh_training, rh_talents
+from routers import copilot as copilot_router
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -83,6 +87,19 @@ app.include_router(accounting_quotations.router, prefix="/api")
 app.include_router(accounting_receptions.router, prefix="/api")
 app.include_router(accounting_payments.router, prefix="/api")
 app.include_router(accounting_inventory.router, prefix="/api")
+app.include_router(rh_employees.router, prefix="/api")
+app.include_router(rh_leaves.router, prefix="/api")
+app.include_router(rh_payroll.router, prefix="/api")
+app.include_router(rh_performance.router, prefix="/api")
+app.include_router(rh_departments.router, prefix="/api")
+app.include_router(rh_contract_types.router, prefix="/api")
+app.include_router(rh_assets.router, prefix="/api")
+app.include_router(rh_onboarding.router, prefix="/api")
+app.include_router(rh_recruitment.router, prefix="/api")
+app.include_router(rh_orgchart.router, prefix="/api")
+app.include_router(rh_training.router, prefix="/api")
+app.include_router(rh_talents.router, prefix="/api")
+app.include_router(copilot_router.router, prefix="/api")
 
 
 @app.get("/health")

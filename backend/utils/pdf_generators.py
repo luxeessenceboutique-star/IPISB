@@ -268,3 +268,105 @@ def render_accounting_report_pdf(summary: dict) -> bytes:
     c.showPage()
     c.save()
     return buf.getvalue()
+
+
+MONTH_NAMES_FR = [
+    "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+]
+
+
+def compute_moroccan_payroll(base: float, bonuses: float = 0, deductions: float = 0) -> dict:
+    """Approximate Moroccan CNSS + IR (progressive income tax) monthly calculation."""
+    gross = base + bonuses
+
+    # CNSS employee part ~= 4.48%, capped at a 6 000 MAD/month contribution base
+    cnss_base = min(gross, 6000)
+    cnss = round(cnss_base * 0.0448, 2)
+
+    # Taxable income = gross - CNSS - professional deduction (20%, capped at 2 500)
+    prof_deduction = min(gross * 0.20, 2500)
+    taxable = gross - cnss - prof_deduction
+
+    # 2024 Moroccan IR brackets (monthly)
+    if taxable <= 2500:
+        ir = 0.0
+    elif taxable <= 4166:
+        ir = taxable * 0.10 - 250
+    elif taxable <= 5000:
+        ir = taxable * 0.20 - 666.67
+    elif taxable <= 6666:
+        ir = taxable * 0.30 - 1166.67
+    elif taxable <= 15000:
+        ir = taxable * 0.34 - 1433.33
+    else:
+        ir = taxable * 0.38 - 2033.33
+    ir = max(round(ir, 2), 0.0)
+
+    net_salary = round(gross - cnss - ir - deductions, 2)
+    return {"cnss": cnss, "ir": ir, "gross_salary": round(gross, 2), "net_salary": net_salary}
+
+
+def render_payslip_pdf(record: dict, employee: dict) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    month_label = MONTH_NAMES_FR[record.get("month") or 0] or str(record.get("month"))
+    draw_header(c, f"BULLETIN DE PAIE — {month_label} {record.get('year', '')}")
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, height - 50 * mm, "Employé :")
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 56 * mm, f"Nom : {employee.get('full_name', 'N/A')}")
+    c.drawString(20 * mm, height - 61 * mm, f"Poste : {employee.get('position', 'N/A') or '—'}")
+    c.drawString(20 * mm, height - 66 * mm, f"Département : {employee.get('department', 'N/A') or '—'}")
+    c.drawString(20 * mm, height - 71 * mm, f"N° CNSS : {employee.get('cnss_number', 'N/A') or '—'}")
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawRightString(width - 20 * mm, height - 50 * mm, "Statut :")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 20 * mm, height - 56 * mm, (record.get("status") or "draft").upper())
+
+    y = height - 85 * mm
+    rows = [
+        ("Salaire de base", record.get("base_salary", 0), None),
+        ("Primes", record.get("bonuses", 0), None),
+        ("Salaire brut", record.get("gross_salary", 0), None),
+        ("Cotisation CNSS", None, record.get("cnss", 0)),
+        ("Impôt sur le revenu (IR)", None, record.get("ir", 0)),
+        ("Autres retenues", None, record.get("deductions", 0)),
+    ]
+
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Désignation")
+    c.drawRightString(120 * mm, y, "Gains")
+    c.drawRightString(width - 20 * mm, y, "Retenues")
+    c.setLineWidth(0.5)
+    c.line(20 * mm, y - 2 * mm, width - 20 * mm, y - 2 * mm)
+
+    c.setFont("Helvetica", 9)
+    for label, gain, deduction in rows:
+        y -= 8 * mm
+        c.drawString(20 * mm, y, label)
+        if gain is not None:
+            c.drawRightString(120 * mm, y, fmt_mad(gain))
+        if deduction is not None:
+            c.drawRightString(width - 20 * mm, y, fmt_mad(deduction))
+
+    y -= 14 * mm
+    c.setLineWidth(0.8)
+    c.line(20 * mm, y + 5 * mm, width - 20 * mm, y + 5 * mm)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "NET À PAYER")
+    c.drawRightString(width - 20 * mm, y, fmt_mad(record.get("net_salary", 0)))
+
+    y -= 30 * mm
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Signature Employeur")
+    c.drawRightString(width - 20 * mm, y, "Signature Employé")
+
+    draw_footer(c)
+    c.showPage()
+    c.save()
+    return buf.getvalue()

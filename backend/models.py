@@ -448,3 +448,352 @@ class InventoryMovementCreate(BaseModel):
     movement_date: Optional[str] = None
     description: Optional[str] = None
 
+
+# ── RH — Employees (Ressources humaines) ──────────────────────────────────────
+class EmployeeCreate(BaseModel):
+    full_name: str
+    cin: Optional[str] = None
+    matricule: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    department: Optional[str] = None
+    status: str = "active"           # 'active' | 'on-leave' | 'inactive'
+    hire_date: Optional[str] = None
+    contract_type: Optional[str] = None
+    contract_start: Optional[str] = None
+    contract_end: Optional[str] = None
+    salary: Optional[float] = None
+    birth_date: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    nationality: Optional[str] = None
+    manager: Optional[str] = None
+    cnss_number: Optional[str] = None
+    bank_account: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class EmployeeUpdate(BaseModel):
+    full_name: Optional[str] = None
+    cin: Optional[str] = None
+    matricule: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    department: Optional[str] = None
+    status: Optional[str] = None
+    hire_date: Optional[str] = None
+    contract_type: Optional[str] = None
+    contract_start: Optional[str] = None
+    contract_end: Optional[str] = None
+    salary: Optional[float] = None
+    birth_date: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    nationality: Optional[str] = None
+    manager: Optional[str] = None
+    cnss_number: Optional[str] = None
+    bank_account: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ── RH — Leave requests ────────────────────────────────────────────────────────
+class LeaveRequestCreate(BaseModel):
+    employee_id: str
+    type: str = "annual"             # 'annual'|'sick'|'personal'|'maternity'|'paternity'|'unpaid'
+    start_date: str
+    end_date: str
+    days: int
+    reason: Optional[str] = None
+
+
+class LeaveRequestUpdate(BaseModel):
+    status: Optional[str] = None     # 'pending' | 'approved' | 'rejected'
+    reason: Optional[str] = None
+    comment: Optional[str] = None
+
+
+# ── RH — Payroll ────────────────────────────────────────────────────────────────
+class PayrollCreate(BaseModel):
+    employee_id: str
+    month: int
+    year: int
+    base_salary: float
+    bonuses: float = 0
+    deductions: float = 0
+    notes: Optional[str] = None
+
+
+class PayrollUpdate(BaseModel):
+    bonuses: Optional[float] = None
+    deductions: Optional[float] = None
+    status: Optional[str] = None     # 'draft' | 'validated' | 'paid'
+    notes: Optional[str] = None
+
+
+# ── RH — Performance reviews ────────────────────────────────────────────────────
+class PerformanceReviewCreate(BaseModel):
+    employee_id: str
+    period: str
+    score: Optional[int] = None      # 1-5
+    feedback: Optional[str] = None
+    objectives: Optional[str] = None
+    achievements: Optional[str] = None
+    improvements: Optional[str] = None
+    status: str = "draft"            # 'draft' | 'submitted' | 'acknowledged'
+
+
+class PerformanceReviewUpdate(BaseModel):
+    score: Optional[int] = None
+    feedback: Optional[str] = None
+    objectives: Optional[str] = None
+    achievements: Optional[str] = None
+    improvements: Optional[str] = None
+    status: Optional[str] = None
+
+
+# ── RH phase 2 — Departments & contract types ──────────────────────────────────
+class DepartmentCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class ContractTypeCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class ContractTypeUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ── RH phase 2 — Assets ────────────────────────────────────────────────────────
+class AssetCreate(BaseModel):
+    name: str
+    category: Optional[str] = None
+    serial_number: Optional[str] = None
+    employee_id: Optional[str] = None
+    status: str = "available"
+    notes: Optional[str] = None
+
+
+class AssetUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    serial_number: Optional[str] = None
+    employee_id: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+# ── RH phase 2 — Onboarding ─────────────────────────────────────────────────────
+class OnboardingUpdate(BaseModel):
+    phase: Optional[str] = None                # 'day30'|'day60'|'day90'|'completed'
+    buddy_name: Optional[str] = None
+    buddy_email: Optional[str] = None
+    contract_signed: Optional[bool] = None
+    plan_30: Optional[list] = None
+    plan_60: Optional[list] = None
+    plan_90: Optional[list] = None
+
+
+class PulseSurveyCreate(BaseModel):
+    week_number: Optional[int] = None
+    satisfaction_score: Optional[int] = None    # 1-5
+    integration_score: Optional[int] = None     # 1-5
+    clarity_score: Optional[int] = None         # 1-5
+    comment: Optional[str] = None
+
+
+# ── RH phase 2 — Recruitment (ads, candidates, interviews, slots) ──────────────
+class JobAdCreate(BaseModel):
+    poste: str
+    description: Optional[str] = None
+    competences: Optional[str] = None
+    experience: Optional[str] = None
+    contenu: str
+    image_url: Optional[str] = None
+    is_active: bool = True
+
+
+class JobAdUpdate(BaseModel):
+    poste: Optional[str] = None
+    description: Optional[str] = None
+    competences: Optional[str] = None
+    experience: Optional[str] = None
+    contenu: Optional[str] = None
+    image_url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class CandidateCreate(BaseModel):
+    full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CandidatePromote(BaseModel):
+    hire_date: Optional[str] = None
+    position: Optional[str] = None
+
+
+class InterviewCreate(BaseModel):
+    candidate_id: str
+    recruiter_id: Optional[str] = None
+    date: str
+    start_time: str
+    end_time: str
+    type: str                                    # 'rh'|'technical'|'final'
+    meet_link: Optional[str] = None
+    notes: Optional[str] = None
+    slot_id: Optional[str] = None
+
+
+class InterviewUpdate(BaseModel):
+    date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    type: Optional[str] = None
+    meet_link: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SlotCreate(BaseModel):
+    date: str
+    start_time: str
+    end_time: str
+    ad_id: Optional[str] = None
+
+
+# ── RH phase 2 — Org chart ──────────────────────────────────────────────────────
+class OrgProjectCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    color: str = "#0891b2"
+
+
+class OrgProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+
+
+class OrgMemberAdd(BaseModel):
+    employee_id: str
+    role_in_team: Optional[str] = None
+
+
+class OrgMemberRoleUpdate(BaseModel):
+    role_in_team: str
+
+
+class OrgPositionUpdate(BaseModel):
+    x: float
+    y: float
+
+
+# ── RH phase 2 — Training & skills ──────────────────────────────────────────────
+class TrainingCreate(BaseModel):
+    title: str
+    category: str = "technique"
+    provider: Optional[str] = None
+    duration_hours: int = 0
+    cost_dh: float = 0
+    description: Optional[str] = None
+
+
+class TrainingUpdate(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    provider: Optional[str] = None
+    duration_hours: Optional[int] = None
+    cost_dh: Optional[float] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class TrainingAssignmentCreate(BaseModel):
+    employee_id: str
+    training_id: str
+    status: str = "planned"
+    notes: Optional[str] = None
+
+
+class TrainingAssignmentUpdate(BaseModel):
+    status: Optional[str] = None
+    score: Optional[int] = None
+    notes: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class SkillCreate(BaseModel):
+    name: str
+    category: str = "technique"
+    description: Optional[str] = None
+
+
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class EmployeeSkillUpsert(BaseModel):
+    employee_id: str
+    skill_id: str
+    level: str = "beginner"
+
+
+# ── RH phase 2 — Talent management ──────────────────────────────────────────────
+class TalentProfileUpdate(BaseModel):
+    performance_score: Optional[int] = None      # 1-5
+    potential_score: Optional[int] = None         # 1-5
+    flight_risk: Optional[str] = None             # 'low'|'medium'|'high'
+    is_critical_position: Optional[bool] = None
+    successor_names: Optional[list] = None
+    career_path: Optional[str] = None
+    next_role: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class OkrCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    quarter: Optional[str] = None
+    progress: int = 0
+    status: str = "active"
+
+
+class OkrUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    quarter: Optional[str] = None
+    progress: Optional[int] = None
+    status: Optional[str] = None
+
+
+class PdiItemCreate(BaseModel):
+    title: str
+    action_type: str = "formation"
+    target_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PdiItemUpdate(BaseModel):
+    title: Optional[str] = None
+    action_type: Optional[str] = None
+    target_date: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
