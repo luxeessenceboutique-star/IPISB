@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, PiggyBank, Trash2, Pencil } from "lucide-react";
+import { Plus, PiggyBank, Trash2, Pencil, X } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -9,7 +9,8 @@ const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
 const sans = '"Manrope", system-ui, sans-serif';
-const MONTHS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+const mono = '"JetBrains Mono", ui-monospace, monospace';
+const MONTHS =["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
 
@@ -21,6 +22,8 @@ type Budget = {
   year: number;
   month: number | null;
   amount: number;
+  reference?: string | null;
+  comment?: string | null;
 };
 
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
@@ -39,6 +42,7 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
     scope: editing == null ? "year" : editing.month == null ? "year" : "month",
     month: String(editing?.month ?? 1),
     amount: editing ? String(editing.amount) : "0",
+    comment: editing?.comment ?? "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -50,6 +54,7 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
       year: parseInt(form.year, 10),
       month: form.scope === "month" ? parseInt(form.month, 10) : null,
       amount: parseFloat(form.amount) || 0,
+      comment: form.comment || null,
     };
     try {
       if (editing) await api.patch(`/api/accounting/budgets/${editing.id}`, payload);
@@ -65,11 +70,14 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
   }
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 460, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
-          {editing ? "Modifier le budget" : "Nouveau budget"}
-        </h2>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
+            {editing ? "Modifier le budget" : "Nouveau budget"}
+          </h2>
+          <button type="button" onClick={onClose} title="Fermer" aria-label="Fermer" style={{ border: "none", background: "transparent", cursor: "pointer", color: PAL.muted, padding: 0, lineHeight: 0 }}><X size={20} /></button>
+        </div>
 
         <label style={labelStyle}>Catégorie *</label>
         <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))} className="u-input" style={fieldStyle}>
@@ -103,7 +111,10 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
         )}
 
         <label style={labelStyle}>Montant prévu (MAD)</label>
-        <input type="number" min="0" step="any" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={{ ...fieldStyle, marginBottom: 24 }} />
+        <input type="number" min="0" step="any" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -194,6 +205,7 @@ export function AccountingBudgets() {
               </span>
               <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{b.category_name || "Sans catégorie"}</div>
+                {b.reference && <div style={{ fontFamily: mono, fontSize: 10.5, color: PAL.muted, marginTop: 2 }}>{b.reference}</div>}
                 <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>{periodLabel(b)} {b.year}</div>
               </div>
               <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(b.amount)}</span>

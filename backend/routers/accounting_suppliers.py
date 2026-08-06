@@ -58,10 +58,12 @@ async def create_supplier(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
+    # Création ouverte à tout utilisateur connecté (nécessaire pour la saisie de
+    # devis par le demandeur). Édition / suppression restent réservées à l'admin.
     res = db.from_("suppliers").insert({**body.model_dump(), "created_by": user.id}).execute()
     new_supplier = res.data[0]
-    log_audit(db, user.id, "supplier.create", "supplier", new_supplier["id"])
+    log_audit(db, user.id, "supplier.create", "supplier", new_supplier["id"],
+              {"reference": new_supplier.get("reference")})
     return new_supplier
 
 

@@ -12,6 +12,12 @@ def _require_admin(user: CurrentUser) -> None:
         raise HTTPException(403, "Admin only")
 
 
+def _require_read(user: CurrentUser) -> None:
+    """Lecture des tableaux de bord : admin, comptable (lecture seule) ou caissier."""
+    if not user.can_read_accounting():
+        raise HTTPException(403, "Accès comptabilité requis")
+
+
 def _num(v) -> float:
     return float(v or 0)
 
@@ -24,7 +30,7 @@ async def dashboard_summary(
     """Aggregated accounting dashboard across purchases, expenses, revenues,
     invoices and budgets. Data volumes for a single school are small enough to
     aggregate in-process rather than with SQL views."""
-    _require_admin(user)
+    _require_read(user)
 
     purchases = db.from_("purchases").select("category_id, total_incl_vat, purchase_date, payment_status").execute().data or []
     expenses = db.from_("expenses").select("category_id, amount, expense_date").execute().data or []
@@ -190,7 +196,7 @@ async def journal(
     limit: int = 50,
 ):
     """Journal comptable = vue chronologique sur audit_log (acteur enrichi)."""
-    _require_admin(user)
+    _require_read(user)
     limit = max(1, min(200, limit))
     rows = (
         db.from_("audit_log")

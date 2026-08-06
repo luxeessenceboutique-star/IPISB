@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import {
   Plus, Search, ClipboardList, Trash2, ChevronLeft, ChevronRight,
-  Check, RotateCcw, X, FileText, ShoppingCart, Star,
+  Check, RotateCcw, X, FileText, ShoppingCart, Star, Truck, Paperclip,
+  CalendarClock, Pencil, Download,
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
@@ -24,15 +26,41 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   annulee:         { label: "Annulée",         tone: "chip-c-red" },
 };
 const CAT: Record<string, string> = { consommable: "Consommable", equipement: "Équipement", locaux: "Locaux", service: "Service" };
+// Liste des services de l'établissement (ajustez selon votre organisation)
+const SERVICES = ["Direction", "Scolarité", "Comptabilité", "Ressources humaines", "Informatique", "Économat / Logistique", "Pédagogie", "Communication", "Maintenance"];
 const REQ_TYPE: Record<string, string> = { nouveau_besoin: "Nouveau besoin", renouvellement: "Renouvellement" };
-const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", versement: "Versement", espece: "Espèce" };
+// Critères de conformité standard (cases à cocher).
+const CONFORMITY: Record<string, string> = {
+  frais: "Produit frais",
+  congele: "Produit congelé",
+  scelle: "Emballage scellé / fermé",
+  peremption: "Date de péremption valide",
+  certificat: "Certificat / norme de conformité",
+  qhse: "Contrôle QHSE effectué",
+};
+const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", caisse_sociale: "Caisse sociale" };
 
 type Supplier = { id: string; company_name: string };
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
   quote_number: string; quote_date: string | null; expiration_date: string | null;
   amount: number; currency: string; rank: number; retenu: boolean;
+  comment: string | null; attachment_name: string | null; attachment_path: string | null;
+  delivery_required: boolean; delivery_cost: number | null; delivery_included: boolean;
 };
+// Formatage nombre SANS suffixe (fmtMAD ajoute déjà « MAD » → évite le doublon).
+const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n);
+// Total du devis : si la livraison est payante ET non incluse, on l'écrit en
+// décomposé « 4 800 + 50 » (sans additionner). Coût inconnu → « 4 800 + livraison ».
+function quoteAmountLabel(q: Quote): string {
+  const base = fmtNum(q.amount);
+  const cur = q.currency || "MAD";
+  if (q.delivery_required && !q.delivery_included) {
+    if (q.delivery_cost == null) return `${base} + livraison ${cur}`;
+    if (q.delivery_cost > 0) return `${base} + ${fmtNum(q.delivery_cost)} ${cur}`;
+  }
+  return `${base} ${cur}`;
+}
 type Order = {
   id: string; purchase_number: string; supplier_name: string | null; total_incl_vat: number;
   valide_responsable_at: string | null; valide_comptable_at: string | null; payment_status: string;
@@ -41,6 +69,7 @@ type PR = {
   id: string; request_number: string; company: string | null; service: string | null;
   requester_name: string | null; project: string | null; activity: string | null; justification: string | null;
   request_type: string; asset_category: string; characteristics: string | null;
+  conformity_note: string | null; conformity_criteria: string[] | null;
   article_code: string | null; quantity: number; budget_estimate: number; duration: string | null;
   need_decision: string; need_decision_comment: string | null;
   quote_synthesis: string | null; payment_mode: string | null; payment_terms_days: number | null;
@@ -51,10 +80,12 @@ type PRDetail = PR & { quotations: Quote[]; order: Order | null };
 const fieldStyle = { marginTop: 6, marginBottom: 14, width: "100%", padding: "10px 13px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
-function Backdrop({ children, onClose, width = 560 }: { children: React.ReactNode; onClose: () => void; width?: number }) {
+function Backdrop({ children, width = 560, z = 200, dim = 0.45 }: { children: React.ReactNode; width?: number; z?: number; dim?: number }) {
+  // Aligné en haut + scroll du fond : l'en-tête reste visible même si le
+  // contenu dépasse l'écran (évite le modal « coupé en haut »).
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 30, width, maxWidth: "96vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: `rgba(0,0,0,${dim})`, zIndex: z, display: "flex", alignItems: "flex-start", justifyContent: "center", backdropFilter: "blur(2px)", overflowY: "auto", padding: "2vh 12px" }}>
+      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: "26px 30px", width, maxWidth: "96vw", margin: "auto 0", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         {children}
       </div>
     </div>
@@ -65,25 +96,33 @@ function H2({ children }: { children: React.ReactNode }) {
   return <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 18px" }}>{children}</h2>;
 }
 
-// ── Modal de création (stepper 2 étapes) ─────────────────────────────────────
+// ── Modal de création (formulaire unique : besoin + classement) ──────────────
 function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [step, setStep] = useState(1);
+  const { user } = useAuth();
+  const ownerName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "";
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    company: "", service: "", requester_name: "", project: "", activity: "", justification: "",
-    request_type: "nouveau_besoin", asset_category: "consommable", characteristics: "",
+    company: "", service: "", requester_name: ownerName, project: "", activity: "", justification: "",
+    request_type: "nouveau_besoin", asset_category: "consommable", characteristics: "", conformity_note: "",
     article_code: "", quantity: "1", budget_estimate: "0", duration: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const [criteria, setCriteria] = useState<string[]>([]);
+  const toggleCriterion = (k: string) =>
+    setCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
+
+  // Le demandeur est toujours le propriétaire du compte connecté.
+  useEffect(() => { setForm(f => ({ ...f, requester_name: ownerName })); }, [ownerName]);
 
   async function submit() {
-    if (!form.justification.trim()) { toast.error("La justification du besoin est requise."); setStep(1); return; }
+    if (!form.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
     setBusy(true);
     try {
       await api.post("/api/accounting/purchase-requests", {
         ...form,
         quantity: parseFloat(form.quantity) || 1,
         budget_estimate: parseFloat(form.budget_estimate) || 0,
+        conformity_criteria: criteria,
       });
       toast.success("Demande d'achat créée !");
       onSaved(); onClose();
@@ -93,65 +132,72 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   }
 
   return (
-    <Backdrop onClose={onClose} width={580}>
+    <Backdrop width={580}>
       <H2>Nouvelle demande d'achat</H2>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        {["Expression de besoin", "Classement"].map((s, i) => (
-          <div key={s} style={{ flex: 1, textAlign: "center", padding: "8px 6px", borderRadius: 9, fontSize: 12, fontWeight: 700, background: step === i + 1 ? "var(--pal-primary)" : "var(--pal-pale)", color: step === i + 1 ? "#fff" : PAL.muted }}>
-            {i + 1}. {s}
+
+      <SectionLabel>Expression de besoin</SectionLabel>
+      <div style={{ marginTop: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div><label style={labelStyle}>Société</label><input className="u-input" style={fieldStyle} value={form.company} onChange={e => set("company", e.target.value)} /></div>
+          <div>
+            <label style={labelStyle}>Service</label>
+            <select className="u-input" style={fieldStyle} value={form.service} onChange={e => set("service", e.target.value)}>
+              <option value="">— Choisir un service —</option>
+              {SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
+          <div>
+            <label style={labelStyle}>Demandeur</label>
+            <input className="u-input" style={{ ...fieldStyle, background: "var(--pal-pale)", cursor: "not-allowed" }} value={form.requester_name} readOnly title="Le demandeur est le titulaire du compte connecté" />
+          </div>
+          <div><label style={labelStyle}>Projet</label><input className="u-input" style={fieldStyle} value={form.project} onChange={e => set("project", e.target.value)} /></div>
+        </div>
+        <label style={labelStyle}>Activité</label>
+        <input className="u-input" style={fieldStyle} value={form.activity} onChange={e => set("activity", e.target.value)} />
+        <label style={labelStyle}>Justification du besoin *</label>
+        <textarea className="u-input" style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }} value={form.justification} onChange={e => set("justification", e.target.value)} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Type du besoin</label>
+            <select className="u-input" style={fieldStyle} value={form.request_type} onChange={e => set("request_type", e.target.value)}>
+              {Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Catégorie</label>
+            <select className="u-input" style={fieldStyle} value={form.asset_category} onChange={e => set("asset_category", e.target.value)}>
+              {Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+        </div>
+        <label style={labelStyle}>Caractéristiques / CDC</label>
+        <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
+      </div>
+
+      <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
+      <label style={{ ...labelStyle, display: "block", marginTop: 12 }}>Exigences (texte libre)</label>
+      <textarea className="u-input" style={{ ...fieldStyle, minHeight: 52, resize: "vertical" }} placeholder="ex. bœuf congelé, produit frais du jour…" value={form.conformity_note} onChange={e => set("conformity_note", e.target.value)} />
+      <label style={{ ...labelStyle, display: "block" }}>Critères standard</label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8 }}>
+        {Object.entries(CONFORMITY).map(([k, v]) => (
+          <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer" }}>
+            <input type="checkbox" checked={criteria.includes(k)} onChange={() => toggleCriterion(k)} style={{ width: 16, height: 16, accentColor: "var(--pal-primary)" }} />
+            {v}
+          </label>
         ))}
       </div>
 
-      {step === 1 && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={labelStyle}>Société</label><input className="u-input" style={fieldStyle} value={form.company} onChange={e => set("company", e.target.value)} /></div>
-            <div><label style={labelStyle}>Service</label><input className="u-input" style={fieldStyle} value={form.service} onChange={e => set("service", e.target.value)} /></div>
-            <div><label style={labelStyle}>Demandeur</label><input className="u-input" style={fieldStyle} value={form.requester_name} onChange={e => set("requester_name", e.target.value)} /></div>
-            <div><label style={labelStyle}>Projet</label><input className="u-input" style={fieldStyle} value={form.project} onChange={e => set("project", e.target.value)} /></div>
-          </div>
-          <label style={labelStyle}>Activité</label>
-          <input className="u-input" style={fieldStyle} value={form.activity} onChange={e => set("activity", e.target.value)} />
-          <label style={labelStyle}>Justification du besoin *</label>
-          <textarea className="u-input" style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }} value={form.justification} onChange={e => set("justification", e.target.value)} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Type du besoin</label>
-              <select className="u-input" style={fieldStyle} value={form.request_type} onChange={e => set("request_type", e.target.value)}>
-                {Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={labelStyle}>Catégorie</label>
-              <select className="u-input" style={fieldStyle} value={form.asset_category} onChange={e => set("asset_category", e.target.value)}>
-                {Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-          </div>
-          <label style={labelStyle}>Caractéristiques / CDC</label>
-          <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
-        </>
-      )}
+      <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
+        <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.quantity} onChange={e => set("quantity", e.target.value)} /></div>
+        <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.budget_estimate} onChange={e => set("budget_estimate", e.target.value)} /></div>
+        <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={form.duration} onChange={e => set("duration", e.target.value)} /></div>
+      </div>
 
-      {step === 2 && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
-            <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.quantity} onChange={e => set("quantity", e.target.value)} /></div>
-            <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.budget_estimate} onChange={e => set("budget_estimate", e.target.value)} /></div>
-            <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={form.duration} onChange={e => set("duration", e.target.value)} /></div>
-          </div>
-        </>
-      )}
-
-      <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 12 }}>
+      <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 18 }}>
         <button onClick={onClose} className="btn-c btn-c-ghost">Annuler</button>
-        <div style={{ display: "flex", gap: 10 }}>
-          {step === 2 && <button onClick={() => setStep(1)} className="btn-c btn-c-soft"><ChevronLeft size={15} />Précédent</button>}
-          {step === 1 && <button onClick={() => setStep(2)} className="btn-c btn-c-primary">Suivant<ChevronRight size={15} /></button>}
-          {step === 2 && <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Enregistrement…" : "Créer la DA"}</button>}
-        </div>
+        <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Enregistrement…" : "Créer la DA"}</button>
       </div>
     </Backdrop>
   );
@@ -162,26 +208,52 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
   prId: string; nextRank: number; suppliers: Supplier[]; onClose: () => void; onSaved: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  // Livraison : « none » (non concernée), « free » (gratuite), « paid » (payante).
+  const [deliveryMode, setDeliveryMode] = useState<"none" | "free" | "paid">("none");
+  const [deliveryIncluded, setDeliveryIncluded] = useState(false);  // livraison comprise dans le total du devis ?
   const [form, setForm] = useState({
     supplier_id: "", quote_number: "", quote_date: new Date().toISOString().slice(0, 10),
-    expiration_date: "", amount: "0", currency: "MAD", rank: String(nextRank),
+    expiration_date: "", amount: "0", currency: "MAD", comment: "", delivery_cost: "",
   });
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
 
   async function submit() {
     if (!form.quote_number.trim()) { toast.error("Le numéro de devis est requis."); return; }
+    if (form.supplier_id === "__new__" && !newSupplierName.trim()) { toast.error("Nom du fournisseur requis."); return; }
     setBusy(true);
     try {
-      await api.post("/api/accounting/quotations", {
+      // Création à la volée du fournisseur → enregistré dans la base fournisseurs.
+      let supplierId: string | null = form.supplier_id || null;
+      if (form.supplier_id === "__new__") {
+        const sup = await api.post("/api/accounting/suppliers", { company_name: newSupplierName.trim() });
+        supplierId = sup?.id ?? null;
+      }
+      const quote = await api.post("/api/accounting/quotations", {
         purchase_request_id: prId,
-        supplier_id: form.supplier_id || null,
+        supplier_id: supplierId,
         quote_number: form.quote_number,
         quote_date: form.quote_date || null,
         expiration_date: form.expiration_date || null,
         amount: parseFloat(form.amount) || 0,
         currency: form.currency,
-        rank: parseInt(form.rank, 10) || nextRank,
+        rank: nextRank,
+        comment: form.comment.trim() || null,
+        delivery_required: deliveryMode !== "none",
+        delivery_cost:
+          deliveryMode === "free" ? 0
+          : deliveryMode === "paid"
+            ? (form.delivery_cost.trim() === "" ? null : (parseFloat(form.delivery_cost) || 0))
+            : null,  // « none » → pas de livraison
+        delivery_included: deliveryMode === "paid" ? deliveryIncluded : false,
       });
+      // Pièce jointe du devis (optionnelle) — envoyée après création.
+      if (file && quote?.id) {
+        const fd = new FormData();
+        fd.append("file", file);
+        await api.uploadFile(`/api/accounting/quotations/${quote.id}/attachment`, fd);
+      }
       toast.success("Devis ajouté !");
       onSaved(); onClose();
     } catch (err: any) {
@@ -189,33 +261,134 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
     } finally { setBusy(false); }
   }
 
+  const noMargin = { marginTop: 6, marginBottom: 0 };
+  const req = <span style={{ color: "var(--pal-danger)", marginLeft: 2 }}>*</span>;
+  // Contrôle segmenté « montant + devise » (un seul champ visuel).
+  const segWrap: React.CSSProperties = { display: "flex", alignItems: "stretch", border: `1px solid ${PAL.line}`, borderRadius: 10, background: PAL.paper, overflow: "hidden", marginTop: 6 };
+  const segInput: React.CSSProperties = { flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", padding: "10px 13px", fontFamily: sans, fontSize: 14, color: PAL.ink };
+  const segSelect: React.CSSProperties = { border: 0, outline: "none", background: "var(--pal-pale)", padding: "0 10px", fontFamily: sans, fontSize: 13, fontWeight: 700, color: PAL.ink, cursor: "pointer", borderLeft: `1px solid ${PAL.line}` };
+
+  const cellInput = { ...fieldStyle, ...noMargin };
   return (
-    <Backdrop onClose={onClose} width={460}>
-      <H2>Ajouter un devis</H2>
-      <label style={labelStyle}>Fournisseur</label>
-      <select className="u-input" style={fieldStyle} value={form.supplier_id} onChange={e => set("supplier_id", e.target.value)}>
-        <option value="">— Aucun —</option>
-        {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
-      </select>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div><label style={labelStyle}>N° devis *</label><input className="u-input" style={fieldStyle} value={form.quote_number} onChange={e => set("quote_number", e.target.value)} /></div>
-        <div><label style={labelStyle}>Rang (1–5)</label><input type="number" min="1" max="5" className="u-input" style={fieldStyle} value={form.rank} onChange={e => set("rank", e.target.value)} /></div>
-        <div><label style={labelStyle}>Montant</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.amount} onChange={e => set("amount", e.target.value)} /></div>
-        <div><label style={labelStyle}>Devise</label><input className="u-input" style={fieldStyle} value={form.currency} onChange={e => set("currency", e.target.value)} /></div>
-        <div><label style={labelStyle}>Date devis</label><input type="date" className="u-input" style={fieldStyle} value={form.quote_date} onChange={e => set("quote_date", e.target.value)} /></div>
-        <div><label style={labelStyle}>Échéance</label><input type="date" className="u-input" style={fieldStyle} value={form.expiration_date} onChange={e => set("expiration_date", e.target.value)} /></div>
+    <Backdrop width={720} z={300} dim={0.62}>
+      {/* ── En-tête ── */}
+      <div style={{ borderBottom: `1px solid ${PAL.line}`, paddingBottom: 12, marginBottom: 16 }}>
+        <div style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--pal-primary)", marginBottom: 4 }}>Consultation fournisseurs</div>
+        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 27, fontWeight: 500, color: PAL.ink, margin: 0 }}>Ajouter un devis</h2>
       </div>
-      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
+
+      {/* ── Corps : 2 colonnes ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 22px", alignItems: "start" }}>
+        {/* Fournisseur (pleine largeur) */}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={labelStyle}>Fournisseur</label>
+          <select className="u-input" style={cellInput} value={form.supplier_id} onChange={e => set("supplier_id", e.target.value)}>
+            <option value="">— Aucun —</option>
+            {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
+            <option value="__new__">➕ Créer un fournisseur…</option>
+          </select>
+          {form.supplier_id === "__new__" && (
+            <input className="u-input" style={{ ...cellInput, marginTop: 8 }} placeholder="Nom du nouveau fournisseur *" value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)} />
+          )}
+        </div>
+
+        {/* N° devis | Montant */}
+        <div><label style={labelStyle}>N° devis{req}</label><input className="u-input" style={cellInput} placeholder="ex. DV-2026-014" value={form.quote_number} onChange={e => set("quote_number", e.target.value)} /></div>
+        <div>
+          <label style={labelStyle}>Montant du devis</label>
+          <div style={{ ...segWrap, marginTop: 6 }}>
+            <input type="number" min="0" step="any" style={segInput} value={form.amount} onChange={e => set("amount", e.target.value)} />
+            <select style={segSelect} value={form.currency} onChange={e => set("currency", e.target.value)}>
+              <option value="MAD">MAD</option><option value="EUR">EUR</option><option value="USD">USD</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Date | Échéance */}
+        <div><label style={labelStyle}>Date du devis</label><input type="date" className="u-input" style={cellInput} value={form.quote_date} onChange={e => set("quote_date", e.target.value)} /></div>
+        <div><label style={labelStyle}>Échéance</label><input type="date" className="u-input" style={cellInput} value={form.expiration_date} onChange={e => set("expiration_date", e.target.value)} /></div>
+
+        {/* Livraison (pleine largeur) */}
+        <div style={{ gridColumn: "1 / -1" }} className="anim-fade">
+          <div style={{ border: `1px solid ${deliveryMode !== "none" ? "var(--pal-primary)" : PAL.line}`, borderRadius: 12, padding: "12px 14px", background: deliveryMode !== "none" ? "var(--pal-pale)" : PAL.paper, transition: "border-color .15s, background .15s" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Truck size={16} style={{ color: deliveryMode !== "none" ? "var(--pal-primary)" : PAL.muted }} />
+                <span style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 600, color: PAL.ink }}>Livraison</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, flex: 1, minWidth: 260 }}>
+                {([
+                  { v: "none", label: "Non concernée" },
+                  { v: "free", label: "Gratuite" },
+                  { v: "paid", label: "Payante" },
+                ] as const).map(opt => {
+                  const active = deliveryMode === opt.v;
+                  return (
+                    <button key={opt.v} type="button" onClick={() => setDeliveryMode(opt.v)}
+                      style={{ flex: 1, padding: "9px 6px", borderRadius: 9, cursor: "pointer", fontFamily: sans, fontSize: 12.5, fontWeight: 700,
+                        border: `1px solid ${active ? "var(--pal-primary)" : PAL.line}`, background: active ? "var(--pal-primary)" : PAL.paper,
+                        color: active ? "#fff" : PAL.muted, transition: "all .12s" }}>
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {deliveryMode === "paid" && (
+                <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
+                  <div style={{ ...segWrap, marginTop: 0, width: 210 }}>
+                    <input type="number" min="0" step="any" style={segInput} value={form.delivery_cost} onChange={e => set("delivery_cost", e.target.value)} placeholder="Coût — vide si inconnu" />
+                    <span style={{ ...segSelect, display: "flex", alignItems: "center" }}>MAD</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontFamily: sans, fontSize: 12.5, color: PAL.muted }}>Comprise dans le total&nbsp;?</span>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {([{ v: false, label: "En sus" }, { v: true, label: "Incluse" }] as const).map(opt => {
+                        const active = deliveryIncluded === opt.v;
+                        return (
+                          <button key={String(opt.v)} type="button" onClick={() => setDeliveryIncluded(opt.v)}
+                            style={{ padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontFamily: sans, fontSize: 12, fontWeight: 700,
+                              border: `1px solid ${active ? "var(--pal-primary)" : PAL.line}`, background: active ? "var(--pal-primary)" : PAL.paper,
+                              color: active ? "#fff" : PAL.muted, transition: "all .12s" }}>
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div style={{ flexBasis: "100%", fontSize: 11.5, color: PAL.muted }}>
+                    « En sus » : le coût s'ajoute au montant (affiché « {form.amount || "0"} + {form.delivery_cost.trim() || "livraison"} »). « Incluse » : déjà compris dans le montant.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Commentaire | Pièce jointe */}
+        <div>
+          <label style={labelStyle}>Commentaire</label>
+          <textarea className="u-input" style={{ ...cellInput, minHeight: 78, resize: "vertical" }} placeholder="Observations sur ce devis…" value={form.comment} onChange={e => set("comment", e.target.value)} />
+        </div>
+        <div>
+          <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}><Paperclip size={12} /> Pièce jointe (devis)</label>
+          <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={e => setFile(e.target.files?.[0] ?? null)} style={{ ...cellInput, padding: "9px 10px" }} />
+          <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: 6 }}>Formats acceptés : PDF, JPG ou PNG.</div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18, paddingTop: 14, borderTop: `1px solid ${PAL.line}` }}>
         <button onClick={onClose} className="btn-c btn-c-ghost">Annuler</button>
-        <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Ajout…" : "Ajouter"}</button>
+        <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Ajout…" : "Ajouter le devis"}</button>
       </div>
     </Backdrop>
   );
 }
 
 // ── Modal détail (décisions + devis + commande) ──────────────────────────────
-function DetailModal({ prId, suppliers, onClose, onChanged }: {
-  prId: string; suppliers: Supplier[]; onClose: () => void; onChanged: () => void;
+// canDecide : réservé à l'admin. Les autres utilisateurs voient leur DA en
+// lecture seule (consultation + PDF), sans boutons de décision.
+function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
+  prId: string; suppliers: Supplier[]; canDecide: boolean; onClose: () => void; onChanged: () => void;
 }) {
   const [pr, setPr] = useState<PRDetail | null>(null);
   const [busy, setBusy] = useState(false);
@@ -261,22 +434,37 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
     if (!window.confirm(`Supprimer le devis ${q.quote_number} ?`)) return;
     act(() => api.delete(`/api/accounting/quotations/${q.id}`), "Devis supprimé.");
   }
-  function validate(kind: "responsable" | "comptable") {
+  async function openQuoteAttachment(q: Quote) {
+    try {
+      const res = await api.get(`/api/accounting/quotations/${q.id}/attachment`);
+      if (res?.signed_url) window.open(res.signed_url, "_blank", "noopener");
+    } catch (err: any) { toast.error(err?.message ?? "Pièce jointe indisponible."); }
+  }
+  function validateOrder() {
     if (!pr?.order) return;
-    act(() => api.post(`/api/accounting/purchases/${pr.order!.id}/validate-${kind}`, {}),
-      `Validation ${kind} enregistrée.`);
+    act(() => api.post(`/api/accounting/purchases/${pr.order!.id}/validate-order`, {}),
+      "Commande validée. La nature de chaque règlement se décide à l'onglet Paiements.");
   }
 
-  if (!pr) return <Backdrop onClose={onClose} width={720}><div style={{ padding: 20, color: PAL.muted }}>Chargement…</div></Backdrop>;
+  if (!pr) return <Backdrop width={720}><div style={{ padding: 20, color: PAL.muted }}>Chargement…</div></Backdrop>;
 
   const st = STATUS[pr.status];
-  const canDecideNeed = pr.status === "brouillon" || pr.status === "retournee";
-  const canQuote = pr.status === "besoin_valide" || pr.status === "en_consultation";
+  const canDecideNeed = canDecide && (pr.status === "brouillon" || pr.status === "retournee");
+  const inQuoteStage = pr.status === "besoin_valide" || pr.status === "en_consultation";
+  // Saisie des devis : ouverte au demandeur (il ne voit que ses DA) ET à l'admin.
+  const canAddQuote = inQuoteStage;
+  // Décisions sur les devis (retenir / retourner / annuler) : admin uniquement.
+  const canDecideQuote = canDecide && inQuoteStage;
+  // Mode/échéancier de paiement : défini APRÈS le choix du devis (devis retenu), avant/à la commande.
+  const canPlanPayment = pr.status === "devis_valide" || !!pr.order;
+  const retainedQuote = pr.quotations.find(q => q.retenu);
+  const schedTotal = pr.order?.total_incl_vat ?? retainedQuote?.amount ?? pr.budget_estimate ?? 0;
+  const schedLabel = pr.order ? "Commande" : retainedQuote ? "Devis retenu" : "Budget estimé";
   const nextRank = ([1, 2, 3, 4, 5].find(r => !pr.quotations.some(q => q.rank === r))) ?? pr.quotations.length + 1;
   const info = (l: string, v: any) => v ? <div style={{ fontSize: 12.5 }}><span style={{ color: PAL.muted }}>{l} : </span><strong style={{ color: PAL.ink }}>{v}</strong></div> : null;
 
   return (
-    <Backdrop onClose={onClose} width={760}>
+    <Backdrop width={760}>
       {quoteForm && <QuoteFormModal prId={prId} nextRank={nextRank} suppliers={suppliers} onClose={() => setQuoteForm(false)} onSaved={() => { load(); onChanged(); }} />}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -302,6 +490,18 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
       </div>
       {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
       {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 14 }}>{pr.characteristics}</div>}
+
+      {(pr.conformity_note || (pr.conformity_criteria && pr.conformity_criteria.length > 0)) && (
+        <div style={{ marginBottom: 14 }}>
+          <SectionLabel>Conformité</SectionLabel>
+          {pr.conformity_note && <div style={{ fontSize: 12.5, color: PAL.ink, margin: "8px 0" }}>{pr.conformity_note}</div>}
+          {pr.conformity_criteria && pr.conformity_criteria.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+              {pr.conformity_criteria.map(c => <span key={c} className="chip-c chip-c-blue">{CONFORMITY[c] ?? c}</span>)}
+            </div>
+          )}
+        </div>
+      )}
       {pr.need_decision_comment && <div style={{ fontSize: 12.5, color: "var(--pal-danger)", marginBottom: 10 }}>Commentaire décision : {pr.need_decision_comment}</div>}
 
       {canDecideNeed && (
@@ -313,11 +513,11 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
       )}
 
       {/* Consultation / devis */}
-      {(canQuote || pr.quotations.length > 0) && (
+      {(canAddQuote || pr.quotations.length > 0) && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
             <SectionLabel>Consultation — devis ({pr.quotations.length}/5)</SectionLabel>
-            {canQuote && pr.quotations.length < 5 && <button onClick={() => setQuoteForm(true)} className="btn-c btn-c-sm btn-c-soft"><Plus size={14} />Ajouter</button>}
+            {canAddQuote && pr.quotations.length < 5 && <button onClick={() => setQuoteForm(true)} className="btn-c btn-c-sm btn-c-soft"><Plus size={14} />Ajouter</button>}
           </div>
           {pr.quotations.length === 0 ? (
             <div style={{ fontSize: 12.5, color: PAL.muted, margin: "8px 0 16px" }}>Aucun devis. Ajoutez jusqu'à 5 devis à comparer.</div>
@@ -337,14 +537,35 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
                 <tbody>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={cell}>{q.supplier_name || "—"}</td>)}</tr>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, color: PAL.muted }}>{q.quote_number}</td>)}</tr>
-                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}>{fmtMAD(q.amount)} {q.currency}</td>)}</tr>
+                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}>{quoteAmountLabel(q)}</td>)}</tr>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, color: PAL.muted, fontSize: 11.5 }}>{q.expiration_date ? `échéance ${new Date(q.expiration_date).toLocaleDateString("fr-FR")}` : ""}</td>)}</tr>
+                  <tr>{pr.quotations.map(q => (
+                    <td key={q.id} style={{ ...cell, fontSize: 11.5 }}>
+                      {q.delivery_required
+                        ? (q.delivery_cost == null
+                            ? <span className="chip-c chip-c-amber">Livraison à préciser{q.delivery_included ? " (incluse)" : ""}</span>
+                            : q.delivery_cost > 0
+                              ? <span className="chip-c chip-c-amber">Livraison {fmtNum(q.delivery_cost)} MAD {q.delivery_included ? "(incluse)" : "(en sus)"}</span>
+                              : <span className="chip-c chip-c-green">Livraison gratuite</span>)
+                        : <span style={{ color: PAL.muted }}>Sans livraison</span>}
+                    </td>
+                  ))}</tr>
+                  <tr>{pr.quotations.map(q => (
+                    <td key={q.id} style={{ ...cell, whiteSpace: "normal", color: PAL.muted, fontSize: 11.5, maxWidth: 200 }}>{q.comment || "—"}</td>
+                  ))}</tr>
+                  <tr>{pr.quotations.map(q => (
+                    <td key={q.id} style={cell}>
+                      {q.attachment_name ? (
+                        <button onClick={() => openQuoteAttachment(q)} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={q.attachment_name}><FileText size={12} />Devis PDF</button>
+                      ) : <span style={{ color: PAL.muted, fontSize: 11.5 }}>Sans pièce</span>}
+                    </td>
+                  ))}</tr>
                   <tr>{pr.quotations.map(q => (
                     <td key={q.id} style={cell}>
                       <div style={{ display: "flex", gap: 6 }}>
-                        {canQuote && !q.retenu && <button disabled={busy} onClick={() => retainQuote(q)} className="btn-c btn-c-sm btn-c-primary"><Star size={12} />Retenir</button>}
+                        {canDecideQuote && !q.retenu && <button disabled={busy} onClick={() => retainQuote(q)} className="btn-c btn-c-sm btn-c-primary"><Star size={12} />Retenir</button>}
                         {q.retenu && <span className="chip-c chip-c-green">Retenu</span>}
-                        {canQuote && !q.retenu && <button disabled={busy} onClick={() => deleteQuote(q)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }}><Trash2 size={14} /></button>}
+                        {canAddQuote && !q.retenu && <button disabled={busy} onClick={() => deleteQuote(q)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }}><Trash2 size={14} /></button>}
                       </div>
                     </td>
                   ))}</tr>
@@ -352,7 +573,7 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
               </table>
             </div>
           )}
-          {canQuote && pr.quotations.length > 0 && (
+          {canDecideQuote && pr.quotations.length > 0 && (
             <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
               <button disabled={busy} onClick={() => quoteDecision("retour")} className="btn-c btn-c-sm btn-c-soft"><RotateCcw size={13} />Retourner</button>
               <button disabled={busy} onClick={() => quoteDecision("annulation")} className="btn-c btn-c-sm btn-c-danger"><X size={14} />Annuler la DA</button>
@@ -361,14 +582,29 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
         </>
       )}
 
+      {/* Mode & échéancier de paiement — après le choix du devis retenu */}
+      {canPlanPayment && (
+        <div style={{ marginBottom: 18 }}>
+          <SectionLabel>Mode &amp; échéancier de paiement</SectionLabel>
+          <div className="dash-card" style={{ padding: 16, margin: "8px 0 4px" }}>
+            <div style={{ fontSize: 12, color: PAL.muted }}>
+              Conditions de règlement convenues avec le fournisseur retenu (avance, jalons, échelonnement).
+            </div>
+            <PaymentSchedule prId={prId} total={schedTotal} totalLabel={schedLabel} canEdit={canDecide} />
+          </div>
+        </div>
+      )}
+
       {/* Commande */}
-      {(pr.status === "devis_valide" || pr.order) && (
+      {((canDecide && pr.status === "devis_valide") || pr.order) && (
         <>
           <SectionLabel>Commande</SectionLabel>
           {!pr.order ? (
-            <div style={{ margin: "8px 0" }}>
-              <button disabled={busy} onClick={createOrder} className="btn-c btn-c-primary"><ShoppingCart size={15} />Créer la commande</button>
-            </div>
+            canDecide ? (
+              <div style={{ margin: "8px 0" }}>
+                <button disabled={busy} onClick={createOrder} className="btn-c btn-c-primary"><ShoppingCart size={15} />Créer la commande</button>
+              </div>
+            ) : null
           ) : (
             <div className="dash-card" style={{ padding: 16, margin: "8px 0 4px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -376,15 +612,29 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
                 <strong style={{ fontSize: 14, color: PAL.ink }}>{pr.order.purchase_number}</strong>
                 <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(pr.order.total_incl_vat)}</span>
               </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                {pr.order.valide_responsable_at
-                  ? <span className="chip-c chip-c-green"><Check size={12} />Responsable validé</span>
-                  : <button disabled={busy} onClick={() => validate("responsable")} className="btn-c btn-c-sm btn-c-soft">Valider (responsable)</button>}
-                {pr.order.valide_comptable_at
-                  ? <span className="chip-c chip-c-green"><Check size={12} />Comptable validé</span>
-                  : <button disabled={busy || !pr.order.valide_responsable_at} onClick={() => validate("comptable")} className="btn-c btn-c-sm btn-c-soft">Valider (comptable)</button>}
-              </div>
-              {pr.status === "commande_emise" && <div style={{ marginTop: 10 }}><span className="chip-c chip-c-green">Commande émise ✓</span></div>}
+              {pr.order.valide_comptable_at || pr.status === "commande_emise" ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="chip-c chip-c-green"><Check size={12} />Commande validée</span>
+                  <span className="chip-c chip-c-green">Commande émise ✓</span>
+                  {canDecide && (
+                    <button
+                      onClick={() => api.download(`/api/accounting/purchases/${pr.order!.id}/pdf`, `Bon_de_commande_${pr.order!.purchase_number ?? pr.order!.id}.pdf`).catch((e: any) => toast.error(e?.message ?? "Erreur lors du téléchargement."))}
+                      className="btn-c btn-c-sm btn-c-soft"
+                    >
+                      <Download size={13} />Télécharger le bon de commande
+                    </button>
+                  )}
+                </div>
+              ) : canDecide ? (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, color: PAL.muted }}>
+                    La nature de chaque règlement (caisse sociale / comptable) se décide au fil des paiements réels, onglet Paiements.
+                  </span>
+                  <button disabled={busy} onClick={validateOrder} className="btn-c btn-c-sm btn-c-primary"><Check size={13} />Valider la commande</button>
+                </div>
+              ) : (
+                <span className="chip-c chip-c-amber">En attente de validation</span>
+              )}
             </div>
           )}
         </>
@@ -398,8 +648,156 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
 }
 const cell: React.CSSProperties = { padding: "7px 12px", borderBottom: `1px solid ${PAL.line}`, fontSize: 12.5, color: PAL.ink, whiteSpace: "nowrap" };
 
+// ── Échéancier de paiement (prévisionnel) ────────────────────────────────────
+// Bloc autonome du bon de commande : plan de versements échelonnés (jalon +
+// montant + mode + date). Total LIBRE — la somme peut différer du total TTC
+// (ex. avance « en noir » hors facture). N'alimente pas le journal de caisse
+// (phase 1 : planification uniquement).
+type IRow = { label: string; amount: string; payment_mode: string; due_date: string };
+const IMODES: Record<string, string> = { ...PAY_MODE, autre: "Autre" };
+const isNoir = (m: string) => m === "caisse_sociale";
+const JALON_SUGGESTIONS = ["Avance", "À la commande", "À la livraison", "Après contrôle qualité", "Après montage", "Pourboire livreur", "Mensualité 1", "Mensualité 2", "Mensualité 3", "Solde"];
+const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
+  label: d.label ?? "", amount: String(d.amount ?? 0),
+  payment_mode: d.payment_mode ?? "cheque", due_date: d.due_date ?? "",
+}));
+
+function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; rows: IRow[]; label?: string }) {
+  const planned = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  // Chaque ligne est comptabilisée selon SA propre nature : ventilation, pas d'agrégat « dépassement ».
+  const social = rows.reduce((s, r) => s + (isNoir(r.payment_mode) ? (parseFloat(r.amount) || 0) : 0), 0);
+  const comptable = planned - social;
+  const ecart = planned - total;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "flex-end", marginTop: 10, fontSize: 12, fontFamily: mono }}>
+      <span style={{ color: PAL.muted }}>{label}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(total)}</b></span>
+      <span style={{ color: PAL.muted }}>Planifié&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(planned)}</b></span>
+      <span style={{ color: PAL.muted }}>Caisse sociale&nbsp;: <b style={{ color: "var(--pal-amber, #b45309)" }}>{fmtMAD(social)}</b></span>
+      <span style={{ color: PAL.muted }}>Comptable&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(comptable)}</b></span>
+      {Math.abs(ecart) > 0.005 && (
+        <span style={{ color: PAL.muted }} title="Écart entre le total planifié et le devis retenu. Chaque ligne est comptabilisée selon sa propre nature, il n'y a pas de « dépassement » global.">
+          Écart&nbsp;: <b style={{ color: PAL.ink }}>{ecart > 0 ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { prId: string; total: number; canEdit: boolean; totalLabel?: string }) {
+  const [saved, setSaved] = useState<IRow[]>([]);
+  const [rows, setRows] = useState<IRow[]>([]);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api.get(`/api/accounting/purchase-requests/${prId}/installments`)
+      .then(d => { if (alive) { setSaved(mapRows(d)); setLoaded(true); } })
+      .catch(() => { if (alive) setLoaded(true); });
+    return () => { alive = false; };
+  }, [prId]);
+
+  function startEdit() {
+    setRows(saved.length ? saved.map(r => ({ ...r })) : [{ label: "", amount: "", payment_mode: "cheque", due_date: "" }]);
+    setEditing(true);
+  }
+  const upd = (i: number, k: keyof IRow, v: string) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r));
+  const addRow = () => setRows(rs => [...rs, { label: "", amount: "", payment_mode: "cheque", due_date: "" }]);
+  const delRow = (i: number) => setRows(rs => rs.filter((_, j) => j !== i));
+
+  async function save() {
+    setBusy(true);
+    try {
+      const payload = {
+        installments: rows
+          .filter(r => (parseFloat(r.amount) || 0) > 0 || r.label.trim())
+          .map(r => ({ label: r.label.trim() || null, amount: parseFloat(r.amount) || 0, payment_mode: r.payment_mode, due_date: r.due_date || null })),
+      };
+      const data = await api.put(`/api/accounting/purchase-requests/${prId}/installments`, payload);
+      setSaved(mapRows(data));
+      setEditing(false);
+      toast.success("Échéancier enregistré.");
+    } catch (err: any) { toast.error(err?.message ?? "Échec de l'enregistrement."); }
+    finally { setBusy(false); }
+  }
+
+  if (!loaded) return null;
+
+  const th: React.CSSProperties = { fontSize: 11, color: PAL.muted, fontWeight: 600, textAlign: "left", padding: "0 8px 6px 0", whiteSpace: "nowrap" };
+  const td: React.CSSProperties = { padding: "5px 8px 5px 0", fontSize: 12.5, color: PAL.ink };
+  const inp: React.CSSProperties = { width: "100%", padding: "7px 9px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" };
+
+  return (
+    <div style={{ marginTop: 14, borderTop: `1px dashed ${PAL.line}`, paddingTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: PAL.ink }}>
+          <CalendarClock size={14} style={{ color: "var(--pal-primary)" }} />Échéancier de paiement
+        </span>
+        {canEdit && !editing && (
+          <button onClick={startEdit} className="btn-c btn-c-sm btn-c-ghost"><Pencil size={12} />{saved.length ? "Modifier" : "Planifier"}</button>
+        )}
+      </div>
+
+      {!editing ? (
+        saved.length === 0 ? (
+          <div style={{ fontSize: 12, color: PAL.muted, fontStyle: "italic" }}>Aucune échéance planifiée.</div>
+        ) : (
+          <>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  <th style={th}>Jalon</th><th style={th}>Règlement</th><th style={th}>Nature</th><th style={th}>Date prévue</th><th style={{ ...th, textAlign: "right", paddingRight: 0 }}>Montant</th>
+                </tr></thead>
+                <tbody>
+                  {saved.map((r, i) => (
+                    <tr key={i}>
+                      <td style={td}>{r.label || "—"}</td>
+                      <td style={{ ...td, color: PAL.muted }}>{IMODES[r.payment_mode] ?? r.payment_mode}</td>
+                      <td style={td}><span className={`chip-c ${isNoir(r.payment_mode) ? "chip-c-amber" : "chip-c-blue"}`}>{isNoir(r.payment_mode) ? "Caisse sociale" : "Comptable"}</span></td>
+                      <td style={{ ...td, color: PAL.muted, fontFamily: mono }}>{r.due_date ? r.due_date.slice(0, 10).split("-").reverse().join("/") : "—"}</td>
+                      <td style={{ ...td, padding: "5px 0 5px 8px", textAlign: "right", fontFamily: mono, fontWeight: 700 }}>{fmtMAD(parseFloat(r.amount) || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ScheduleTotals total={total} rows={saved} label={totalLabel} />
+          </>
+        )
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {rows.map((r, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 0.95fr auto", gap: 8, alignItems: "center" }}>
+                <input list="jalon-suggestions" style={inp} placeholder="Jalon (avance…)" value={r.label} onChange={e => upd(i, "label", e.target.value)} />
+                <input type="number" min="0" step="any" style={inp} placeholder="Montant" value={r.amount} onChange={e => upd(i, "amount", e.target.value)} />
+                <select className="u-input" style={inp} value={r.payment_mode} onChange={e => upd(i, "payment_mode", e.target.value)}>
+                  {Object.entries(IMODES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <input type="date" style={inp} value={r.due_date} onChange={e => upd(i, "due_date", e.target.value)} />
+                <button onClick={() => delRow(i)} title="Supprimer" className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "6px 8px" }}><Trash2 size={13} /></button>
+              </div>
+            ))}
+            <datalist id="jalon-suggestions">{JALON_SUGGESTIONS.map(s => <option key={s} value={s} />)}</datalist>
+          </div>
+          <button onClick={addRow} className="btn-c btn-c-sm btn-c-soft" style={{ marginTop: 8 }}><Plus size={13} />Ajouter une échéance</button>
+          <ScheduleTotals total={total} rows={rows} label={totalLabel} />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+            <button onClick={() => setEditing(false)} disabled={busy} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+            <button onClick={save} disabled={busy} className="btn-c btn-c-sm btn-c-primary"><Check size={13} />{busy ? "Enregistrement…" : "Enregistrer"}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Écran principal ──────────────────────────────────────────────────────────
-export function AccountingPurchaseRequests() {
+// canDecide : l'admin peut décider (valider besoin/devis, émettre commande).
+// Les autres utilisateurs créent et suivent leurs propres demandes (lecture seule
+// sur les décisions).
+export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: boolean }) {
   const [items, setItems] = useState<PR[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -430,7 +828,7 @@ export function AccountingPurchaseRequests() {
   return (
     <div>
       {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onSaved={load} />}
-      {detailId && <DetailModal prId={detailId} suppliers={suppliers} onClose={() => setDetailId(null)} onChanged={load} />}
+      {detailId && <DetailModal prId={detailId} suppliers={suppliers} canDecide={canDecide} onClose={() => setDetailId(null)} onChanged={load} />}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 220px" }}>

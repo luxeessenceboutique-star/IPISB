@@ -9,6 +9,7 @@ const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
 const sans = '"Manrope", system-ui, sans-serif';
+const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 type Supplier = {
   id: string;
@@ -24,6 +25,8 @@ type Supplier = {
   bank_branch: string | null;
   payment_terms_days: number | null;
   notes: string | null;
+  reference?: string | null;
+  comment?: string | null;
   total_purchases: number;
   total_spent: number;
   last_purchase: string | null;
@@ -31,7 +34,7 @@ type Supplier = {
 
 const emptyForm = {
   company_name: "", contact_person: "", email: "", phone: "", address: "", tax_number: "",
-  legal_form: "", rib: "", bank: "", bank_branch: "", payment_terms_days: "", notes: "",
+  legal_form: "", rib: "", bank: "", bank_branch: "", payment_terms_days: "", notes: "", comment: "",
 };
 
 function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -55,6 +58,7 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
         bank_branch: form.bank_branch || null,
         payment_terms_days: form.payment_terms_days ? parseInt(form.payment_terms_days, 10) : null,
         notes: form.notes || null,
+        comment: form.comment || null,
       });
       toast.success("Fournisseur créé !");
       onSaved();
@@ -70,7 +74,7 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
   const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
           Nouveau fournisseur
@@ -126,7 +130,10 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
         </div>
 
         <label style={labelStyle}>Notes</label>
-        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
+        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -221,6 +228,7 @@ export function AccountingSuppliers() {
                 <DashAvatar name={s.company_name} size={34} tone="mid" />
                 <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{s.company_name}</div>
+                  {s.reference && <div style={{ fontFamily: mono, fontSize: 10.5, color: PAL.muted, marginTop: 2 }}>{s.reference}</div>}
                   <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>{s.contact_person || s.email || "—"}</div>
                 </div>
                 <span className="chip-c">{s.total_purchases} achat{s.total_purchases !== 1 ? "s" : ""}</span>
@@ -243,6 +251,7 @@ export function AccountingSuppliers() {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <Row label="Référence" value={selected.reference ?? null} />
                 <Row label="Contact" value={selected.contact_person} />
                 <Row label="E-mail" value={selected.email} />
                 <Row label="Téléphone" value={selected.phone} />
@@ -275,6 +284,14 @@ export function AccountingSuppliers() {
                 <>
                   <div style={{ height: 1, background: PAL.line, margin: "16px 0" }} />
                   <p style={{ fontSize: 12.5, color: PAL.muted, lineHeight: 1.5 }}>{selected.notes}</p>
+                </>
+              )}
+
+              {selected.comment && (
+                <>
+                  <div style={{ height: 1, background: PAL.line, margin: "16px 0" }} />
+                  <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>Commentaire</div>
+                  <p style={{ fontSize: 12.5, color: PAL.ink, lineHeight: 1.5, margin: 0 }}>{selected.comment}</p>
                 </>
               )}
             </div>

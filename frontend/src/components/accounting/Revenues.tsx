@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, TrendingUp, Trash2, ChevronLeft, ChevronRight, Pencil, Upload, Download, FileText, X } from "lucide-react";
+import { Plus, Search, TrendingUp, Trash2, ChevronLeft, ChevronRight, Pencil, Upload, Download, FileText, X, ChevronDown, ChevronRight as ChevronRightIcon, Layers, GraduationCap } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -10,6 +10,7 @@ const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
 const sans = '"Manrope", system-ui, sans-serif';
+const mono = '"JetBrains Mono", ui-monospace, monospace';
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 const PAYMENT_METHODS = ["Virement", "Chèque", "Espèces", "Carte bancaire", "Prélèvement"];
 
@@ -36,8 +37,11 @@ type Revenue = {
   description: string | null;
   class_id: string | null;
   student_id: string | null;
+  reference?: string | null;
+  comment?: string | null;
 };
 type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
+type ClassGroup = { class_id: string; class_name: string | null; count: number; total: number; received_total: number };
 type ClassOpt = { id: string; name: string };
 type StudentOpt = { id: string; full_name: string | null; email: string };
 
@@ -69,6 +73,7 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
     description: editing?.description ?? "",
     class_id: editing?.class_id ?? "",
     student_id: editing?.student_id ?? "",
+    comment: editing?.comment ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [students, setStudents] = useState<StudentOpt[]>([]);
@@ -97,6 +102,7 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
       description: form.description || null,
       class_id: form.class_id || null,
       student_id: form.class_id ? (form.student_id || null) : null,
+      comment: form.comment || null,
     };
     try {
       if (editing) await api.patch(`/api/accounting/revenues/${editing.id}`, payload);
@@ -112,7 +118,7 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
   }
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 500, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
           {editing ? "Modifier la recette" : "Nouvelle recette"}
@@ -192,7 +198,10 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
         </div>
 
         <label style={labelStyle}>Description</label>
-        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
+        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -296,12 +305,20 @@ function DetailPanel({ revenue, onClose, onChanged }: { revenue: Revenue; onClos
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 16 }}>
+        <Row label="Référence" value={revenue.revenue_number} />
         <Row label="Type" value={TYPE_LABEL[revenue.revenue_type] ?? revenue.revenue_type} />
         <Row label="Catégorie" value={revenue.category_name} />
         <Row label="Montant TTC" value={fmtMAD(revenue.total_incl_vat)} />
         <Row label="Statut" value={STATUS_LABEL[revenue.status]} />
         <Row label="Date" value={new Date(revenue.revenue_date).toLocaleDateString("fr-FR")} />
       </div>
+
+      {revenue.comment && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>Commentaire</div>
+          <p style={{ fontSize: 12.5, color: PAL.ink, lineHeight: 1.5, margin: 0 }}>{revenue.comment}</p>
+        </div>
+      )}
 
       <div style={{ height: 1, background: PAL.line, margin: "4px 0 16px" }} />
 
@@ -376,14 +393,31 @@ export function AccountingRevenues() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [bankOnly, setBankOnly] = useState(false);
+
+  // Vue groupée par classe : une ligne repliable par promo, totalisant ses recettes.
+  const [groupByClass, setGroupByClass] = useState(false);
+  const [groups, setGroups] = useState<ClassGroup[]>([]);
+  const [groupTotal, setGroupTotal] = useState(0);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [groupRows, setGroupRows] = useState<Record<string, Revenue[]>>({});
+
+  // Filtres partagés entre la liste, l'agrégat par classe et le détail d'un groupe.
+  function filterParams() {
+    const p = new URLSearchParams();
+    if (q) p.set("q", q);
+    if (statusFilter) p.set("status", statusFilter);
+    if (typeFilter) p.set("revenue_type", typeFilter);
+    if (bankOnly) p.set("bank", "true");
+    return p;
+  }
 
   async function load() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-      if (q) params.set("q", q);
-      if (statusFilter) params.set("status", statusFilter);
-      if (typeFilter) params.set("revenue_type", typeFilter);
+      const params = filterParams();
+      params.set("page", String(page));
+      params.set("page_size", String(pageSize));
       const res = await api.get(`/api/accounting/revenues?${params.toString()}`);
       setRevenues(res.items ?? []);
       setTotal(res.total ?? 0);
@@ -394,23 +428,60 @@ export function AccountingRevenues() {
     }
   }
 
+  async function loadGroups() {
+    setLoading(true);
+    try {
+      const res = await api.get(`/api/accounting/revenues/by-class?${filterParams().toString()}`);
+      setGroups(res.groups ?? []);
+      setGroupTotal(res.total ?? 0);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du chargement.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function toggleGroup(g: ClassGroup) {
+    if (expanded === g.class_id) { setExpanded(null); return; }
+    setExpanded(g.class_id);
+    if (!groupRows[g.class_id]) {
+      try {
+        const params = filterParams();
+        params.set("class_id", g.class_id);
+        params.set("page_size", "100");
+        const res = await api.get(`/api/accounting/revenues?${params.toString()}`);
+        setGroupRows(prev => ({ ...prev, [g.class_id]: res.items ?? [] }));
+      } catch (err: any) {
+        toast.error(err?.message ?? "Erreur lors du chargement du détail.");
+      }
+    }
+  }
+
   useEffect(() => {
-    const timer = setTimeout(load, 250);
+    // Change de filtre → invalide le cache des détails de groupe.
+    setGroupRows({});
+    setExpanded(null);
+    const timer = setTimeout(() => { groupByClass ? loadGroups() : load(); }, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, statusFilter, typeFilter, page]);
+  }, [q, statusFilter, typeFilter, bankOnly, page, groupByClass]);
 
   useEffect(() => {
     api.get("/api/accounting/categories").then(setCategories).catch(() => {});
     api.get("/api/classes/all").then(setClasses).catch(() => {});
   }, []);
 
+  function refresh() {
+    setGroupRows({});
+    if (groupByClass) loadGroups(); else load();
+  }
+
   async function remove(r: Revenue) {
     if (!window.confirm(`Supprimer la recette « ${r.title} » ?`)) return;
     try {
       await api.delete(`/api/accounting/revenues/${r.id}`);
       toast.success("Recette supprimée.");
-      load();
+      refresh();
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors de la suppression.");
     }
@@ -421,7 +492,7 @@ export function AccountingRevenues() {
   return (
     <div>
       {modal.open && (
-        <FormModal categories={categories} classes={classes} editing={modal.editing} onClose={() => setModal({ open: false, editing: null })} onSaved={load} />
+        <FormModal categories={categories} classes={classes} editing={modal.editing} onClose={() => setModal({ open: false, editing: null })} onSaved={refresh} />
       )}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
@@ -437,17 +508,104 @@ export function AccountingRevenues() {
           <option value="">Tous statuts</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <button
+          type="button"
+          onClick={() => { setPage(1); setBankOnly(v => !v); }}
+          className={bankOnly ? "btn-c btn-c-primary" : "btn-c btn-c-ghost"}
+          title="Afficher uniquement les versements bancaires (virement / OV / chèque)"
+        >
+          Versements bancaires
+        </button>
+        <button
+          type="button"
+          onClick={() => { setPage(1); setGroupByClass(v => !v); }}
+          className={groupByClass ? "btn-c btn-c-primary" : "btn-c btn-c-ghost"}
+          title="Regrouper les recettes par promo (une ligne repliable par classe)"
+        >
+          <Layers size={15} strokeWidth={1.7} />Grouper par classe
+        </button>
+        <button
+          type="button"
+          onClick={() => api.download(`/api/accounting/revenues/export/xlsx?bank=${bankOnly ? "true" : "false"}${statusFilter ? `&status=${statusFilter}` : ""}`, bankOnly ? "Versements_bancaires.xlsx" : "Recettes.xlsx").catch((e: any) => toast.error(e?.message ?? "Erreur lors de l'export."))}
+          className="btn-c btn-c-soft"
+          title="Télécharger en Excel"
+        >
+          <Download size={15} strokeWidth={1.7} />Export Excel
+        </button>
         <button type="button" onClick={() => setModal({ open: true, editing: null })} className="btn-c btn-c-primary">
           <Plus size={15} strokeWidth={1.7} />Nouvelle recette
         </button>
       </div>
 
-      <SectionLabel>{total} recette{total !== 1 ? "s" : ""}</SectionLabel>
+      <SectionLabel>
+        {groupByClass
+          ? `${groups.length} classe${groups.length !== 1 ? "s" : ""} · total ${fmtMAD(groupTotal)}`
+          : `${total} recette${total !== 1 ? "s" : ""}`}
+      </SectionLabel>
 
       {loading ? (
         <div className="dash-card" style={{ padding: 26 }}>
           <div className="shimmer" style={{ height: 18, width: 180, borderRadius: 999 }} />
         </div>
+      ) : groupByClass ? (
+        groups.length === 0 ? (
+          <div className="dash-card">
+            <EmptyHint icon={<TrendingUp size={28} strokeWidth={1.7} />} text="Aucune recette trouvée." />
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 360px", minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+              {groups.map(g => {
+                const open = expanded === g.class_id;
+                const rows = groupRows[g.class_id];
+                return (
+                  <div key={g.class_id} className="dash-card overflow-hidden" style={{ padding: 0 }}>
+                    <div className="row-c flex-wrap" onClick={() => toggleGroup(g)} style={{ cursor: "pointer" }}>
+                      <span className="flex shrink-0" style={{ color: "var(--pal-muted)" }}>
+                        {open ? <ChevronDown size={16} strokeWidth={1.7} /> : <ChevronRightIcon size={16} strokeWidth={1.7} />}
+                      </span>
+                      <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}>
+                        <GraduationCap size={18} strokeWidth={1.7} />
+                      </span>
+                      <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{g.class_name ?? "Sans promo"}</div>
+                        <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
+                          {g.count} recette{g.count !== 1 ? "s" : ""} · encaissé {fmtMAD(g.received_total)}
+                        </div>
+                      </div>
+                      <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 700, color: PAL.ink }}>{fmtMAD(g.total)}</span>
+                    </div>
+                    {open && (
+                      <div style={{ borderTop: `1px solid ${PAL.line}`, background: "var(--pal-pale)" }}>
+                        {!rows ? (
+                          <div style={{ padding: 16 }}><div className="shimmer" style={{ height: 14, width: 140, borderRadius: 999 }} /></div>
+                        ) : rows.length === 0 ? (
+                          <div style={{ padding: 16, fontSize: 13, color: PAL.muted }}>Aucune recette.</div>
+                        ) : rows.map(r => (
+                          <div key={r.id} className="row-c flex-wrap" onClick={() => setSelected(r)} style={{ cursor: "pointer", paddingLeft: 42, background: selected?.id === r.id ? "var(--pal-paper)" : undefined }}>
+                            <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13.5, color: PAL.ink }}>{r.title}</div>
+                              <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>
+                                {TYPE_LABEL[r.revenue_type] ?? r.revenue_type} · {new Date(r.revenue_date).toLocaleDateString("fr-FR")}
+                              </div>
+                            </div>
+                            <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 700, color: PAL.ink }}>{fmtMAD(r.total_incl_vat)}</span>
+                            <span className={`chip-c ${STATUS_TONE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
+                            <button onClick={(event) => { event.stopPropagation(); setModal({ open: true, editing: r }); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
+                            <button onClick={(event) => { event.stopPropagation(); remove(r); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {selected && (
+              <DetailPanel revenue={selected} onClose={() => setSelected(null)} onChanged={refresh} />
+            )}
+          </div>
+        )
       ) : revenues.length === 0 ? (
         <div className="dash-card">
           <EmptyHint icon={<TrendingUp size={28} strokeWidth={1.7} />} text="Aucune recette trouvée." />
@@ -463,6 +621,7 @@ export function AccountingRevenues() {
                   </span>
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{r.title}</div>
+                    {r.revenue_number && <div style={{ fontFamily: mono, fontSize: 10.5, color: PAL.muted, marginTop: 2 }}>{r.revenue_number}</div>}
                     <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
                       {TYPE_LABEL[r.revenue_type] ?? r.revenue_type}{r.category_name ? ` · ${r.category_name}` : ""} · {new Date(r.revenue_date).toLocaleDateString("fr-FR")}
                     </div>
@@ -483,7 +642,7 @@ export function AccountingRevenues() {
           </div>
 
           {selected && (
-            <DetailPanel revenue={selected} onClose={() => setSelected(null)} onChanged={load} />
+            <DetailPanel revenue={selected} onClose={() => setSelected(null)} onChanged={refresh} />
           )}
         </div>
       )}

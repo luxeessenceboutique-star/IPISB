@@ -33,6 +33,7 @@ type Purchase = {
   payment_status: "pending" | "partially_paid" | "paid";
   payment_method: string | null;
   notes: string | null;
+  comment: string | null;
   purchase_request_id: string | null;
   valide_responsable_at: string | null;
   valide_comptable_at: string | null;
@@ -57,7 +58,7 @@ const emptyForm = {
   title: "", description: "", category_id: "", supplier_id: "",
   quantity: "1", unit_price: "0", vat_percent: "20", currency: "MAD",
   purchase_date: new Date().toISOString().slice(0, 10),
-  payment_status: "pending", payment_method: "", notes: "",
+  payment_status: "pending", payment_method: "", notes: "", comment: "",
 };
 
 function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Category[]; suppliers: Supplier[]; onClose: () => void; onSaved: () => void }) {
@@ -87,6 +88,7 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
         payment_status: form.payment_status,
         payment_method: form.payment_method || null,
         notes: form.notes || null,
+        comment: form.comment || null,
       });
       toast.success("Achat créé !");
       onSaved();
@@ -102,7 +104,7 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
   const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 520, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
           Nouvel achat
@@ -168,7 +170,10 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
         <input type="text" value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} placeholder="Virement, chèque, espèces…" className="u-input" style={fieldStyle} />
 
         <label style={labelStyle}>Notes</label>
-        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
+        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -195,20 +200,14 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
     received_quantity: "1",
     quality_status: "conforme",
     comment: "",
-    qhse_checked: false,
-    inclure_rapport_comptable: false,
-    validation_cg: false,
   });
   const [savingReception, setSavingReception] = useState(false);
 
-  // Édition QHSE d'une réception existante
+  // Édition d'une réception existante
   const [editingRecId, setEditingRecId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     quality_status: "conforme",
     comment: "",
-    qhse_checked: false,
-    validation_cg: false,
-    inclure_rapport_comptable: false,
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -305,9 +304,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         received_quantity: qty,
         quality_status: recForm.quality_status,
         comment: recForm.comment || null,
-        qhse_checked: recForm.qhse_checked,
-        inclure_rapport_comptable: recForm.inclure_rapport_comptable,
-        validation_cg: recForm.validation_cg,
       });
       toast.success("Réception enregistrée !");
       setShowAddReception(false);
@@ -315,9 +311,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         received_quantity: "1",
         quality_status: "conforme",
         comment: "",
-        qhse_checked: false,
-        inclure_rapport_comptable: false,
-        validation_cg: false,
       });
       loadReceptions();
       onChanged();
@@ -333,9 +326,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
     setEditForm({
       quality_status: r.quality_status ?? "conforme",
       comment: r.comment ?? "",
-      qhse_checked: !!r.qhse_checked,
-      validation_cg: !!r.validation_cg,
-      inclure_rapport_comptable: !!r.inclure_rapport_comptable,
     });
   }
 
@@ -346,9 +336,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
       await api.patch(`/api/accounting/receptions/${editingRecId}`, {
         quality_status: editForm.quality_status,
         comment: editForm.comment,
-        qhse_checked: editForm.qhse_checked,
-        validation_cg: editForm.validation_cg,
-        inclure_rapport_comptable: editForm.inclure_rapport_comptable,
       });
       toast.success("Réception mise à jour.");
       setEditingRecId(null);
@@ -412,12 +399,16 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         <Row label="Total TTC" value={fmtMAD(purchase.total_incl_vat)} />
         <Row label="Statut" value={STATUS_LABEL[purchase.payment_status]} />
         {purchase.purchase_request_id && (
-          <>
-            <Row label="Validation responsable" value={purchase.valide_responsable_at ? new Date(purchase.valide_responsable_at).toLocaleDateString("fr-FR") : "En attente"} />
-            <Row label="Validation comptable" value={purchase.valide_comptable_at ? new Date(purchase.valide_comptable_at).toLocaleDateString("fr-FR") : "En attente"} />
-          </>
+          <Row label="Validation commande" value={(purchase.valide_comptable_at || purchase.valide_responsable_at) ? new Date((purchase.valide_comptable_at || purchase.valide_responsable_at)!).toLocaleDateString("fr-FR") : "En attente"} />
         )}
       </div>
+
+      {purchase.comment && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>Commentaire</div>
+          <p style={{ fontSize: 12.5, color: PAL.ink, lineHeight: 1.5, margin: 0 }}>{purchase.comment}</p>
+        </div>
+      )}
 
       <div style={{ height: 1, background: PAL.line, margin: "4px 0 16px" }} />
 
@@ -456,21 +447,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
             <textarea value={recForm.comment} onChange={e => setRecForm(rf => ({ ...rf, comment: e.target.value }))} rows={2} placeholder="Observations..." className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6, resize: "none" }} />
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-              <input type="checkbox" checked={recForm.qhse_checked} onChange={e => setRecForm(rf => ({ ...rf, qhse_checked: e.target.checked }))} />
-              Contrôle QHSE effectué
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-              <input type="checkbox" checked={recForm.validation_cg} onChange={e => setRecForm(rf => ({ ...rf, validation_cg: e.target.checked }))} />
-              Validation CG (Conditions Générales)
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-              <input type="checkbox" checked={recForm.inclure_rapport_comptable} onChange={e => setRecForm(rf => ({ ...rf, inclure_rapport_comptable: e.target.checked }))} />
-              Inclure au rapport comptable
-            </label>
-          </div>
-
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
             <button onClick={() => setShowAddReception(false)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "4px 8px" }}>Annuler</button>
             <button disabled={savingReception} onClick={handleSaveReception} className="btn-c btn-c-sm btn-c-primary" style={{ padding: "4px 12px" }}>Enregistrer</button>
@@ -497,20 +473,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
                       <option value="retourne">Retourné</option>
                     </select>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                      <input type="checkbox" checked={editForm.qhse_checked} onChange={e => setEditForm(f => ({ ...f, qhse_checked: e.target.checked }))} />
-                      Contrôle QHSE effectué
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                      <input type="checkbox" checked={editForm.validation_cg} onChange={e => setEditForm(f => ({ ...f, validation_cg: e.target.checked }))} />
-                      Validation CG (Conditions Générales)
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                      <input type="checkbox" checked={editForm.inclure_rapport_comptable} onChange={e => setEditForm(f => ({ ...f, inclure_rapport_comptable: e.target.checked }))} />
-                      Inclure au rapport comptable
-                    </label>
-                  </div>
                   <div>
                     <label style={{ fontSize: 10.5, color: PAL.muted }}>Note / Commentaire qualité</label>
                     <textarea value={editForm.comment} onChange={e => setEditForm(f => ({ ...f, comment: e.target.value }))} rows={2} placeholder="Observations..." className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6, resize: "none" }} />
@@ -529,9 +491,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
                   <div style={{ color: PAL.muted, fontSize: 11, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
                     <span>{new Date(r.received_at).toLocaleDateString("fr-FR")}</span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      {r.qhse_checked && <span title="QHSE OK">✓ QHSE</span>}
-                      {r.validation_cg && <span title="CG OK">✓ CG</span>}
-                      {r.inclure_rapport_comptable && <span title="Inclus au rapport comptable">✓ Rapport</span>}
                       <button onClick={() => startEditReception(r)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, padding: 0 }} title="Modifier">
                         <Pencil size={12} />
                       </button>
@@ -716,11 +675,9 @@ export function AccountingPurchases() {
                     {fmtMAD(p.total_incl_vat)}
                   </span>
                   {p.purchase_request_id && (
-                    p.valide_comptable_at
-                      ? <span className="chip-c chip-c-green" title="Commande validée (responsable + comptable)">Commande validée</span>
-                      : p.valide_responsable_at
-                        ? <span className="chip-c chip-c-blue" title="Validée responsable — en attente comptable">Attente comptable</span>
-                        : <span className="chip-c chip-c-amber" title="Commande issue d'une DA — à valider">À valider</span>
+                    (p.valide_comptable_at || p.valide_responsable_at)
+                      ? <span className="chip-c chip-c-green" title="Commande validée par l'administration">Commande validée</span>
+                      : <span className="chip-c chip-c-amber" title="Commande issue d'une DA — à valider">À valider</span>
                   )}
                   <span className={`chip-c ${STATUS_TONE[p.payment_status]}`}>{STATUS_LABEL[p.payment_status]}</span>
                 </div>

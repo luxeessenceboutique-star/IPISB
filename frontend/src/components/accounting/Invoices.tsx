@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, FileText, Trash2, ChevronLeft, ChevronRight, Pencil, AlertTriangle } from "lucide-react";
+import { Plus, Search, FileText, Trash2, ChevronLeft, ChevronRight, Pencil, AlertTriangle, Download, X } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -9,6 +9,7 @@ const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
 const sans = '"Manrope", system-ui, sans-serif';
+const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 const STATUS_LABEL: Record<string, string> = { pending: "En attente", partially_paid: "Partiellement payé", paid: "Payé" };
 const STATUS_TONE: Record<string, string> = { pending: "chip-c-amber", partially_paid: "chip-c-blue", paid: "chip-c-green" };
@@ -31,6 +32,8 @@ type Invoice = {
   vat_percent: number;
   total_incl_vat: number;
   payment_status: string;
+  reference?: string | null;
+  comment?: string | null;
 };
 
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
@@ -53,6 +56,7 @@ function FormModal({ suppliers, classes, editing, onClose, onSaved }: {
     amount: editing ? String(editing.amount) : "0",
     vat_percent: editing ? String(editing.vat_percent) : "20",
     payment_status: editing?.payment_status ?? "pending",
+    comment: editing?.comment ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [students, setStudents] = useState<StudentOption[]>([]);
@@ -84,6 +88,7 @@ function FormModal({ suppliers, classes, editing, onClose, onSaved }: {
       due_date: form.due_date || null,
       amount, vat_percent: vat,
       payment_status: form.payment_status,
+      comment: form.comment || null,
     };
     try {
       if (editing) await api.patch(`/api/accounting/invoices/${editing.id}`, payload);
@@ -99,11 +104,14 @@ function FormModal({ suppliers, classes, editing, onClose, onSaved }: {
   }
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 500, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
-          {editing ? "Modifier la facture" : "Nouvelle facture"}
-        </h2>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
+            {editing ? "Modifier la facture" : "Nouvelle facture"}
+          </h2>
+          <button type="button" onClick={onClose} title="Fermer" aria-label="Fermer" style={{ border: "none", background: "transparent", cursor: "pointer", color: PAL.muted, padding: 0, lineHeight: 0 }}><X size={20} /></button>
+        </div>
 
         <label style={labelStyle}>Numéro de facture *</label>
         <input type="text" value={form.invoice_number} onChange={e => setForm(f => ({ ...f, invoice_number: e.target.value }))} placeholder="FAC-2026-001" className="u-input" style={fieldStyle} />
@@ -167,9 +175,12 @@ function FormModal({ suppliers, classes, editing, onClose, onSaved }: {
         </div>
 
         <label style={labelStyle}>Statut de paiement</label>
-        <select value={form.payment_status} onChange={e => setForm(f => ({ ...f, payment_status: e.target.value }))} className="u-input" style={{ ...fieldStyle, marginBottom: 24 }}>
+        <select value={form.payment_status} onChange={e => setForm(f => ({ ...f, payment_status: e.target.value }))} className="u-input" style={fieldStyle}>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -250,6 +261,14 @@ export function AccountingInvoices() {
           <option value="">Tous statuts</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <button
+          type="button"
+          onClick={() => api.download(`/api/accounting/invoices/export/xlsx?status=${statusFilter || "unpaid"}`, "Instances_fournisseurs.xlsx").catch((e: any) => toast.error(e?.message ?? "Erreur lors de l'export."))}
+          className="btn-c btn-c-soft"
+          title="Télécharger l'échéancier des factures fournisseurs (Excel)"
+        >
+          <Download size={15} strokeWidth={1.7} />Export Excel
+        </button>
         <button type="button" onClick={() => setModal({ open: true, editing: null })} className="btn-c btn-c-primary">
           <Plus size={15} strokeWidth={1.7} />Nouvelle facture
         </button>
@@ -280,6 +299,7 @@ export function AccountingInvoices() {
                       {inv.invoice_number}
                       {overdue && <span style={{ display: "inline-flex", color: "var(--pal-danger)" }} title="Échéance dépassée"><AlertTriangle size={13} strokeWidth={1.9} /></span>}
                     </div>
+                    {inv.reference && <div style={{ fontFamily: mono, fontSize: 10.5, color: PAL.muted, marginTop: 2 }}>{inv.reference}</div>}
                     <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
                       {inv.supplier_name || "—"} · {new Date(inv.invoice_date).toLocaleDateString("fr-FR")}
                       {inv.due_date ? ` · échéance ${new Date(inv.due_date).toLocaleDateString("fr-FR")}` : ""}

@@ -41,6 +41,7 @@ type InventoryItem = {
   vnc: number;
   amortization_percentage: number;
   yearly_amortization: number;
+  comment?: string | null;
 };
 
 type Movement = {
@@ -79,7 +80,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     name: "", asset_category: "consommable", initial_value: "0",
     purchase_date: new Date().toISOString().slice(0, 10),
     status: "actif", amortissement_duree_annees: "", niveau_alerte: "",
-    quantity: "1", location: "",
+    quantity: "1", location: "", comment: "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -97,6 +98,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         niveau_alerte: form.niveau_alerte ? parseFloat(form.niveau_alerte) : null,
         quantity: parseFloat(form.quantity) || 0,
         location: form.location || null,
+        comment: form.comment || null,
       });
       toast.success("Actif créé !");
       onSaved();
@@ -112,7 +114,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".05em", textTransform: "uppercase" as const };
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 14, padding: 28, width: 480, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 50px rgba(0,0,0,.15)" }}>
         <h2 style={{ fontFamily: titleFont, fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>Nouvel actif inventaire</h2>
         
@@ -166,6 +168,9 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
             <input type="text" placeholder="Ex: Salle 204" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
         </div>
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
           <button onClick={onClose} className="btn-c btn-c-ghost">Annuler</button>
@@ -309,6 +314,13 @@ function DetailsPanel({ item, onClose, onChanged }: { item: InventoryItem; onClo
           </div>
         )}
       </div>
+
+      {item.comment && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 600, color: PAL.muted, letterSpacing: ".05em", textTransform: "uppercase" as const, marginBottom: 6 }}>Commentaire</div>
+          <p style={{ fontSize: 12.5, color: PAL.ink, lineHeight: 1.5, margin: 0 }}>{item.comment}</p>
+        </div>
+      )}
 
       {item.amortissement_duree_annees && (
         <div style={{ background: "var(--pal-pale)", padding: 14, borderRadius: 10, marginBottom: 16 }}>

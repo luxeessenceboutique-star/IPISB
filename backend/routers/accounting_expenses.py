@@ -118,10 +118,68 @@ async def create_expense(
     data["expense_date"] = body.expense_date or datetime.now(timezone.utc).date().isoformat()
     data["created_by"] = user.id
 
+    # Dépense réglée par DÉCAISSEMENT BANCAIRE (chèque, versement, virement, OV)
+    # → validation N+1 obligatoire (migrations l37, l38) : ni la dépense ni
+    # l'écriture de journal ne sont créées avant approbation.
+    from routers.accounting_cheques import validation_mode, defer_bank_payment
+    mode = validation_mode(body.payment_method)
+    if mode:
+        return defer_bank_payment(
+            db,
+            user=user,
+            kind="expense",
+            mode=mode,
+            data=data,
+            amount=body.amount,
+            counterparty=_supplier_name(db, body.supplier_id) or body.title,
+            label="Dépense — " + body.title,
+            issue_date=data["expense_date"],
+        )
+
+    return _shape(commit_expense(db, data, user.id))
+
+
+def _supplier_name(db: Client, supplier_id: Optional[str]) -> Optional[str]:
+    """Raison sociale du fournisseur (None si non renseigné ou introuvable)."""
+    if not supplier_id:
+        return None
+    rows = db.from_("suppliers").select("company_name").eq("id", supplier_id).execute().data or []
+    return rows[0].get("company_name") if rows else None
+
+
+def commit_expense(db: Client, data: dict, user_id: str) -> dict:
+    """Enregistre effectivement la dépense et l'écriture de journal associée.
+
+    Chemin UNIQUE de comptabilisation — appelé directement hors décaissement bancaire, et rejoué
+    à l'identique par la validation N+1 des décaissements bancaires (cf.
+    routers/accounting_cheques.execute_pending_payment)."""
     res = db.from_("expenses").insert(data).execute()
     new_expense = res.data[0]
-    log_audit(db, user.id, "expense.create", "expense", new_expense["id"], {"title": body.title})
-    return _shape(new_expense)
+    log_audit(db, user_id, "expense.create", "expense", new_expense["id"],
+              {"title": data.get("title"), "reference": new_expense.get("reference")})
+
+    # Journal : décaissement automatique, ventilé selon le mode de paiement
+    # (virement / chèque / carte → Journal des comptes, sinon Journal de caisse).
+    try:
+        from routers.accounting_cash_journal import create_cash_entry
+        prestataire = _supplier_name(db, new_expense.get("supplier_id"))
+        create_cash_entry(
+            db,
+            user_id=user_id,
+            type="sortie",
+            amount=new_expense.get("amount") or 0,
+            prestataire=prestataire or new_expense.get("title"),
+            action="Dépense — " + (new_expense.get("title") or new_expense.get("description") or ""),
+            justificatif="Sans pièce",   # aucune pièce à la création ; re-synchronisé à l'upload
+            nc="noir",                    # pas de pièce justificative → hors comptabilité
+            source_type="expense",
+            source_id=new_expense["id"],
+            payment_method=new_expense.get("payment_method"),
+        )
+    except Exception:
+        pass
+
+    return new_expense
 
 
 @router.patch("/{expense_id}")
@@ -212,6 +270,12 @@ async def upload_attachment(
     }).execute()
     new_attachment = res.data[0]
     log_audit(db, user.id, "expense.attachment.upload", "expense", expense_id, {"kind": kind, "file_name": file.filename})
+    # Journal de caisse : la dépense a désormais une pièce → comptable + type de pièce.
+    try:
+        from routers.accounting_cash_journal import sync_source_piece
+        sync_source_piece(db, source_type="expense", source_id=expense_id)
+    except Exception:
+        pass
     return new_attachment
 
 
@@ -253,4 +317,10 @@ async def delete_attachment(
         pass
     db.from_("accounting_attachments").delete().eq("id", attachment_id).execute()
     log_audit(db, user.id, "expense.attachment.delete", "expense", rows[0]["entity_id"])
+    # Journal de caisse : re-synchronise (repasse en 'noir' s'il ne reste plus de pièce).
+    try:
+        from routers.accounting_cash_journal import sync_source_piece
+        sync_source_piece(db, source_type="expense", source_id=rows[0]["entity_id"])
+    except Exception:
+        pass
     return {"ok": True}

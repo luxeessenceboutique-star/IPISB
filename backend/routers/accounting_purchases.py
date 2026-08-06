@@ -136,7 +136,8 @@ async def create_purchase(
 
     res = db.from_("purchases").insert(data).execute()
     new_purchase = res.data[0]
-    log_audit(db, user.id, "purchase.create", "purchase", new_purchase["id"], {"title": body.title})
+    log_audit(db, user.id, "purchase.create", "purchase", new_purchase["id"],
+              {"title": body.title, "reference": new_purchase.get("reference") or new_purchase.get("purchase_number")})
     return new_purchase
 
 
@@ -188,63 +189,76 @@ async def delete_purchase(
     return {"ok": True}
 
 
-# ── Commande : double validation (responsable → comptable) ──────────────────
+# ── Commande : validation unique (admin N+1) + alimentation du journal ───────
 
-@router.post("/{purchase_id}/validate-responsable")
-async def validate_responsable(
+@router.post("/{purchase_id}/validate-order")
+async def validate_order(
     purchase_id: str,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
+    """Validation UNIQUE de la commande (admin). Émet la commande et met la DA à
+    'commande_emise'. La nature (caisse sociale / comptable) N'EST PLUS fixée ici :
+    elle est décidée paiement par paiement dans l'onglet Paiements, où chaque
+    décaissement réel est inscrit au journal de caisse avec sa propre nature. Le
+    journal de caisse n'est donc PAS alimenté à l'émission (ce serait un engagement,
+    pas un décaissement réel, et cela double-compterait les paiements)."""
     _require_admin(user)
-    rows = db.from_("purchases").select("id, valide_responsable_at").eq("id", purchase_id).execute().data
-    if not rows:
-        raise HTTPException(404, "Not found")
-    if rows[0].get("valide_responsable_at"):
-        raise HTTPException(400, "Déjà validé par le responsable.")
-    now = datetime.now(timezone.utc).isoformat()
-    res = db.from_("purchases").update(
-        {"valide_responsable_by": user.id, "valide_responsable_at": now}
-    ).eq("id", purchase_id).execute()
-    log_audit(db, user.id, "purchase.validate_responsable", "purchase", purchase_id)
-    return res.data[0]
 
-
-@router.post("/{purchase_id}/validate-comptable")
-async def validate_comptable(
-    purchase_id: str,
-    user: Annotated[CurrentUser, Depends(get_current_user)],
-    db: Annotated[Client, Depends(get_db)],
-):
-    """Seconde validation. Garde-fou : la validation responsable doit précéder.
-    Une fois les deux validations posées, la DA liée passe à 'commande_emise'."""
-    _require_admin(user)
     rows = (
         db.from_("purchases")
-        .select("id, valide_responsable_at, valide_comptable_at, purchase_request_id")
+        .select("id, valide_responsable_at, purchase_request_id, total_incl_vat, supplier_id, title, purchase_number")
         .eq("id", purchase_id).execute().data
     )
     if not rows:
         raise HTTPException(404, "Not found")
     p = rows[0]
-    if not p.get("valide_responsable_at"):
-        raise HTTPException(400, "La validation du responsable est requise avant celle du comptable.")
-    if p.get("valide_comptable_at"):
-        raise HTTPException(400, "Déjà validé par le comptable.")
+    if p.get("valide_responsable_at"):
+        raise HTTPException(400, "Commande déjà validée.")
 
     now = datetime.now(timezone.utc).isoformat()
-    res = db.from_("purchases").update(
-        {"valide_comptable_by": user.id, "valide_comptable_at": now}
-    ).eq("id", purchase_id).execute()
+    # On pose les deux marqueurs en une fois (compat. avec l'affichage existant).
+    res = db.from_("purchases").update({
+        "valide_responsable_by": user.id, "valide_responsable_at": now,
+        "valide_comptable_by": user.id, "valide_comptable_at": now,
+    }).eq("id", purchase_id).execute()
 
-    # Les deux validations posées → la commande est émise.
+    # DA liée → commande émise (sans axe n/c global : il est porté par chaque
+    # jalon de l'échéancier et par chaque paiement effectif).
     pr_id = p.get("purchase_request_id")
     if pr_id:
-        db.from_("purchase_requests").update({"status": "commande_emise"}).eq("id", pr_id).execute()
+        db.from_("purchase_requests").update({
+            "status": "commande_emise",
+        }).eq("id", pr_id).execute()
         log_audit(db, user.id, "purchase_request.order_emitted", "purchase_request", pr_id,
                   {"purchase_id": purchase_id})
-    log_audit(db, user.id, "purchase.validate_comptable", "purchase", purchase_id)
+
+    log_audit(db, user.id, "purchase.validate_order", "purchase", purchase_id, {})
     return res.data[0]
+
+
+# ── Échéancier de paiement (lecture — rattaché à la DA) ─────────────────────
+# La saisie/édition se fait sur la DA (accounting_purchase_requests, en amont de
+# la consultation). Ce GET reste pour les vues indexées par bon de commande
+# (onglet Paiements) : il résout la DA liée et renvoie son échéancier.
+
+@router.get("/{purchase_id}/installments")
+async def list_installments(
+    purchase_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Échéancier prévisionnel du bon de commande, résolu via la DA liée
+    (lecture ouverte aux utilisateurs authentifiés)."""
+    p_rows = db.from_("purchases").select("purchase_request_id").eq("id", purchase_id).execute().data
+    pr_id = p_rows[0].get("purchase_request_id") if p_rows else None
+    if not pr_id:
+        return []
+    rows = (
+        db.from_("purchase_installments").select("*")
+        .eq("purchase_request_id", pr_id).order("rank").execute().data
+    ) or []
+    return rows
 
 
 # ── Attachments ────────────────────────────────────────────────────────────
@@ -377,7 +391,36 @@ async def export_purchase_pdf(
         if s_rows:
             supplier = s_rows[0]
 
-    pdf_bytes = render_purchase_order_pdf(purchase, supplier)
+    # Toutes les informations du bon de commande proviennent de la DA liée.
+    pr = None
+    if purchase.get("purchase_request_id"):
+        pr_rows = (
+            db.from_("purchase_requests").select("*")
+            .eq("id", purchase["purchase_request_id"]).execute().data
+        )
+        if pr_rows:
+            pr = pr_rows[0]
+
+    # Devis retenu → sert à reporter la livraison sur le bon de commande.
+    quote = None
+    if purchase.get("purchase_request_id"):
+        q_rows = (
+            db.from_("quotations").select("*")
+            .eq("purchase_request_id", purchase["purchase_request_id"])
+            .eq("retenu", True).limit(1).execute().data
+        )
+        if q_rows:
+            quote = q_rows[0]
+
+    # Échéancier prévisionnel (rattaché à la DA) → reporté sur le bon de commande.
+    installments = []
+    if purchase.get("purchase_request_id"):
+        installments = (
+            db.from_("purchase_installments").select("*")
+            .eq("purchase_request_id", purchase["purchase_request_id"]).order("rank").execute().data
+        ) or []
+
+    pdf_bytes = render_purchase_order_pdf(purchase, supplier, pr, quote, installments)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

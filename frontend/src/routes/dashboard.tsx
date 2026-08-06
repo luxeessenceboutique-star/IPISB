@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { useEffect, useState } from "react";
 import {
   Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
-  Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet,
+  Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet, ShoppingCart,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -82,13 +82,31 @@ function DashboardLayout() {
 
   const isAdmin = roles.includes("admin");
   const isProf  = roles.includes("professor");
-  const roleLabel = isAdmin ? t("dash.role.admin") : isProf ? t("dash.role.professor") : t("dash.role.student");
+  const isCashier = roles.includes("cashier");
+  const isAccountant = roles.includes("accountant");
+  // Personnel financier (caissier / comptable) SANS être admin ni prof :
+  // accès limité à la Comptabilité + Notifications (pas de cours / classes).
+  const isFinanceStaff = (isCashier || isAccountant) && !isAdmin && !isProf;
+  const roleLabel = isAdmin ? t("dash.role.admin")
+    : isProf ? t("dash.role.professor")
+    : isCashier ? t("dash.role.cashier")
+    : isAccountant ? t("dash.role.accountant")
+    : t("dash.role.student");
   const fullName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "?";
   const spaceLabel = lang === "fr"
     ? `Espace ${roleLabel.toLowerCase()}`
     : lang === "ar" ? `فضاء ${roleLabel}` : `${roleLabel} space`;
 
-  const allItems: NavItem[] = [
+  // Personnel financier : Comptabilité + Notifications.
+  // Le caissier gère aussi les classes (création + inscription/transfert → validation N+1).
+  const financeItems: NavItem[] = [
+    { key: "dash.overview",      to: "/dashboard",               icon: Home, exact: true },
+    { key: "dash.accounting",    to: "/dashboard/accounting",    icon: Wallet            },
+    ...(isCashier ? [{ key: "dash.classes", to: "/dashboard/classes", icon: Layers }] : []),
+    { key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true },
+  ];
+
+  const allItems: NavItem[] = isFinanceStaff ? financeItems : [
     ...SIDE_ITEMS,
     ...((isAdmin || isProf) ? [
       { key: "dash.classes", to: "/dashboard/classes", icon: Layers },
@@ -101,6 +119,11 @@ function DashboardLayout() {
       { key: "dash.schedules",     to: "/dashboard/schedules",     icon: CalendarClock },
       { key: "dash.announcements", to: "/dashboard/announcements", icon: Megaphone     },
       { key: "dash.accounting",    to: "/dashboard/accounting",    icon: Wallet        },
+    ] : []),
+    // Demandes d'achat : ouvert à tous. L'admin y accède via la Comptabilité ;
+    // les autres (élèves, professeurs) via cette entrée dédiée.
+    ...(!isAdmin ? [
+      { key: "dash.purchase_requests", to: "/dashboard/purchase-requests", icon: ShoppingCart },
     ] : []),
   ];
 

@@ -37,8 +37,18 @@ class CurrentUser:
     def is_prof(self) -> bool:
         return "professor" in self.roles
 
+    def is_cashier(self) -> bool:
+        return "cashier" in self.roles
+
+    def is_accountant(self) -> bool:
+        return "accountant" in self.roles
+
     def can_create(self) -> bool:
         return self.is_admin() or self.is_prof()
+
+    def can_read_accounting(self) -> bool:
+        """Admin (plein accès), comptable (lecture seule), caissier (saisie→validation)."""
+        return self.is_admin() or self.is_accountant() or self.is_cashier()
 
     def can_create_role(self) -> str | None:
         if self.is_admin():

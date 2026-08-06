@@ -12,6 +12,12 @@ from routers import accounting_invoices, accounting_expenses, accounting_revenue
 from routers import accounting_budgets, accounting_dashboard, accounting_analytics
 from routers import accounting_purchase_requests, accounting_quotations
 from routers import accounting_receptions, accounting_payments, accounting_inventory
+from routers import accounting_tuition
+from routers import accounting_cash_journal
+from routers import accounting_cash_notes
+from routers import accounting_mission_notes
+from routers import accounting_cheques
+from routers import approvals
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -80,6 +86,12 @@ app.include_router(accounting_quotations.router, prefix="/api")
 app.include_router(accounting_receptions.router, prefix="/api")
 app.include_router(accounting_payments.router, prefix="/api")
 app.include_router(accounting_inventory.router, prefix="/api")
+app.include_router(accounting_tuition.router, prefix="/api")
+app.include_router(accounting_cash_journal.router, prefix="/api")
+app.include_router(accounting_cash_notes.router, prefix="/api")
+app.include_router(accounting_mission_notes.router, prefix="/api")
+app.include_router(accounting_cheques.router, prefix="/api")
+app.include_router(approvals.router, prefix="/api")
 
 
 @app.get("/health")
