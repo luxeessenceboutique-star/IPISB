@@ -353,6 +353,13 @@ async def delete_revenue(
             pass
         db.from_("accounting_attachments").delete().eq("entity_type", ENTITY_TYPE).eq("entity_id", revenue_id).execute()
 
+    # La recette avait été portée au journal (et, si chèque, au registre) : on la
+    # retire des deux, sinon le solde garde un encaissement qui n'existe plus.
+    from routers.accounting_cash_journal import delete_cash_entry
+    from routers.accounting_cheques import unregister_source
+    delete_cash_entry(db, source_type=ENTITY_TYPE, source_id=revenue_id, user_id=user.id)
+    unregister_source(db, source_type=ENTITY_TYPE, source_id=revenue_id, user_id=user.id)
+
     db.from_("revenues").delete().eq("id", revenue_id).execute()
     log_audit(db, user.id, "revenue.delete", "revenue", revenue_id)
     return {"ok": True}

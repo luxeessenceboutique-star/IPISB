@@ -754,8 +754,59 @@ async def update_payment(
     res = db.from_("tuition_payments").update(updates).eq("id", payment_id).execute()
     if not res.data:
         raise HTTPException(404, "Versement introuvable")
+
+    # Le journal doit suivre : un montant corrigé ici sans l'être au journal
+    # ferait dériver le solde de caisse.
+    if "amount" in updates or "method" in updates:
+        try:
+            from routers.accounting_cash_journal import update_cash_entry
+            update_cash_entry(
+                db,
+                source_type="tuition_payment", source_id=payment_id,
+                amount=updates.get("amount"),
+                payment_method=updates.get("method"),
+            )
+        except Exception:
+            pass
+
     log_audit(db, user.id, "tuition_payment.update", "tuition_payment", payment_id, updates)
     return res.data[0]
+
+
+def perform_payment_delete(db: Client, payment_id: str, user_id: str) -> Optional[str]:
+    """Supprime réellement un versement — et le retire de la caisse.
+
+    L'encaissement avait été porté au journal (caisse ou comptes, selon le mode)
+    et, s'il s'agissait d'un chèque, inscrit au registre des règlements. Les deux
+    sont défaits ici : sans cela le solde continuerait d'inclure un montant que
+    l'école n'a pas encaissé. Le journal est nettoyé AVANT la ligne métier — si
+    cela échoue, rien n'est supprimé, plutôt qu'un solde faux.
+
+    Appelé UNIQUEMENT depuis l'approbation N+1 (routers/approvals.py) : la route
+    DELETE ne fait que déposer la demande.
+    """
+    existing = (
+        db.from_("tuition_payments").select("id, amount, method, reference")
+        .eq("id", payment_id).execute().data
+    )
+    if not existing:
+        # Déjà supprimé entre-temps : on ne bloque pas la validation, la demande
+        # a simplement perdu son objet.
+        raise HTTPException(404, "Versement introuvable — il a peut-être déjà été supprimé.")
+
+    from routers.accounting_cash_journal import delete_cash_entry
+    from routers.accounting_cheques import unregister_source
+    removed = delete_cash_entry(db, source_type="tuition_payment", source_id=payment_id, user_id=user_id)
+    unregister_source(db, source_type="tuition_payment", source_id=payment_id, user_id=user_id)
+
+    db.from_("tuition_payments").delete().eq("id", payment_id).execute()
+    log_audit(db, user_id, "tuition_payment.delete", "tuition_payment", payment_id, {
+        "amount": existing[0].get("amount"),
+        "method": existing[0].get("method"),
+        "reference": existing[0].get("reference"),
+        "journal_rows_removed": removed,
+    })
+    return payment_id
 
 
 @router.delete("/payment/{payment_id}")
@@ -764,13 +815,78 @@ async def delete_payment(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
-    existing = db.from_("tuition_payments").select("id").eq("id", payment_id).execute().data
+    """Supprime un versement — sous validation N+1 pour qui n'est pas admin.
+
+    Effacer un versement efface une recette : la ligne du journal disparaît, la
+    pièce sort du registre, et la facture déjà remise à la famille n'a plus de
+    contrepartie. L'opération est donc tracée dans `pending_operations` dans
+    tous les cas.
+
+    - **Admin** : la demande est validée d'office (il est le N+1) et exécutée
+      immédiatement — l'opération est enregistrée « approuvée » pour l'historique.
+    - **Caissier** : la demande reste en attente et un admin l'exécute.
+    """
+    if not (user.is_admin() or user.is_cashier()):
+        raise HTTPException(403, "Admin ou caissier uniquement")
+    existing = (
+        db.from_("tuition_payments")
+        .select("id, amount, method, reference, period_month, class_id, student_id")
+        .eq("id", payment_id).execute().data
+    )
     if not existing:
         raise HTTPException(404, "Versement introuvable")
-    db.from_("tuition_payments").delete().eq("id", payment_id).execute()
-    log_audit(db, user.id, "tuition_payment.delete", "tuition_payment", payment_id)
-    return {"ok": True}
+    p = existing[0]
+
+    # Deux demandes sur la même pièce feraient rejouer la suppression une fois
+    # la ligne partie : une seule à la fois.
+    already = (
+        db.from_("pending_operations").select("id")
+        .eq("op_type", "tuition_payment_delete").eq("status", "pending")
+        .eq("payload->>payment_id", payment_id).execute().data
+    )
+    if already:
+        raise HTTPException(400, "Une demande de suppression est déjà en attente de validation pour ce versement.")
+
+    row = {
+        "op_type": "tuition_payment_delete",
+        "payload": {
+            "payment_id": payment_id,
+            "amount": p.get("amount"),
+            "method": p.get("method"),
+            "reference": p.get("reference"),
+            "period_month": p.get("period_month"),
+        },
+        "class_id": p.get("class_id"),
+        "student_id": p.get("student_id"),
+        "amount": p.get("amount"),
+        "created_by": user.id,
+    }
+
+    # ── Admin : il EST le N+1, sa demande est validée d'office ─────────────
+    # La ligne d'opération est quand même écrite, déjà approuvée : la
+    # suppression d'une recette doit rester lisible dans l'historique.
+    if user.is_admin():
+        now = datetime.now(timezone.utc).isoformat()
+        db.from_("pending_operations").insert({
+            **row, "status": "approved", "reviewed_by": user.id, "reviewed_at": now,
+            "result_id": payment_id,
+        }).execute()
+        perform_payment_delete(db, payment_id, user.id)
+        return {"ok": True, "auto_approved": True}
+
+    op = db.from_("pending_operations").insert(row).execute()
+
+    notify_users(
+        db, [a for a in _admin_ids(db) if a != user.id],
+        title="Suppression de versement à valider ⚠️",
+        message="Un paiement de scolarité est proposé à la suppression et attend une seconde validation.",
+        type="warning",
+        link="/dashboard/accounting",
+    )
+    log_audit(db, user.id, "tuition_payment.delete_pending", "pending_operation",
+              (op.data[0]["id"] if op.data else None),
+              {"payment_id": payment_id, "amount": p.get("amount"), "reference": p.get("reference")})
+    return {"pending": True}
 
 
 @router.post("/payment/{payment_id}/receipt")

@@ -6,6 +6,7 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import CashJournalEntryCreate, CashJournalEntryUpdate
 from utils.audit import log_audit
+from utils.excel import make_xlsx
 from utils.notify import notify_users
 from utils.uploads import validate_and_read
 from utils.pdf_generators import render_cash_journal_pdf
@@ -271,6 +272,110 @@ def create_cash_entry(
     return res.data[0] if res.data else row
 
 
+def delete_cash_entry(db: Client, *, source_type: str, source_id: str, user_id: str | None = None) -> int:
+    """Retire du journal la ligne automatique d'une opération supprimée.
+
+    Symétrique exact de `create_cash_entry` : ce qui entre au journal à
+    l'enregistrement doit en sortir à la suppression, sinon le solde garde un
+    montant fantôme (encaissement supprimé mais toujours compté en caisse).
+
+    À appeler AVANT de supprimer la ligne métier : si le journal ne peut pas être
+    nettoyé, l'exception remonte et rien n'est supprimé — mieux vaut un échec
+    visible qu'un solde faux. Renvoie le nombre de lignes retirées.
+
+    Les pièces jointes de la ligne de journal (entity_type='cash_journal') sont
+    retirées avec elle ; celles de l'opération source restent à la charge du
+    routeur métier, qui connaît son propre entity_type."""
+    rows = (
+        db.from_("cash_journal").select("id, amount, type, channel")
+        .eq("source_type", source_type).eq("source_id", source_id)
+        .execute().data or []
+    )
+    if not rows:
+        return 0
+
+    for r in rows:
+        _purge_entry_attachments(db, r["id"])
+
+    db.from_("cash_journal").delete().eq("source_type", source_type).eq("source_id", source_id).execute()
+
+    if user_id:
+        for r in rows:
+            try:
+                log_audit(db, user_id, "cash_journal.delete_source", "cash_journal", r["id"], {
+                    "source_type": source_type, "source_id": source_id,
+                    "type": r.get("type"), "amount": r.get("amount"), "channel": r.get("channel"),
+                })
+            except Exception:
+                pass
+    return len(rows)
+
+
+def update_cash_entry(
+    db: Client,
+    *,
+    source_type: str,
+    source_id: str,
+    amount: float | None = None,
+    payment_method: str | None = None,
+    payment_ref: str | None = None,
+    action: str | None = None,
+    prestataire: str | None = None,
+) -> int:
+    """Répercute sur le journal la modification d'une opération source.
+
+    Même raison que `delete_cash_entry` : un montant corrigé côté métier doit
+    l'être au journal, sinon le solde dérive. Un changement de mode de règlement
+    peut faire basculer la ligne de registre (caisse ↔ comptes) : le canal est
+    donc recalculé. L'axe n/c n'est pas touché pour une ligne de caisse — il
+    dépend des pièces justificatives (`sync_source_piece`) — et vaut toujours
+    'comptable' pour une ligne bancaire. Renvoie le nombre de lignes mises à jour."""
+    updates: dict = {}
+    if amount is not None:
+        updates["amount"] = _num(amount)
+    if action is not None:
+        updates["action"] = action
+    if prestataire is not None:
+        updates["prestataire"] = prestataire
+    if payment_ref is not None:
+        updates["payment_ref"] = payment_ref or None
+    if payment_method is not None:
+        channel, mode = resolve_channel(payment_method)
+        updates["channel"] = channel
+        updates["payment_mode"] = mode
+        if channel == BANK:
+            updates["nc"] = "comptable"
+    if not updates:
+        return 0
+    res = (
+        db.from_("cash_journal").update(updates)
+        .eq("source_type", source_type).eq("source_id", source_id)
+        .execute()
+    )
+    return len(res.data or [])
+
+
+def _purge_entry_attachments(db: Client, entry_id: str) -> None:
+    """Supprime les pièces (storage + table) attachées à une ligne de journal."""
+    try:
+        atts = (
+            db.from_("accounting_attachments").select("file_path")
+            .eq("entity_type", ENTITY_TYPE).eq("entity_id", entry_id)
+            .execute().data or []
+        )
+        if not atts:
+            return
+        paths = [a["file_path"] for a in atts if a.get("file_path")]
+        if paths:
+            try:
+                db.storage.from_(BUCKET).remove(paths)
+            except Exception:
+                pass
+        db.from_("accounting_attachments").delete().eq("entity_type", ENTITY_TYPE).eq("entity_id", entry_id).execute()
+    except Exception:
+        pass
+
+
 def create_purchase_cash_entry(
     db: Client,
     *,
@@ -398,6 +503,59 @@ async def list_entries(
     }
 
 
+def _journal_rows(
+    db: Client, user: CurrentUser, channel: str, date_from: str, date_to: str
+) -> list[dict]:
+    """Lignes d'un journal sur une période, dans l'ordre chronologique, chacune
+    portant son solde cumulé.
+
+    Le solde est calculé SUR LA PÉRIODE demandée : le journal d'une journée
+    s'ouvre à zéro et se clôt sur le mouvement net du jour. C'est ce que le
+    modèle attend d'un journal quotidien — un cumul depuis l'origine ferait lire
+    la trésorerie totale de l'école en bas d'une feuille d'une journée.
+
+    Respecte la visibilité par rôle : le comptable « pur » n'exporte que les
+    lignes déclarées, et son solde ne reflète que la caisse déclarée."""
+    rows = (
+        db.from_("cash_journal").select("*")
+        .eq("channel", channel)
+        .order("entry_date", desc=False).order("created_at", desc=False)
+        .execute().data or []
+    )
+    if _is_comptable_only(user):
+        rows = [r for r in rows if r.get("nc") == "comptable"]
+    if date_from:
+        rows = [r for r in rows if (r.get("entry_date") or "") >= date_from]
+    if date_to:
+        rows = [r for r in rows if (r.get("entry_date") or "") <= date_to]
+    bal = 0.0
+    for r in rows:
+        amt = _num(r.get("amount"))
+        bal += amt if r.get("type") == "entree" else -amt
+        r["balance"] = round(bal, 2)
+    return rows
+
+
+def _period(date_from: str, date_to: str) -> tuple[str, str]:
+    """(libellé lisible, suffixe de nom de fichier) de la période exportée."""
+    if date_from and date_from == date_to:
+        return f"Journée du {_fr_date(date_from)}", date_from
+    if date_from or date_to:
+        return (f"Du {_fr_date(date_from) or '…'} au {_fr_date(date_to) or '…'}",
+                f"{date_from or 'debut'}_{date_to or 'fin'}")
+    return "Journal complet", "complet"
+
+
+def _fr_date(iso) -> str:
+    s = str(iso or "")[:10]
+    return f"{s[8:10]}/{s[5:7]}/{s[0:4]}" if len(s) == 10 and s[4] == "-" else ""
+
+
+def _heure(iso) -> str:
+    s = str(iso or "")
+    return s.split("T", 1)[1][:5] if "T" in s else ""
+
+
 @router.get("/pdf")
 async def export_cash_journal_pdf(
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -411,28 +569,11 @@ async def export_cash_journal_pdf(
 ):
     """PDF d'un journal au modèle bébleo (chronologique, solde journalier +
     cumulé) : « Journal de la Caisse » (caisse) ou « Journal des Comptes »
-    (banque). Respecte la visibilité par rôle : le comptable pur n'exporte que
-    les lignes déclarées ('comptable')."""
+    (banque). `date_from` = `date_to` = un jour → le journal de cette seule
+    journée, prêt à signer."""
     _check_channel(channel)
     _require_read(user, channel)
-    rows = (
-        db.from_("cash_journal").select("*")
-        .eq("channel", channel)
-        .order("entry_date", desc=False).order("created_at", desc=False)
-        .execute().data or []
-    )
-    if _is_comptable_only(user):
-        rows = [r for r in rows if r.get("nc") == "comptable"]
-    if date_from:
-        rows = [r for r in rows if (r.get("entry_date") or "") >= date_from]
-    if date_to:
-        rows = [r for r in rows if (r.get("entry_date") or "") <= date_to]
-    # Solde cumulé chronologique (entrée = +, sortie = −).
-    bal = 0.0
-    for r in rows:
-        amt = _num(r.get("amount"))
-        bal += amt if r.get("type") == "entree" else -amt
-        r["balance"] = round(bal, 2)
+    rows = _journal_rows(db, user, channel, date_from, date_to)
     is_bank = channel == BANK
     meta = {
         "journal_no": journal_no or None,
@@ -443,14 +584,78 @@ async def export_cash_journal_pdf(
         "generated_on": _today(),
         "title": "Journal des Comptes" if is_bank else "Journal de la Caisse",
         "signatory": "Signature Responsable Trésorerie" if is_bank else "Signature Responsable de Caisse",
-        "signature_col": "Signature|resp. trésorerie" if is_bank else "Signature|resp. caisse",
+        "signature_col": "Signature 1|resp. trésorerie" if is_bank else "Signature 1|resp. caisse",
+        "signature2_col": "Signature 2|resp. comptabilité *",
     }
     pdf_bytes = render_cash_journal_pdf(rows, meta)
-    filename = "Journal_des_comptes.pdf" if is_bank else "Journal_de_caisse.pdf"
+    base = "Journal_des_comptes" if is_bank else "Journal_de_caisse"
+    filename = f"{base}_{_period(date_from, date_to)[1]}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/xlsx")
+async def export_cash_journal_xlsx(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    date_from: str = "",
+    date_to: str = "",
+    channel: str = CASH,
+):
+    """Même journal, même période, en tableau Excel — pour retravailler les
+    chiffres ou classer la journée. Les colonnes « Signature 1 » et
+    « Signature 2 » sont laissées vides, à signer à la main après impression."""
+    _check_channel(channel)
+    _require_read(user, channel)
+    rows = _journal_rows(db, user, channel, date_from, date_to)
+    is_bank = channel == BANK
+
+    out = [
+        {
+            "date": _fr_date(r.get("entry_date")),
+            "heure": _heure(r.get("created_at")),
+            "action": r.get("action") or "",
+            "tiers": r.get("prestataire") or "",
+            "entree": _num(r.get("amount")) if r.get("type") == "entree" else 0,
+            "sortie": _num(r.get("amount")) if r.get("type") != "entree" else 0,
+            "solde": r.get("balance") or 0,
+            "piece": r.get("payment_ref") or r.get("justificatif") or "",
+            "axe": (mode_label(r.get("payment_mode")) or "—") if is_bank
+                   else ("Caisse sociale" if r.get("nc") == "noir" else "Comptabilisé"),
+            "sign1": "",
+            "sign2": "",
+        }
+        for r in rows
+    ]
+    total_in = sum(r["entree"] for r in out)
+    total_out = sum(r["sortie"] for r in out)
+    period, suffix = _period(date_from, date_to)
+
+    return make_xlsx(
+        filename=f"{'Journal_des_comptes' if is_bank else 'Journal_de_caisse'}_{suffix}.xlsx",
+        title=("JOURNAL DES COMPTES — IPISB" if is_bank else "JOURNAL DE LA CAISSE — IPISB"),
+        subtitle=(f"{period} · {len(out)} mouvement(s) · Entrées {total_in:,.2f} — "
+                  f"Sorties {total_out:,.2f} · Solde de la période {total_in - total_out:,.2f} MAD"
+                  ).replace(",", " "),
+        theme="blue" if is_bank else "grey",
+        sheet_name="Journal des comptes" if is_bank else "Journal de caisse",
+        columns=[
+            {"key": "date",   "label": "Date",   "type": "date", "width": 13},
+            {"key": "heure",  "label": "Heure",  "width": 9, "align": "center"},
+            {"key": "action", "label": "Action", "width": 38},
+            {"key": "tiers",  "label": "Prestataire / tiers", "width": 26},
+            {"key": "entree", "label": "Entrée (M1)", "type": "money", "width": 15},
+            {"key": "sortie", "label": "Sortie (M2)", "type": "money", "width": 15},
+            {"key": "solde",  "label": "Solde cumulé", "type": "money", "width": 16},
+            {"key": "piece",  "label": "Justificatif / réf.", "width": 20},
+            {"key": "axe",    "label": "Mode" if is_bank else "n/c", "width": 16},
+            {"key": "sign1",  "label": "Signature 1", "width": 20},
+            {"key": "sign2",  "label": "Signature 2", "width": 20},
+        ],
+        rows=out,
     )
 
 
@@ -601,6 +806,7 @@ async def delete_entry(
             notify_message=f"Une suppression au journal {journal} par {who} attend votre validation.",
         )
 
+    _purge_entry_attachments(db, entry_id)
     db.from_("cash_journal").delete().eq("id", entry_id).execute()
     log_audit(db, user.id, "cash_journal.delete", "cash_journal", entry_id)
     return {"ok": True}

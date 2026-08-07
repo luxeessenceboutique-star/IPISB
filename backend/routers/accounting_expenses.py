@@ -227,6 +227,14 @@ async def delete_expense(
             pass
         db.from_("accounting_attachments").delete().eq("entity_type", ENTITY_TYPE).eq("entity_id", expense_id).execute()
 
+    # Le décaissement avait été porté au journal (et au registre s'il était
+    # bancaire) : on le retire des deux, sinon le solde reste amputé d'une
+    # dépense supprimée.
+    from routers.accounting_cash_journal import delete_cash_entry
+    from routers.accounting_cheques import unregister_source
+    delete_cash_entry(db, source_type=ENTITY_TYPE, source_id=expense_id, user_id=user.id)
+    unregister_source(db, source_type=ENTITY_TYPE, source_id=expense_id, user_id=user.id)
+
     db.from_("expenses").delete().eq("id", expense_id).execute()
     log_audit(db, user.id, "expense.delete", "expense", expense_id)
     return {"ok": True}

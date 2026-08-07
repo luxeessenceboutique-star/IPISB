@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Wallet, Landmark, Plus, Trash2, X, TrendingUp, TrendingDown, Paperclip, Pencil, FileDown } from "lucide-react";
+import { Wallet, Landmark, Plus, Trash2, X, TrendingUp, TrendingDown, Paperclip, Pencil } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { fmtMAD } from "./Overview";
+import { ExportMenu, type ExportPeriod } from "./ExportMenu";
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
 const sans = '"Manrope", system-ui, sans-serif';
@@ -39,7 +40,7 @@ const COPY = {
     section: "Journal de caisse",
     balance: "Solde caisse",
     balanceCol: "Solde Caisse",
-    pdf: "Journal_de_caisse.pdf",
+    file: "Journal_de_caisse",
     empty: "Aucun mouvement de caisse. Les règlements en espèces alimentent ce journal automatiquement.",
     icon: Wallet,
   },
@@ -47,7 +48,7 @@ const COPY = {
     section: "Journal des comptes",
     balance: "Solde compte",
     balanceCol: "Solde Compte",
-    pdf: "Journal_des_comptes.pdf",
+    file: "Journal_des_comptes",
     empty: "Aucun mouvement bancaire. Les règlements par virement, OV ou chèque alimentent ce journal automatiquement.",
     icon: Landmark,
   },
@@ -314,11 +315,19 @@ export function JournalView({ channel }: { channel: Channel }) {
   }
   useEffect(() => { load(); }, [channel]);
 
-  async function downloadPdf() {
+  /** Export du journal sur la période choisie — le jour même par défaut.
+   *  Le solde du PDF/Excel est celui de la période demandée : la feuille d'une
+   *  journée s'ouvre à zéro et se clôt sur le mouvement net du jour. */
+  async function exportJournal(format: string, p: ExportPeriod) {
+    const qs = new URLSearchParams({ channel });
+    if (p.from) qs.set("date_from", p.from);
+    if (p.to) qs.set("date_to", p.to);
+    const ext = format === "pdf" ? "pdf" : "xlsx";
     try {
-      await api.download(`/api/accounting/cash-journal/pdf?channel=${channel}`, copy.pdf);
+      await api.download(`/api/accounting/cash-journal/${format}?${qs}`, `${copy.file}_${p.suffix}.${ext}`);
+      toast.success(`${copy.section} — ${p.label.toLowerCase()} téléchargé.`);
     } catch (err: any) {
-      toast.error(err?.message ?? "Téléchargement du PDF impossible.");
+      toast.error(err?.message ?? "Téléchargement impossible.");
     }
   }
 
@@ -381,7 +390,11 @@ export function JournalView({ channel }: { channel: Channel }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
         <SectionLabel>{copy.section}</SectionLabel>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={downloadPdf} className="btn-c btn-c-ghost btn-c-sm"><FileDown size={14} />Exporter en PDF</button>
+          <ExportMenu
+            label="Exporter"
+            formats={[{ key: "pdf", label: "PDF" }, { key: "xlsx", label: "Excel" }]}
+            onExport={exportJournal}
+          />
           {canCreate && (
             <button onClick={() => setShowModal(true)} className="btn-c btn-c-primary btn-c-sm"><Plus size={14} />Saisie manuelle</button>
           )}

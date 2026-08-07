@@ -216,6 +216,14 @@ async def delete_payment(
         raise HTTPException(404, "Not found")
     purchase_id = existing[0]["purchase_id"]
 
+    # Le règlement avait été porté au journal (et au registre s'il était
+    # bancaire) : on le retire des deux avant la ligne métier, sinon le solde
+    # garde une sortie qui n'a pas eu lieu.
+    from routers.accounting_cash_journal import delete_cash_entry
+    from routers.accounting_cheques import unregister_source
+    delete_cash_entry(db, source_type=ENTITY_TYPE, source_id=payment_id, user_id=user.id)
+    unregister_source(db, source_type=ENTITY_TYPE, source_id=payment_id, user_id=user.id)
+
     db.from_("purchase_payments").delete().eq("id", payment_id).execute()
 
     # Recalculate payment status of purchase

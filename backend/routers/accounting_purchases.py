@@ -21,6 +21,60 @@ def _require_admin(user: CurrentUser) -> None:
         raise HTTPException(403, "Admin only")
 
 
+# ------------------------------------------------------------------
+# Livraisons : une commande est suivie jusqu'à sa réception effective.
+# Le statut n'est pas stocké — il se déduit des réceptions enregistrées
+# (table purchase_receptions), pour rester juste même après une correction
+# ou une suppression de réception.
+# ------------------------------------------------------------------
+DELIVERY_STATUSES = {"pending", "partial", "received"}
+DELIVERY_LABELS = {
+    "pending": "En attente de livraison",
+    "partial": "Livraison partielle",
+    "received": "Livré",
+}
+
+
+def _delivery_status(ordered: float, received: float) -> str:
+    if received <= 0:
+        return "pending"
+    if received + 1e-9 < ordered:
+        return "partial"
+    return "received"
+
+
+def _receptions_by_purchase(db: Client, purchase_ids: list[str]) -> dict:
+    """Cumul des réceptions par commande, en une seule requête."""
+    if not purchase_ids:
+        return {}
+    rows = (
+        db.from_("purchase_receptions")
+        .select("purchase_id, received_quantity, quality_status, received_at")
+        .in_("purchase_id", purchase_ids)
+        .execute()
+        .data or []
+    )
+    agg: dict = {}
+    for r in rows:
+        pid = r.get("purchase_id")
+        if not pid:
+            continue
+        a = agg.setdefault(pid, {
+            "received_quantity": 0.0,
+            "receptions_count": 0,
+            "last_reception_at": None,
+            "has_quality_issue": False,
+        })
+        a["received_quantity"] += float(r.get("received_quantity") or 0)
+        a["receptions_count"] += 1
+        at = r.get("received_at")
+        if at and (a["last_reception_at"] is None or at > a["last_reception_at"]):
+            a["last_reception_at"] = at
+        if (r.get("quality_status") or "conforme") != "conforme":
+            a["has_quality_issue"] = True
+    return agg
+
+
 @router.get("")
 async def list_purchases(
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -29,6 +83,7 @@ async def list_purchases(
     category_id: Optional[str] = None,
     supplier_id: Optional[str] = None,
     payment_status: Optional[str] = None,
+    delivery_status: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     min_amount: Optional[float] = None,
@@ -46,39 +101,72 @@ async def list_purchases(
     page = max(1, page)
     page_size = max(1, min(100, page_size))
 
-    query = db.from_("purchases").select(
+    def apply_filters(query):
+        if q:
+            query = query.ilike("title", f"%{q}%")
+        if category_id:
+            query = query.eq("category_id", category_id)
+        if supplier_id:
+            query = query.eq("supplier_id", supplier_id)
+        if payment_status:
+            query = query.eq("payment_status", payment_status)
+        if date_from:
+            query = query.gte("purchase_date", date_from)
+        if date_to:
+            query = query.lte("purchase_date", date_to)
+        if min_amount is not None:
+            query = query.gte("total_incl_vat", min_amount)
+        if max_amount is not None:
+            query = query.lte("total_incl_vat", max_amount)
+        return query
+
+    query = apply_filters(db.from_("purchases").select(
         "*, accounting_categories(name), suppliers(company_name)", count="exact"
-    )
-    if q:
-        query = query.ilike("title", f"%{q}%")
-    if category_id:
-        query = query.eq("category_id", category_id)
-    if supplier_id:
-        query = query.eq("supplier_id", supplier_id)
-    if payment_status:
-        query = query.eq("payment_status", payment_status)
-    if date_from:
-        query = query.gte("purchase_date", date_from)
-    if date_to:
-        query = query.lte("purchase_date", date_to)
-    if min_amount is not None:
-        query = query.gte("total_incl_vat", min_amount)
-    if max_amount is not None:
-        query = query.lte("total_incl_vat", max_amount)
+    ))
+
+    # Le statut de livraison est calculé : on ne peut pas le filtrer en SQL.
+    # On résout d'abord le périmètre (id + quantité commandée), puis on restreint
+    # la requête paginée aux commandes retenues — sinon le total serait faux.
+    if delivery_status:
+        if delivery_status not in DELIVERY_STATUSES:
+            raise HTTPException(400, "Invalid delivery_status")
+        scope = apply_filters(db.from_("purchases").select("id, quantity")).execute().data or []
+        agg_all = _receptions_by_purchase(db, [r["id"] for r in scope])
+        keep = [
+            r["id"] for r in scope
+            if _delivery_status(
+                float(r.get("quantity") or 0),
+                (agg_all.get(r["id"]) or {}).get("received_quantity", 0.0),
+            ) == delivery_status
+        ]
+        if not keep:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        query = query.in_("id", keep)
 
     start = (page - 1) * page_size
     res = query.order(sort_by, desc=(sort_dir == "desc")).range(start, start + page_size - 1).execute()
     items = res.data or []
+    agg = _receptions_by_purchase(db, [p["id"] for p in items])
+
+    out = []
+    for p in items:
+        a = agg.get(p["id"]) or {}
+        received = float(a.get("received_quantity") or 0)
+        status = _delivery_status(float(p.get("quantity") or 0), received)
+        out.append({
+            **{k: v for k, v in p.items() if k not in ("accounting_categories", "suppliers")},
+            "category_name": (p.get("accounting_categories") or {}).get("name"),
+            "supplier_name": (p.get("suppliers") or {}).get("company_name"),
+            "received_quantity": received,
+            "receptions_count": a.get("receptions_count") or 0,
+            "last_reception_at": a.get("last_reception_at"),
+            "has_quality_issue": bool(a.get("has_quality_issue")),
+            "delivery_status": status,
+            "delivery_status_label": DELIVERY_LABELS[status],
+        })
 
     return {
-        "items": [
-            {
-                **{k: v for k, v in p.items() if k not in ("accounting_categories", "suppliers")},
-                "category_name": (p.get("accounting_categories") or {}).get("name"),
-                "supplier_name": (p.get("suppliers") or {}).get("company_name"),
-            }
-            for p in items
-        ],
+        "items": out,
         "total": res.count or 0,
         "page": page,
         "page_size": page_size,
@@ -111,11 +199,20 @@ async def get_purchase(
         .execute()
         .data or []
     )
+    a = _receptions_by_purchase(db, [purchase_id]).get(purchase_id) or {}
+    received = float(a.get("received_quantity") or 0)
+    status = _delivery_status(float(p.get("quantity") or 0), received)
     return {
         **{k: v for k, v in p.items() if k not in ("accounting_categories", "suppliers")},
         "category_name": (p.get("accounting_categories") or {}).get("name"),
         "supplier_name": (p.get("suppliers") or {}).get("company_name"),
         "attachments": attachments,
+        "received_quantity": received,
+        "receptions_count": a.get("receptions_count") or 0,
+        "last_reception_at": a.get("last_reception_at"),
+        "has_quality_issue": bool(a.get("has_quality_issue")),
+        "delivery_status": status,
+        "delivery_status_label": DELIVERY_LABELS[status],
     }
 
 

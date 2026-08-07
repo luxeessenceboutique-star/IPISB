@@ -26,6 +26,7 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import ChequeCreate, ChequeUpdate, ChequeStatusUpdate
 from utils.audit import log_audit
+from utils.excel import make_xlsx
 from utils.notify import notify_users
 
 router = APIRouter(prefix="/accounting/cheques", tags=["accounting"])
@@ -248,6 +249,38 @@ def register_instrument(
         return None
 
 
+def unregister_source(db: Client, *, source_type: str, source_id: str, user_id: Optional[str] = None) -> int:
+    """Retire du registre la pièce inscrite pour une opération supprimée.
+
+    Symétrique de `register_instrument` : si le paiement qui a fait naître le
+    chèque (ou le virement) disparaît, la pièce ne doit pas rester à suivre —
+    elle deviendrait un règlement fantôme dans les alertes et les statistiques.
+    Best-effort, comme l'inscription : ne bloque jamais la suppression métier.
+    Renvoie le nombre de pièces retirées."""
+    try:
+        rows = (
+            db.from_("cheques").select("id, mode, direction, status, amount")
+            .eq("source_type", source_type).eq("source_id", source_id)
+            .execute().data or []
+        )
+        if not rows:
+            return 0
+        db.from_("cheques").delete().eq("source_type", source_type).eq("source_id", source_id).execute()
+        if user_id:
+            for r in rows:
+                try:
+                    log_audit(db, user_id, "cheque.delete_source", "cheque", r["id"], {
+                        "source_type": source_type, "source_id": source_id,
+                        "mode": r.get("mode"), "direction": r.get("direction"),
+                        "status": r.get("status"), "amount": r.get("amount"),
+                    })
+                except Exception:
+                    pass
+        return len(rows)
+    except Exception:
+        return 0
+
+
 def link_cheque(db: Client, cheque_id: str, *, source_id: Optional[str] = None,
                 journal_source: Optional[tuple[str, str]] = None) -> None:
     """Rattache le chèque à la ligne métier puis à sa ligne de journal, après
@@ -465,29 +498,21 @@ def _resolve_modes(mode: Optional[str]) -> Optional[list[str]]:
     raise HTTPException(400, "mode invalide (cheque | transfert | versement | virement | ov_permanent | ov_ponctuel)")
 
 
-@router.get("")
-async def list_cheques(
-    user: Annotated[CurrentUser, Depends(get_current_user)],
-    db: Annotated[Client, Depends(get_db)],
+def _filtered(
+    db: Client,
+    *,
+    select: str = "*",
+    count: Optional[str] = None,
     mode: Optional[str] = None,
     direction: Optional[str] = None,
     status: Optional[str] = None,
     q: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    page: int = 1,
-    page_size: int = 50,
 ):
-    """Registre des règlements bancaires, filtrable.
-    `mode='cheque'` | `'transfert'` (versements, virements, OV) pour naviguer
-    d'une famille à l'autre, ou une nature précise.
-    `status='ouverts'` = tout ce qui n'est pas clos (ni encaissé, ni rejeté, ni
-    annulé)."""
-    _require_read(user)
-    page = max(1, page)
-    page_size = max(1, min(200, page_size))
-
-    query = db.from_("cheques").select("*", count="exact")
+    """Requête du registre pour un jeu de filtres. Écran et export Excel passent
+    par ici : ce qui est affiché est exactement ce qui est exporté."""
+    query = db.from_("cheques").select(select, count=count) if count else db.from_("cheques").select(select)
     modes = _resolve_modes(mode)
     if modes:
         query = query.in_("mode", modes)
@@ -513,7 +538,33 @@ async def list_cheques(
                 f"cheque_number.ilike.%{term}%,counterparty.ilike.%{term}%,"
                 f"reference.ilike.%{term}%,label.ilike.%{term}%,bank.ilike.%{term}%"
             )
+    return query
 
+
+@router.get("")
+async def list_cheques(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    mode: Optional[str] = None,
+    direction: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+):
+    """Registre des règlements bancaires, filtrable.
+    `mode='cheque'` | `'transfert'` (versements, virements, OV) pour naviguer
+    d'une famille à l'autre, ou une nature précise.
+    `status='ouverts'` = tout ce qui n'est pas clos (ni encaissé, ni rejeté, ni
+    annulé)."""
+    _require_read(user)
+    page = max(1, page)
+    page_size = max(1, min(200, page_size))
+
+    query = _filtered(db, count="exact", mode=mode, direction=direction, status=status,
+                      q=q, date_from=date_from, date_to=date_to)
     start = (page - 1) * page_size
     res = query.order("issue_date", desc=True).order("created_at", desc=True) \
                .range(start, start + page_size - 1).execute()
@@ -562,6 +613,158 @@ async def cheque_stats(
         "en_attente": {"count": en_attente_n, "amount": en_attente_amount},
         "total": len(rows),
     }
+
+
+# ── Export Excel du registre ─────────────────────────────────────────────────
+
+# Référence de l'opération à l'origine du règlement, quand ce n'est pas un achat.
+_SOURCE_REF = {
+    "cash_note": ("cash_notes", "reference"),
+    "mission_note": ("mission_notes", "reference"),
+    "tuition_payment": ("tuition_payments", "reference"),
+    "revenue": ("revenues", "revenue_number"),
+}
+
+
+def _fr_date(iso) -> str:
+    """jj/mm/aaaa — un tableau destiné à être imprimé et signé se lit en français."""
+    s = str(iso or "")[:10]
+    if len(s) != 10 or s[4] != "-":
+        return ""
+    return f"{s[8:10]}/{s[5:7]}/{s[0:4]}"
+
+
+def _order_numbers(db: Client, rows: list[dict]) -> dict[str, str]:
+    """« N° commande » de chaque règlement : le bon de commande pour un paiement
+    d'achat, la référence de la pièce d'origine sinon (note de caisse, frais de
+    mission, scolarité, recette).
+
+    Une pièce encore en attente de validation n'a pas de ligne métier — son
+    `source_id` est vide : le bon de commande se lit alors dans le payload de
+    l'opération différée, sans quoi les règlements les plus urgents à suivre
+    seraient précisément ceux qui sortiraient sans numéro."""
+    out: dict[str, str] = {}
+    by_source: dict[str, dict[str, list[str]]] = {}   # source_type → id → [cheque_id]
+    pending: dict[str, list[str]] = {}                # pending_op_id → [cheque_id]
+    for c in rows:
+        if c.get("source_id"):
+            by_source.setdefault(c["source_type"], {}).setdefault(c["source_id"], []).append(c["id"])
+        elif c.get("pending_op_id"):
+            pending.setdefault(c["pending_op_id"], []).append(c["id"])
+
+    # purchase_id → [cheque_id], alimenté par les deux chemins (payé / en attente).
+    purchases: dict[str, list[str]] = {}
+
+    pay_ids = list(by_source.get("purchase_payment", {}).keys())
+    if pay_ids:
+        for p in (db.from_("purchase_payments").select("id, purchase_id")
+                    .in_("id", pay_ids).execute().data or []):
+            if p.get("purchase_id"):
+                purchases.setdefault(p["purchase_id"], []).extend(
+                    by_source["purchase_payment"].get(p["id"], []))
+
+    if pending:
+        for op in (db.from_("pending_operations").select("id, payload")
+                     .in_("id", list(pending)).execute().data or []):
+            data = ((op.get("payload") or {}).get("data") or {})
+            if data.get("purchase_id"):
+                purchases.setdefault(data["purchase_id"], []).extend(pending.get(op["id"], []))
+
+    if purchases:
+        for pu in (db.from_("purchases").select("id, purchase_number")
+                     .in_("id", list(purchases)).execute().data or []):
+            for cid in purchases.get(pu["id"], []):
+                out[cid] = pu.get("purchase_number") or ""
+
+    for src, (table, col) in _SOURCE_REF.items():
+        ids = list(by_source.get(src, {}).keys())
+        if not ids:
+            continue
+        try:
+            for r in db.from_(table).select(f"id, {col}").in_("id", ids).execute().data or []:
+                for cid in by_source[src].get(r["id"], []):
+                    out[cid] = r.get(col) or ""
+        except Exception:
+            pass   # table absente d'un déploiement : le n° reste vide, l'export passe
+    return {k: v for k, v in out.items() if v}
+
+
+@router.get("/export/xlsx")
+async def export_cheques_xlsx(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    mode: Optional[str] = None,
+    direction: Optional[str] = None,
+    status: Optional[str] = None,
+    q: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """Tableau Excel des règlements bancaires, sur les mêmes filtres que l'écran.
+
+    `date_from` = `date_to` = un jour → le registre de cette journée : la feuille
+    part à la signature telle quelle. Les deux colonnes « Signature 1 » et
+    « Signature 2 » sont laissées vides pour être signées à la main."""
+    _require_read(user)
+    rows = (
+        _filtered(db, mode=mode, direction=direction, status=status,
+                  q=q, date_from=date_from, date_to=date_to)
+        .order("issue_date", desc=False).order("created_at", desc=False)
+        .execute().data or []
+    )
+    numbers = _order_numbers(db, rows)
+
+    out = [
+        {
+            "order_no": numbers.get(c["id"]) or "",
+            "amount": float(c.get("amount") or 0),
+            "supplier": c.get("counterparty") or "",
+            "due_date": _fr_date(c.get("due_date")),
+            "mode": mode_label(c.get("mode")),
+            "doc_no": c.get("cheque_number") or c.get("reference") or "",
+            "sign1": "",
+            "sign2": "",
+            "remitted": _fr_date(c.get("remitted_date")),
+            "cashed": _fr_date(c.get("cashed_date")),
+            "status": status_label(c.get("status"), c.get("mode")),
+        }
+        for c in rows
+    ]
+
+    total = sum(r["amount"] for r in out)
+    if date_from and date_from == date_to:
+        period = f"Journée du {_fr_date(date_from)}"
+        suffix = date_from
+    elif date_from or date_to:
+        period = f"Du {_fr_date(date_from) or '…'} au {_fr_date(date_to) or '…'}"
+        suffix = f"{date_from or 'debut'}_{date_to or 'fin'}"
+    else:
+        period = "Registre complet"
+        suffix = "complet"
+    scope = {"cheque": "Chèques", "transfert": "Versements & virements"}.get(mode or "", "Tous modes")
+
+    return make_xlsx(
+        filename=f"Reglements_bancaires_{suffix}.xlsx",
+        title="RÈGLEMENTS BANCAIRES — IPISB",
+        subtitle=(f"{period} · {scope} · {len(out)} règlement(s) · "
+                  f"Total : {total:,.2f} MAD · Édité le {_fr_date(_today())}").replace(",", " "),
+        theme="green",
+        sheet_name="Règlements bancaires",
+        columns=[
+            {"key": "order_no",  "label": "Commande n°",     "width": 17},
+            {"key": "amount",    "label": "Montant",         "type": "money", "width": 16},
+            {"key": "supplier",  "label": "Fournisseur",     "width": 30},
+            {"key": "due_date",  "label": "Échéance",        "type": "date",  "width": 13},
+            {"key": "mode",      "label": "Type de paiement", "width": 16},
+            {"key": "doc_no",    "label": "N° doc",          "width": 16},
+            {"key": "sign1",     "label": "Signature 1",     "width": 20},
+            {"key": "sign2",     "label": "Signature 2",     "width": 20},
+            {"key": "remitted",  "label": "Déposé le",       "type": "date",  "width": 13},
+            {"key": "cashed",    "label": "Encaissé le",     "type": "date",  "width": 13},
+            {"key": "status",    "label": "Statut",          "width": 22},
+        ],
+        rows=out,
+    )
 
 
 # ── Saisie / correction manuelle ─────────────────────────────────────────────
@@ -673,9 +876,14 @@ async def set_cheque_status(
     if target in ("encaisse", "impaye"):
         updates["cashed_date"] = body.date or _today()
     elif target == "remis":
-        # Ré-présentation après impayé : on repart d'une échéance propre.
+        # Remise à la banque (ou transmission de l'ordre) : c'est le « déposé le »
+        # du registre, distinct de l'échéance convenue — l'export des règlements
+        # bancaires porte les deux colonnes (migration l40).
+        updates["remitted_date"] = body.date or _today()
         updates["cashed_date"] = None
-        if body.date:
+        # Ré-présentation après impayé : on repart en plus d'une échéance propre.
+        # Hors ce cas, l'échéance du chèque reste celle qui a été convenue.
+        if body.date and current == "impaye":
             updates["due_date"] = body.date
     if body.comment:
         updates["review_comment"] = body.comment

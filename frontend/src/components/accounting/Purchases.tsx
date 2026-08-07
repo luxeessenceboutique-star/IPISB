@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, ShoppingCart, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Check, Pencil } from "lucide-react";
+import { Plus, Search, Truck, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -37,11 +37,37 @@ type Purchase = {
   purchase_request_id: string | null;
   valide_responsable_at: string | null;
   valide_comptable_at: string | null;
+  // Suivi de livraison (calculé côté API à partir des réceptions enregistrées)
+  delivery_status: DeliveryStatus;
+  delivery_status_label: string;
+  received_quantity: number;
+  receptions_count: number;
+  last_reception_at: string | null;
+  has_quality_issue: boolean;
 };
 type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
 
 const STATUS_LABEL: Record<string, string> = { pending: "En attente", partially_paid: "Partiellement payé", paid: "Payé" };
 const STATUS_TONE: Record<string, string> = { pending: "", partially_paid: "chip-c-green", paid: "chip-c-green" };
+
+// Livraison : la commande validée est réceptionnée ici, en une ou plusieurs fois.
+type DeliveryStatus = "pending" | "partial" | "received";
+const DELIVERY_LABEL: Record<DeliveryStatus, string> = {
+  pending: "En attente de livraison",
+  partial: "Livraison partielle",
+  received: "Livré",
+};
+const DELIVERY_TONE: Record<DeliveryStatus, string> = {
+  pending: "chip-c-amber",
+  partial: "chip-c-blue",
+  received: "chip-c-green",
+};
+// Même règle que l'API (_delivery_status) : le panneau de détail la recalcule sur
+// ses propres réceptions pour rester juste sans attendre un rechargement.
+function deliveryStatusOf(ordered: number, received: number): DeliveryStatus {
+  if (received <= 0) return "pending";
+  return received + 1e-9 < ordered ? "partial" : "received";
+}
 const ATTACHMENT_KINDS = [
   { value: "quotation", label: "Devis" },
   { value: "invoice", label: "Facture" },
@@ -90,7 +116,7 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
         notes: form.notes || null,
         comment: form.comment || null,
       });
-      toast.success("Achat créé !");
+      toast.success("Commande créée — à réceptionner à la livraison.");
       onSaved();
       onClose();
     } catch (err: any) {
@@ -107,8 +133,12 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 520, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
-          Nouvel achat
+          Nouvelle commande
         </h2>
+        <p style={{ fontSize: 12.5, color: PAL.muted, margin: "-12px 0 20px", lineHeight: 1.5 }}>
+          Commande hors demande d'achat. Celles issues d'une DA arrivent ici automatiquement
+          à la validation du devis — il reste à les réceptionner à la livraison.
+        </p>
 
         <label style={labelStyle}>Titre *</label>
         <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="u-input" style={fieldStyle} />
@@ -155,7 +185,7 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
-            <label style={labelStyle}>Date d'achat</label>
+            <label style={labelStyle}>Date de commande</label>
             <input type="date" value={form.purchase_date} onChange={e => setForm(f => ({ ...f, purchase_date: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
           <div>
@@ -178,7 +208,7 @@ function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Ca
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
           <button onClick={submit} disabled={busy} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "10px 24px", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>
-            {busy ? "Création…" : "Créer l'achat"}
+            {busy ? "Création…" : "Créer la commande"}
           </button>
         </div>
       </div>
@@ -283,10 +313,10 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
   }
 
   async function removePurchase() {
-    if (!window.confirm(`Supprimer l'achat « ${purchase.title} » et tous ses documents ?`)) return;
+    if (!window.confirm(`Supprimer la commande « ${purchase.title} » et tous ses documents ?`)) return;
     try {
       await api.delete(`/api/accounting/purchases/${purchase.id}`);
-      toast.success("Achat supprimé.");
+      toast.success("Commande supprimée.");
       onChanged();
       onClose();
     } catch (err: any) {
@@ -305,7 +335,7 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         quality_status: recForm.quality_status,
         comment: recForm.comment || null,
       });
-      toast.success("Réception enregistrée !");
+      toast.success("Livraison réceptionnée.");
       setShowAddReception(false);
       setRecForm({
         received_quantity: "1",
@@ -337,7 +367,7 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         quality_status: editForm.quality_status,
         comment: editForm.comment,
       });
-      toast.success("Réception mise à jour.");
+      toast.success("Livraison mise à jour.");
       setEditingRecId(null);
       loadReceptions();
       onChanged();
@@ -349,16 +379,21 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
   }
 
   async function handleDeleteReception(id: string) {
-    if (!window.confirm("Supprimer cette réception ?")) return;
+    if (!window.confirm("Supprimer cette livraison ? L'article entré en inventaire sera retiré.")) return;
     try {
       await api.delete(`/api/accounting/receptions/${id}`);
-      toast.success("Réception supprimée.");
+      toast.success("Livraison supprimée.");
       loadReceptions();
       onChanged();
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors de la suppression.");
     }
   }
+
+  const orderedQty = Number(purchase.quantity) || 0;
+  const receivedQty = receptions.reduce((s, r) => s + (Number(r.received_quantity) || 0), 0);
+  const deliveryStatus = deliveryStatusOf(orderedQty, receivedQty);
+  const remainingQty = Math.max(0, orderedQty - receivedQty);
 
   async function downloadPO() {
     try {
@@ -397,7 +432,13 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         <Row label="Fournisseur" value={purchase.supplier_name} />
         <Row label="Quantité × Prix" value={`${purchase.quantity} × ${fmtMAD(purchase.unit_price)}`} />
         <Row label="Total TTC" value={fmtMAD(purchase.total_incl_vat)} />
-        <Row label="Statut" value={STATUS_LABEL[purchase.payment_status]} />
+        <Row
+          label="Livraison"
+          value={loadingReceptions
+            ? "…"
+            : `${DELIVERY_LABEL[deliveryStatus]} — ${receivedQty} / ${orderedQty} reçus`}
+        />
+        <Row label="Paiement" value={STATUS_LABEL[purchase.payment_status]} />
         {purchase.purchase_request_id && (
           <Row label="Validation commande" value={(purchase.valide_comptable_at || purchase.valide_responsable_at) ? new Date((purchase.valide_comptable_at || purchase.valide_responsable_at)!).toLocaleDateString("fr-FR") : "En attente"} />
         )}
@@ -412,23 +453,41 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
 
       <div style={{ height: 1, background: PAL.line, margin: "4px 0 16px" }} />
 
-      {/* Receptions Section (Phase 3) */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>
-          Réceptions & QHSE
+      {/* Livraisons : réception de la commande + contrôle qualité */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>
+            Livraisons & contrôle qualité
+          </div>
+          {!loadingReceptions && (
+            <span className={`chip-c ${DELIVERY_TONE[deliveryStatus]}`}>{DELIVERY_LABEL[deliveryStatus]}</span>
+          )}
         </div>
         {purchase.valide_comptable_at && !showAddReception && (
-          <button onClick={() => setShowAddReception(true)} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "4px 8px", fontSize: 11 }}>
+          <button
+            onClick={() => {
+              setRecForm(rf => ({ ...rf, received_quantity: String(remainingQty || purchase.quantity) }));
+              setShowAddReception(true);
+            }}
+            className="btn-c btn-c-sm btn-c-soft"
+            style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}
+          >
             <Plus size={11} /> Réceptionner
           </button>
         )}
       </div>
 
+      {!purchase.valide_comptable_at && (
+        <div style={{ fontSize: 12, color: PAL.muted, marginBottom: 10, lineHeight: 1.5 }}>
+          La commande doit être validée par l'administration avant de pouvoir réceptionner la livraison.
+        </div>
+      )}
+
       {showAddReception && (
         <div style={{ background: "var(--pal-pale)", padding: 12, borderRadius: 8, marginBottom: 12, fontSize: 12.5 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
-              <label style={{ fontSize: 10.5, color: PAL.muted }}>Qté Reçue</label>
+              <label style={{ fontSize: 10.5, color: PAL.muted }}>Qté reçue {remainingQty > 0 ? `(reste ${remainingQty})` : ""}</label>
               <input type="number" step="any" value={recForm.received_quantity} onChange={e => setRecForm(rf => ({ ...rf, received_quantity: e.target.value }))} className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6 }} />
             </div>
             <div>
@@ -457,7 +516,7 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
       {loadingReceptions ? (
         <div className="shimmer" style={{ height: 30, borderRadius: 8, marginBottom: 12 }} />
       ) : receptions.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "8px 0", color: PAL.muted, fontSize: 12.5, marginBottom: 12 }}>Aucune réception enregistrée.</div>
+        <div style={{ textAlign: "center", padding: "8px 0", color: PAL.muted, fontSize: 12.5, marginBottom: 12 }}>Aucune livraison réceptionnée.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
           {receptions.map(r => (
@@ -579,6 +638,7 @@ export function AccountingPurchases() {
   const [categoryId, setCategoryId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [deliveryFilter, setDeliveryFilter] = useState("");
 
   async function load() {
     setLoading(true);
@@ -588,6 +648,7 @@ export function AccountingPurchases() {
       if (categoryId) params.set("category_id", categoryId);
       if (supplierId) params.set("supplier_id", supplierId);
       if (statusFilter) params.set("payment_status", statusFilter);
+      if (deliveryFilter) params.set("delivery_status", deliveryFilter);
       const res = await api.get(`/api/accounting/purchases?${params.toString()}`);
       setPurchases(res.items ?? []);
       setTotal(res.total ?? 0);
@@ -602,7 +663,7 @@ export function AccountingPurchases() {
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, categoryId, supplierId, statusFilter, page]);
+  }, [q, categoryId, supplierId, statusFilter, deliveryFilter, page]);
 
   useEffect(() => {
     api.get("/api/accounting/categories").then(setCategories).catch(() => {});
@@ -624,7 +685,7 @@ export function AccountingPurchases() {
             type="text"
             value={q}
             onChange={e => { setPage(1); setQ(e.target.value); }}
-            placeholder="Rechercher un achat…"
+            placeholder="Rechercher une livraison…"
             className="u-input"
             style={{ width: "100%", padding: "10px 14px 10px 38px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13.5, background: PAL.paper, outline: "none", boxSizing: "border-box" as const }}
           />
@@ -637,16 +698,20 @@ export function AccountingPurchases() {
           <option value="">Tous fournisseurs</option>
           {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
         </select>
+        <select value={deliveryFilter} onChange={e => { setPage(1); setDeliveryFilter(e.target.value); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
+          <option value="">Toutes livraisons</option>
+          {(Object.keys(DELIVERY_LABEL) as DeliveryStatus[]).map(k => <option key={k} value={k}>{DELIVERY_LABEL[k]}</option>)}
+        </select>
         <select value={statusFilter} onChange={e => { setPage(1); setStatusFilter(e.target.value); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
-          <option value="">Tous statuts</option>
+          <option value="">Tous paiements</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-primary">
-          <Plus size={15} strokeWidth={1.7} />Nouvel achat
+          <Plus size={15} strokeWidth={1.7} />Nouvelle commande
         </button>
       </div>
 
-      <SectionLabel>{total} achat{total !== 1 ? "s" : ""}</SectionLabel>
+      <SectionLabel>{total} livraison{total !== 1 ? "s" : ""} à suivre</SectionLabel>
 
       {loading ? (
         <div className="dash-card" style={{ padding: 26 }}>
@@ -654,7 +719,7 @@ export function AccountingPurchases() {
         </div>
       ) : purchases.length === 0 ? (
         <div className="dash-card">
-          <EmptyHint icon={<ShoppingCart size={28} strokeWidth={1.7} />} text="Aucun achat trouvé." />
+          <EmptyHint icon={<Truck size={28} strokeWidth={1.7} />} text="Aucune livraison trouvée." />
         </div>
       ) : (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -663,12 +728,13 @@ export function AccountingPurchases() {
               {purchases.map(p => (
                 <div key={p.id} className="row-c flex-wrap" onClick={() => setSelected(p)} style={{ cursor: "pointer", background: selected?.id === p.id ? "var(--pal-pale)" : undefined }}>
                   <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}>
-                    <ShoppingCart size={18} strokeWidth={1.7} />
+                    <Truck size={18} strokeWidth={1.7} />
                   </span>
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{p.title}</div>
                     <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
-                      {p.supplier_name || "—"}{p.category_name ? ` · ${p.category_name}` : ""} · {new Date(p.purchase_date).toLocaleDateString("fr-FR")}
+                      {p.supplier_name || "—"}{p.category_name ? ` · ${p.category_name}` : ""} · commandé le {new Date(p.purchase_date).toLocaleDateString("fr-FR")}
+                      {p.receptions_count > 0 && ` · reçu ${p.received_quantity} / ${p.quantity}`}
                     </div>
                   </div>
                   <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>
@@ -679,7 +745,13 @@ export function AccountingPurchases() {
                       ? <span className="chip-c chip-c-green" title="Commande validée par l'administration">Commande validée</span>
                       : <span className="chip-c chip-c-amber" title="Commande issue d'une DA — à valider">À valider</span>
                   )}
-                  <span className={`chip-c ${STATUS_TONE[p.payment_status]}`}>{STATUS_LABEL[p.payment_status]}</span>
+                  <span
+                    className={`chip-c ${DELIVERY_TONE[p.delivery_status] ?? ""}`}
+                    title={p.has_quality_issue ? "Réserve qualité signalée à la réception" : undefined}
+                  >
+                    {p.has_quality_issue ? "⚠ " : ""}{p.delivery_status_label ?? DELIVERY_LABEL[p.delivery_status]}
+                  </span>
+                  <span className={`chip-c ${STATUS_TONE[p.payment_status]}`} title="Statut de paiement">{STATUS_LABEL[p.payment_status]}</span>
                 </div>
               ))}
             </div>

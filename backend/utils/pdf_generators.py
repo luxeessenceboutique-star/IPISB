@@ -1026,8 +1026,10 @@ def render_cash_journal_pdf(rows: list[dict], meta: dict | None = None) -> bytes
     `rows` = lignes cash_journal triées chronologiquement, chacune :
     {entry_date, type ('entree'|'sortie'), amount, justificatif, created_at, balance}.
     `meta` (optionnel) : {journal_no, holder, poste, date_from, date_to, generated_on,
-    title, signatory, balance_label} — `title` bascule l'export sur le journal des
-    comptes (banque : virement / OV / chèque), `signatory` le premier visa.
+    title, signatory, signature_col, signature2_col} — `title` bascule l'export sur
+    le journal des comptes (banque : virement / OV / chèque), `signatory` le premier
+    visa, `signature_col` / `signature2_col` les deux colonnes de signature de la
+    grille (format « Ligne 1|Ligne 2 »).
     Multi-pages : l'en-tête d'identité est répété, la grille reprend à chaque page."""
     meta = meta or {}
     buf = io.BytesIO()
@@ -1123,10 +1125,16 @@ def render_cash_journal_pdf(rows: list[dict], meta: dict | None = None) -> bytes
         else:
             dotted(MARGIN + 103, y - 0.5, RIGHT - (MARGIN + 103))
         y -= 5
-        L(MARGIN, y, "Suivi du", "Helvetica-Bold", 8.5, INK)
-        L(MARGIN + 15, y, _fmt_date_fr(date_from), "Helvetica", 8.5, INK)
-        L(MARGIN + 42, y, "au", "Helvetica-Bold", 8.5, INK)
-        L(MARGIN + 49, y, _fmt_date_fr(date_to), "Helvetica", 8.5, INK)
+        # Un journal tenu au jour le jour s'annonce comme une journée, pas comme
+        # une plage « du 07/08 au 07/08 ».
+        if date_from and date_from == date_to:
+            L(MARGIN, y, "Journée du", "Helvetica-Bold", 8.5, INK)
+            L(MARGIN + 19, y, _fmt_date_fr(date_from), "Helvetica", 8.5, INK)
+        else:
+            L(MARGIN, y, "Suivi du", "Helvetica-Bold", 8.5, INK)
+            L(MARGIN + 15, y, _fmt_date_fr(date_from), "Helvetica", 8.5, INK)
+            L(MARGIN + 42, y, "au", "Helvetica-Bold", 8.5, INK)
+            L(MARGIN + 49, y, _fmt_date_fr(date_to), "Helvetica", 8.5, INK)
         if page_no > 1:
             R(RIGHT, y, f"Page {page_no}", "Helvetica-Oblique", 7.5, MUTED)
         return y - 5
@@ -1146,11 +1154,13 @@ def render_cash_journal_pdf(rows: list[dict], meta: dict | None = None) -> bytes
             hline(xb[a], xb[b], top - h1, WHITE, 0.5)
             for lab, ci in subs:
                 CC((xb[ci] + xb[ci + 1]) / 2, top - h1 - 3.5, lab, "Helvetica-Bold", 6.2, WHITE)
+        # Les deux dernières colonnes restent VIDES sur toute la hauteur de la
+        # grille : ce sont les cases de visa, signées à la main ligne par ligne.
         singles = [
             (6, "Solde Journalier|(SJ = M1-M2)"),
             (7, "Solde Cumulé|(SC = ∑ SJ)"),
-            (8, meta.get("signature_col") or "Signature|resp. caisse"),
-            (9, "Contrôle resp.|comptabilité *"),
+            (8, meta.get("signature_col") or "Signature 1|resp. caisse"),
+            (9, meta.get("signature2_col") or "Signature 2|resp. comptabilité *"),
         ]
         for ci, lab in singles:
             parts = lab.split("|")

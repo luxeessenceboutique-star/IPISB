@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { ShieldCheck, Check, X, Clock, Inbox, RefreshCw } from "lucide-react";
+import { ShieldCheck, Check, X, Clock, Inbox, RefreshCw, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 const sans = '"Manrope", system-ui, sans-serif';
 
@@ -14,6 +15,7 @@ type PendingOp = {
   created_at: string;
   reviewed_at: string | null;
   review_comment: string | null;
+  created_by: string;
   created_by_name: string;
   student_name: string | null;
   class_name: string | null;
@@ -53,9 +55,30 @@ function OpSummary({ op }: { op: PendingOp }) {
   );
 }
 
-// ── Admin : file d'attente de validation N+1 ────────────────────────────────
-export function AccountingValidations() {
-  const [items, setItems] = useState<PendingOp[]>([]);
+// ── Admin : boîte de réception unique des validations ───────────────────────
+// Tout ce qui attend une décision arrive ici, quelle que soit sa file d'origine :
+// saisies caissier, règlements bancaires (chèque, virement, OV, versement),
+// suppressions de versement, avances de caisse et de mission, demandes d'achat.
+type InboxItem = {
+  kind: "operation" | "note" | "purchase_request";
+  id: string;
+  group: string;
+  label: string;
+  detail: string | null;
+  amount: number | null;
+  created_at: string;
+  created_by: string;
+  created_by_name: string;
+  approve_url: string | null;
+  reject_url: string | null;
+  tab?: string;
+  four_eyes: boolean;
+};
+
+export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) {
+  const { user } = useAuth();
+  const me = user?.id;
+  const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
@@ -64,7 +87,7 @@ export function AccountingValidations() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/api/approvals/pending");
+      const res = await api.get("/api/approvals/inbox");
       setItems(res?.items ?? []);
     } catch (err) {
       toast.error((err as Error)?.message ?? "Erreur lors du chargement.");
@@ -75,12 +98,15 @@ export function AccountingValidations() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function approve(id: string) {
-    setBusy(id);
+  const key = (it: InboxItem) => `${it.kind}:${it.id}`;
+
+  async function approve(it: InboxItem) {
+    if (!it.approve_url) return;
+    setBusy(key(it));
     try {
-      await api.post(`/api/approvals/${id}/approve`, {});
-      toast.success("Saisie approuvée ✅");
-      setItems(prev => prev.filter(o => o.id !== id));
+      await api.post(it.approve_url, {});
+      toast.success("Demande approuvée ✅");
+      setItems(prev => prev.filter(o => key(o) !== key(it)));
     } catch (err) {
       toast.error((err as Error)?.message ?? "Échec de l'approbation.");
     } finally {
@@ -88,14 +114,15 @@ export function AccountingValidations() {
     }
   }
 
-  async function reject(id: string) {
+  async function reject(it: InboxItem) {
+    if (!it.reject_url) return;
     const c = comment.trim();
     if (!c) { toast.error("Le motif du rejet est obligatoire."); return; }
-    setBusy(id);
+    setBusy(key(it));
     try {
-      await api.post(`/api/approvals/${id}/reject`, { comment: c });
-      toast.success("Saisie rejetée.");
-      setItems(prev => prev.filter(o => o.id !== id));
+      await api.post(it.reject_url, { comment: c });
+      toast.success("Demande rejetée.");
+      setItems(prev => prev.filter(o => key(o) !== key(it)));
       setRejecting(null);
       setComment("");
     } catch (err) {
@@ -103,6 +130,14 @@ export function AccountingValidations() {
     } finally {
       setBusy(null);
     }
+  }
+
+  // Une section par file d'origine, dans l'ordre où le backend les a renvoyées.
+  const groups: { name: string; rows: InboxItem[] }[] = [];
+  for (const it of items) {
+    const g = groups.find(x => x.name === it.group);
+    if (g) g.rows.push(it);
+    else groups.push({ name: it.group, rows: [it] });
   }
 
   return (
@@ -124,42 +159,76 @@ export function AccountingValidations() {
       ) : items.length === 0 ? (
         <div className="dash-card" style={{ padding: 40, textAlign: "center", color: "var(--pal-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
           <Check size={30} strokeWidth={1.5} color="var(--pal-primary)" />
-          Aucune saisie en attente de validation.
+          Aucune demande en attente de validation.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {items.map(op => (
-            <div key={op.id} className="dash-card" style={{ padding: "16px 20px" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                <OpSummary op={op} />
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                  <button type="button" className="btn-c btn-c-primary btn-c-sm" disabled={busy === op.id} onClick={() => approve(op.id)}>
-                    <Check size={14} strokeWidth={2} /> Approuver
-                  </button>
-                  <button type="button" className="btn-c btn-c-danger btn-c-sm" disabled={busy === op.id} onClick={() => { setRejecting(rejecting === op.id ? null : op.id); setComment(""); }}>
-                    <X size={14} strokeWidth={2} /> Rejeter
-                  </button>
-                </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {groups.map(group => (
+            <div key={group.name}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".09em", textTransform: "uppercase", color: "var(--pal-muted)", margin: "0 0 10px 2px" }}>
+                {group.name} <span style={{ fontWeight: 600 }}>({group.rows.length})</span>
               </div>
-              <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--pal-muted)" }}>
-                Saisi par <strong>{op.created_by_name}</strong> · {fmtDate(op.created_at)}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {group.rows.map(it => {
+                  const k = key(it);
+                  const blocked = !!me && it.created_by === me && it.four_eyes;
+                  return (
+                    <div key={k} className="dash-card" style={{ padding: "16px 20px" }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--pal-ink)" }}>{it.label}</span>
+                          <span style={{ fontSize: 12.5, color: "var(--pal-muted)" }}>
+                            {it.detail}
+                            {it.detail && it.amount != null ? " · " : null}
+                            {it.amount != null ? <>Montant : <strong>{fmtMAD(it.amount)}</strong></> : null}
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          {it.approve_url ? (
+                            <>
+                              <button type="button" className="btn-c btn-c-primary btn-c-sm" disabled={busy === k || blocked}
+                                title={blocked ? "Vous avez saisi ce règlement : il doit être validé par un autre administrateur." : undefined}
+                                onClick={() => approve(it)}>
+                                <Check size={14} strokeWidth={2} /> Approuver
+                              </button>
+                              <button type="button" className="btn-c btn-c-danger btn-c-sm" disabled={busy === k}
+                                onClick={() => { setRejecting(rejecting === k ? null : k); setComment(""); }}>
+                                <X size={14} strokeWidth={2} /> Rejeter
+                              </button>
+                            </>
+                          ) : (
+                            // Demande d'achat : la décision se prend dans son onglet
+                            // (validation / retour / annulation, choix du devis).
+                            <button type="button" className="btn-c btn-c-soft btn-c-sm" onClick={() => it.tab && onNavigate?.(it.tab)}>
+                              Ouvrir la demande <ArrowRight size={14} strokeWidth={2} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--pal-muted)" }}>
+                        Saisi par <strong>{it.created_by_name}</strong> · {fmtDate(it.created_at)}
+                        {blocked && <> · <span style={{ color: "oklch(58% 0.19 25)", fontWeight: 600 }}>votre saisie — un autre administrateur doit la valider</span></>}
+                      </div>
+                      {rejecting === k && (
+                        <div className="anim-fade" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <input
+                            autoFocus
+                            value={comment}
+                            onChange={e => setComment(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") reject(it); }}
+                            placeholder="Motif du rejet (obligatoire)…"
+                            className="input-c"
+                            style={{ flex: "1 1 260px", minWidth: 0 }}
+                          />
+                          <button type="button" className="btn-c btn-c-danger btn-c-sm" disabled={busy === k} onClick={() => reject(it)}>
+                            Confirmer le rejet
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-              {rejecting === op.id && (
-                <div className="anim-fade" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    autoFocus
-                    value={comment}
-                    onChange={e => setComment(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") reject(op.id); }}
-                    placeholder="Motif du rejet (obligatoire)…"
-                    className="input-c"
-                    style={{ flex: "1 1 260px", minWidth: 0 }}
-                  />
-                  <button type="button" className="btn-c btn-c-danger btn-c-sm" disabled={busy === op.id} onClick={() => reject(op.id)}>
-                    Confirmer le rejet
-                  </button>
-                </div>
-              )}
             </div>
           ))}
         </div>

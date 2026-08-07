@@ -6,6 +6,7 @@ import {
   Pencil, Plus, Trash2, Banknote, Clock, Search, X, FileDown,
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { fmtMAD } from "./Overview";
 import { useAuth } from "@/lib/auth";
 
@@ -233,11 +234,15 @@ function EditableNumber({ value, onChange, min = 0, max, width = 74 }: {
 }
 
 // ── Modal : versements d'un mois (voir / ajouter / supprimer) ───────────────
-function PaymentModal({ classId, student, months, payments, defaultMonth, onClose, onSaved, canDelete = true }: {
+function PaymentModal({ classId, student, months, payments, defaultMonth, onClose, onSaved, canDelete = true, isAdmin = true }: {
   classId: string; student: StudentRow; months: MonthCol[]; payments: RawPayment[];
   defaultMonth?: string; onClose: () => void; onSaved: () => void; canDelete?: boolean;
+  /** L'admin est son propre N+1 : la suppression s'exécute tout de suite. */
+  isAdmin?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  // Versement en attente de confirmation — la suppression n'est lancée qu'après.
+  const [confirmDel, setConfirmDel] = useState<RawPayment | null>(null);
   const fallback = defaultMonth || (months[0]?.key ?? "");
   const [form, setForm] = useState({ period_month: fallback, amount: String(student.monthly_fee || ""), method: "espèce", note: "", paid_on: todayISO(), comment: "" });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -276,14 +281,19 @@ function PaymentModal({ classId, student, months, payments, defaultMonth, onClos
   async function del(id: string) {
     setBusy(true);
     try {
-      await api.delete(`/api/accounting/tuition/payment/${id}`);
-      toast.success("Versement supprimé.");
+      // La suppression ne s'exécute pas ici : elle part en validation N+1 et
+      // c'est un second administrateur qui la confirme (onglet Validations).
+      const res = await api.delete(`/api/accounting/tuition/payment/${id}`);
+      if (res?.pending) toast.success("Demande de suppression envoyée pour validation N+1 ⚠️");
+      else toast.success("Versement supprimé — montant retiré du journal.");
+      setConfirmDel(null);
       onSaved();  // recharge la matrice → la liste ci-dessous se met à jour
     } catch (err: any) { toast.error(err?.message ?? "Erreur lors de la suppression."); }
     finally { setBusy(false); }
   }
 
   return (
+    <>
     <Backdrop width={460}>
       <H2>Versements — {months.find(m => m.key === form.period_month)?.label ?? ""}</H2>
       <p style={{ fontSize: 13, color: PAL.muted, margin: "-8px 0 16px" }}>{student.full_name}</p>
@@ -308,7 +318,7 @@ function PaymentModal({ classId, student, months, payments, defaultMonth, onClos
                 <FileDown size={14} />
               </button>
               {canDelete && (
-                <button onClick={() => del(p.id)} disabled={busy} title="Supprimer ce versement"
+                <button onClick={() => setConfirmDel(p)} disabled={busy} title="Supprimer ce versement"
                   style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 7, border: `1px solid ${PAL.line}`, background: PAL.paper, cursor: "pointer", color: "oklch(55% 0.18 25)" }}>
                   <Trash2 size={14} />
                 </button>
@@ -341,6 +351,23 @@ function PaymentModal({ classId, student, months, payments, defaultMonth, onClos
         <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Enregistrement…" : "Ajouter"}</button>
       </div>
     </Backdrop>
+
+    {/* Hors du Backdrop : le voile du modal est un contexte d'empilement,
+        la confirmation doit passer par-dessus. */}
+    <ConfirmDialog
+        open={!!confirmDel}
+        title={isAdmin ? "Supprimer ce versement ?" : "Demander la suppression ?"}
+        message={`${student.full_name} — ${months.find(m => m.key === form.period_month)?.label ?? ""}`}
+        highlight={confirmDel ? `${num(confirmDel.amount)} MAD${confirmDel.reference ? ` · ${confirmDel.reference}` : ""}` : undefined}
+        detail={isAdmin
+          ? "Le montant sera retiré du journal (caisse ou comptes, selon le mode de règlement) et la pièce sortira du registre. L'opération est tracée dans l'historique des validations."
+          : "La suppression part en validation N+1 : un administrateur doit la confirmer. Une fois validée, le montant sera retiré du journal et la pièce sortira du registre."}
+        confirmLabel={isAdmin ? "Supprimer" : "Envoyer la demande"}
+        busy={busy}
+        onConfirm={() => { if (confirmDel) del(confirmDel.id); }}
+        onCancel={() => setConfirmDel(null)}
+      />
+    </>
   );
 }
 
@@ -966,7 +993,7 @@ export function AccountingTuitionTracking({ readOnly = false }: { readOnly?: boo
 
       {payFor && matrix && (
         <PaymentModal classId={matrix.class_id} student={payFor.student} months={matrix.months} payments={matrix.payments}
-          defaultMonth={payFor.month} onClose={() => setPayFor(null)} onSaved={reloadAll} canDelete={canEdit} />
+          defaultMonth={payFor.month} onClose={() => setPayFor(null)} onSaved={reloadAll} canDelete={canPay} isAdmin={isAdmin} />
       )}
       {planFor && matrix && (
         <PlanModal classId={matrix.class_id} student={planFor} months={matrix.installments_count}

@@ -308,6 +308,9 @@ async def delete_note(
         raise HTTPException(403, "Seul un administrateur peut supprimer une note approuvée ou payée.")
     db.from_("mission_notes").delete().eq("id", note_id).execute()
     _remove_cash_entry(db, note_id)
+    # Idem pour la pièce au registre des règlements (note réglée par chèque / virement).
+    from routers.accounting_cheques import unregister_source
+    unregister_source(db, source_type=CASH_SOURCE, source_id=note_id, user_id=user.id)
     log_audit(db, user.id, "mission_note.delete", "mission_note", note_id, {"status": status})
     return {"ok": True}
 

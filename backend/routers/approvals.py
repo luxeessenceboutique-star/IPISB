@@ -11,6 +11,7 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 _OP_LABELS = {
     "tuition_payment": "Paiement de scolarité",
+    "tuition_payment_delete": "Suppression d'un paiement de scolarité",
     "student_enrollment": "Inscription d'un élève",
     "class_create": "Création d'une classe",
     "student_transfer": "Transfert d'un élève",
@@ -104,6 +105,137 @@ async def list_pending(
         .execute().data or []
     )
     return {"items": _enrich(db, ops)}
+
+
+# ── Boîte de réception unique ───────────────────────────────────────────────
+# Tout ce qui attend une décision de l'administration ne vit pas dans
+# `pending_operations` : les avances de caisse et de mission portent leur propre
+# statut, et les demandes d'achat ont un circuit à deux décisions. L'admin ne
+# doit pas avoir à faire le tour des onglets pour savoir ce qui l'attend — cet
+# endpoint rassemble les quatre files dans un seul flux, chaque élément portant
+# les URL d'action à appeler (aucune logique d'approbation n'est dupliquée).
+
+def _people(db: Client, ids: list[str]) -> dict[str, str]:
+    ids = [i for i in {i for i in ids if i}]
+    if not ids:
+        return {}
+    rows = db.from_("profiles").select("id, full_name, email").in_("id", ids).execute().data or []
+    return {r["id"]: (r.get("full_name") or r.get("email") or "—") for r in rows}
+
+
+@router.get("/inbox")
+async def approvals_inbox(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Toutes les demandes en attente d'une décision (admin uniquement).
+
+    Regroupe : opérations différées (saisies caissier, règlements bancaires,
+    suppressions de versement), avances de caisse, avances de frais de mission
+    et demandes d'achat en attente de décision.
+    """
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+
+    items: list[dict] = []
+
+    # 1. Opérations différées — y compris les règlements bancaires (chèque,
+    #    virement, OV, versement) et les suppressions de versement.
+    ops = (
+        db.from_("pending_operations").select("*")
+        .eq("status", "pending").order("created_at", desc=True)
+        .execute().data or []
+    )
+    for op in _enrich(db, ops):
+        detail = " · ".join(filter(None, [
+            f"Élève : {op['student_name']}" if op.get("student_name") else None,
+            f"Promo : {op['class_name']}" if op.get("class_name") else None,
+        ]))
+        items.append({
+            "kind": "operation",
+            "id": op["id"],
+            "group": "Opérations à valider",
+            "label": op["op_label"],
+            "detail": detail or None,
+            "amount": op.get("amount"),
+            "created_at": op.get("created_at"),
+            "created_by": op.get("created_by"),
+            "created_by_name": op.get("created_by_name"),
+            "approve_url": f"/api/approvals/{op['id']}/approve",
+            "reject_url": f"/api/approvals/{op['id']}/reject",
+            # Seuls les décaissements bancaires exigent un second regard.
+            "four_eyes": op["op_type"] in PAYMENT_OP_TYPES_CACHE(),
+        })
+
+    # 2 & 3. Avances de caisse et de mission : statut porté par la note.
+    for table, prefix, group, label in (
+        ("cash_notes", "cash-notes", "Avances de caisse", "Avance de caisse"),
+        ("mission_notes", "mission-notes", "Avances de frais de mission", "Avance de frais de mission"),
+    ):
+        try:
+            rows = (
+                db.from_(table).select("*")
+                .eq("status", "pending").order("created_at", desc=True)
+                .execute().data or []
+            )
+        except Exception:
+            rows = []
+        names = _people(db, [r.get("created_by") for r in rows])
+        for n in rows:
+            beneficiary = n.get("beneficiary_name") or n.get("beneficiary")
+            items.append({
+                "kind": "note",
+                "id": n["id"],
+                "group": group,
+                "label": f"{label} {n.get('reference') or ''}".strip(),
+                "detail": beneficiary or n.get("object") or n.get("motif") or None,
+                "amount": n.get("total"),
+                "created_at": n.get("created_at"),
+                "created_by": n.get("created_by"),
+                "created_by_name": names.get(n.get("created_by")) or "—",
+                "approve_url": f"/api/accounting/{prefix}/{n['id']}/approve",
+                "reject_url": f"/api/accounting/{prefix}/{n['id']}/reject",
+                "four_eyes": False,
+            })
+
+    # 4. Demandes d'achat : la décision demande de choisir (validation, retour,
+    #    annulation) et parfois de trancher entre devis — cela se fait dans
+    #    l'onglet dédié. On signale seulement l'attente, avec le lien.
+    try:
+        prs = (
+            db.from_("purchase_requests").select("*")
+            .in_("status", ["brouillon", "retournee", "besoin_valide", "en_consultation"])
+            .order("created_at", desc=True).execute().data or []
+        )
+    except Exception:
+        prs = []
+    names = _people(db, [r.get("created_by") for r in prs])
+    for pr in prs:
+        besoin = pr.get("status") in ("brouillon", "retournee")
+        items.append({
+            "kind": "purchase_request",
+            "id": pr["id"],
+            "group": "Demandes d'achat",
+            "label": f"{'Besoin à valider' if besoin else 'Devis à trancher'} — {pr.get('request_number') or ''}".strip(" —"),
+            "detail": pr.get("activity") or pr.get("project") or pr.get("justification"),
+            "amount": pr.get("budget_estimate"),
+            "created_at": pr.get("created_at"),
+            "created_by": pr.get("created_by"),
+            "created_by_name": names.get(pr.get("created_by")) or "—",
+            "approve_url": None,          # décision à prendre dans l'onglet
+            "reject_url": None,
+            "tab": "purchase_requests",
+            "four_eyes": False,
+        })
+
+    items.sort(key=lambda i: (i.get("created_at") or ""), reverse=True)
+    return {"items": items}
+
+
+def PAYMENT_OP_TYPES_CACHE():
+    """Import différé : accounting_cheques importe approvals indirectement."""
+    from routers.accounting_cheques import PAYMENT_OP_TYPES
+    return PAYMENT_OP_TYPES
 
 
 @router.get("/mine")
@@ -204,6 +336,11 @@ async def approve_operation(
                 )
         except Exception:
             pass
+    elif op["op_type"] == "tuition_payment_delete":
+        # Le second admin exécute ce que le premier a demandé : la ligne métier,
+        # sa ligne de journal et sa pièce au registre partent ensemble.
+        from routers.accounting_tuition import perform_payment_delete
+        result_id = perform_payment_delete(db, payload.get("payment_id"), user.id)
     elif op["op_type"] == "student_enrollment":
         try:
             res = db.from_("class_students").insert(payload).execute()

@@ -675,6 +675,7 @@ class ChequeUpdate(BaseModel):
     label: Optional[str] = None
     issue_date: Optional[str] = None
     due_date: Optional[str] = None
+    remitted_date: Optional[str] = None      # « déposé le » — corrigeable après coup
     comment: Optional[str] = None
 
 

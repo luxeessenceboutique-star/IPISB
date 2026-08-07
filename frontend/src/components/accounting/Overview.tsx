@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import {
   Wallet, TrendingUp, TrendingDown, FileWarning, CalendarClock,
-  Building2, ShoppingCart, Receipt, CreditCard, ArrowUpRight, ArrowDownRight, Minus,
+  Building2, Truck, Receipt, CreditCard, ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
 import { CountUp } from "@/components/CountUp";
 
@@ -197,7 +197,7 @@ function RankedBars({ data, title, delay }: { data:CatSlice[]; title:string; del
 
 function CountBadges({ counts, delay }: { counts:Summary["counts"]; delay?:number }) {
   const items = [
-    { label:"Achats", value:counts.purchases, icon:ShoppingCart, color:C.primary },
+    { label:"Livraisons", value:counts.purchases, icon:Truck, color:C.primary },
     { label:"Depenses", value:counts.expenses, icon:Receipt, color:C.accent },
     { label:"Recettes", value:counts.revenues, icon:TrendingUp, color:C.good },
     { label:"Factures", value:counts.invoices, icon:CreditCard, color:C.mid },

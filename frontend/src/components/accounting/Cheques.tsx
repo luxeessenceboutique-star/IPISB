@@ -5,6 +5,7 @@ import { ScrollText, Plus, Trash2, X, Pencil, Search, AlertTriangle, Banknote, B
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { fmtMAD } from "./Overview";
+import { ExportMenu, type ExportPeriod } from "./ExportMenu";
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
 const sans = '"Manrope", system-ui, sans-serif';
@@ -20,7 +21,9 @@ type Cheque = {
   direction: Direction; status: Status; mode: Mode;
   cheque_number: string | null; bank: string | null;
   amount: number; counterparty: string | null; label: string | null;
-  issue_date: string; due_date: string | null; cashed_date: string | null;
+  issue_date: string; due_date: string | null;
+  // Deux dates distinctes : le jour du dépôt en banque, puis celui de l'encaissement.
+  remitted_date: string | null; cashed_date: string | null;
   source_type: string; source_id: string | null;
   review_comment: string | null; comment: string | null;
   status_label: string; source_label: string; direction_label: string; mode_label: string;
@@ -127,6 +130,7 @@ function ChequeModal({ cheque, defaultMode, onClose, onSaved }:
     label: cheque?.label || "",
     issue_date: (cheque?.issue_date || "").slice(0, 10) || new Date().toISOString().slice(0, 10),
     due_date: (cheque?.due_date || "").slice(0, 10),
+    remitted_date: (cheque?.remitted_date || "").slice(0, 10),
     comment: cheque?.comment || "",
   });
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -146,7 +150,8 @@ function ChequeModal({ cheque, defaultMode, onClose, onSaved }:
         due_date: form.due_date || null,
         comment: form.comment.trim() || null,
       };
-      if (editing) await api.patch(`/api/accounting/cheques/${cheque!.id}`, common);
+      // La date de dépôt est posée par la remise ; ici on ne fait que la corriger.
+      if (editing) await api.patch(`/api/accounting/cheques/${cheque!.id}`, { ...common, remitted_date: form.remitted_date || null });
       else await api.post("/api/accounting/cheques", { ...common, direction: form.direction, mode: form.mode, amount });
       toast.success(editing ? "Pièce mise à jour." : "Pièce inscrite au registre.");
       onSaved(); onClose();
@@ -214,6 +219,12 @@ function ChequeModal({ cheque, defaultMode, onClose, onSaved }:
           <div style={labelStyle}>{form.mode === "cheque" ? "Échéance / remise prévue" : "Exécution prévue"}</div>
           <input type="date" value={form.due_date} onChange={set("due_date")} style={fieldStyle} />
         </div>
+        {editing && (
+          <div>
+            <div style={labelStyle}>Déposé le</div>
+            <input type="date" value={form.remitted_date} onChange={set("remitted_date")} style={fieldStyle} />
+          </div>
+        )}
       </div>
 
       <div style={labelStyle}>Objet</div>
@@ -239,9 +250,12 @@ function StatusModal({ cheque, target, actionLabel, onClose, onSaved }:
   const [comment, setComment] = useState("");
   const isCheque = cheque.mode === "cheque";
   const needsDate = target === "encaisse" || target === "impaye" || target === "remis";
+  // Sur « remis », la date saisie est celle du dépôt (« Déposé le » du registre
+  // et de l'export) — et non l'échéance, qui reste celle convenue. Seule une
+  // ré-présentation après impayé repart d'une échéance neuve.
   const dateLabel = target === "encaisse" ? (isCheque ? "Date d'encaissement" : "Date d'exécution")
     : target === "impaye" ? "Date du rejet bancaire"
-    : isCheque ? "Nouvelle échéance (optionnel)" : "Date de transmission (optionnel)";
+    : isCheque ? "Date de remise à la banque" : "Date de transmission de l'ordre";
 
   const apply = async () => {
     setBusy(true);
@@ -330,6 +344,23 @@ export function AccountingCheques() {
     return () => clearTimeout(t);
   }, [q]);
 
+  /** Tableau Excel des règlements bancaires : mêmes filtres que l'écran, sur la
+   *  période choisie (par défaut la journée). Colonnes « Signature 1 » et
+   *  « Signature 2 » vides, à signer après impression. */
+  const exportXlsx = async (_format: string, p: ExportPeriod) => {
+    const params = new URLSearchParams();
+    if (tab) params.set("mode", tab);
+    if (direction) params.set("direction", direction);
+    if (status) params.set("status", status);
+    if (search) params.set("q", search);
+    if (p.from) params.set("date_from", p.from);
+    if (p.to) params.set("date_to", p.to);
+    try {
+      await api.download(`/api/accounting/cheques/export/xlsx?${params}`, `Reglements_bancaires_${p.suffix}.xlsx`);
+      toast.success(`Règlements bancaires — ${p.label.toLowerCase()} téléchargé.`);
+    } catch (e) { toast.error(errText(e)); }
+  };
+
   const remove = async (c: Cheque) => {
     if (!confirm(`Supprimer ${c.mode_label.toLowerCase()} ${c.cheque_number || c.reference} du registre ?`)) return;
     try { await api.delete(`/api/accounting/cheques/${c.id}`); toast.success("Pièce supprimée."); void load(); }
@@ -408,6 +439,7 @@ export function AccountingCheques() {
             </button>
           )}
         </div>
+        <ExportMenu label="Exporter Excel" formats={[{ key: "xlsx", label: "Télécharger" }]} onExport={exportXlsx} />
         {isAdmin && (
           <button type="button" className="btn-c btn-c-primary" onClick={() => setModal({ cheque: null })}>
             <Plus size={15} strokeWidth={1.7} />{isCheques ? "Inscrire un chèque" : "Inscrire une pièce"}
@@ -446,7 +478,8 @@ export function AccountingCheques() {
                 <td style={{ ...cell, fontSize: 12, color: PAL.muted }}>{c.source_label}</td>
                 <td style={cell}>
                   <span className={`chip-c ${STATUS_TONES[c.status]}`} title={c.review_comment || undefined}>{c.status_label}</span>
-                  {c.cashed_date && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>{fmtDate(c.cashed_date)}</div>}
+                  {c.remitted_date && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>Déposé le {fmtDate(c.remitted_date)}</div>}
+                  {c.cashed_date && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>Encaissé le {fmtDate(c.cashed_date)}</div>}
                 </td>
                 <td style={{ ...cell, textAlign: "right" }}>
                   {isAdmin && (
