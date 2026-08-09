@@ -56,7 +56,8 @@ async def create_budget(
         # UNIQUE (category_id, year, month) violation
         raise HTTPException(409, "Un budget existe déjà pour cette catégorie/année/mois")
     new_budget = res.data[0]
-    log_audit(db, user.id, "budget.create", "budget", new_budget["id"], body.model_dump())
+    log_audit(db, user.id, "budget.create", "budget", new_budget["id"],
+              {**body.model_dump(), "reference": new_budget.get("reference")})
     return _shape(new_budget)
 
 

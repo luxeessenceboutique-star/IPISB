@@ -18,6 +18,12 @@ from routers import rh_departments, rh_contract_types, rh_assets, rh_onboarding
 from routers import rh_recruitment, rh_orgchart, rh_training, rh_talents
 from routers import copilot as copilot_router
 from routers import specialties, attendance, grades, library, course_generation
+from routers import accounting_tuition
+from routers import accounting_cash_journal
+from routers import accounting_cash_notes
+from routers import accounting_mission_notes
+from routers import accounting_cheques
+from routers import approvals
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -107,6 +113,12 @@ app.include_router(attendance.router, prefix="/api")
 app.include_router(grades.router, prefix="/api")
 app.include_router(library.router, prefix="/api")
 app.include_router(course_generation.router, prefix="/api")
+app.include_router(accounting_tuition.router, prefix="/api")
+app.include_router(accounting_cash_journal.router, prefix="/api")
+app.include_router(accounting_cash_notes.router, prefix="/api")
+app.include_router(accounting_mission_notes.router, prefix="/api")
+app.include_router(accounting_cheques.router, prefix="/api")
+app.include_router(approvals.router, prefix="/api")
 
 
 @app.get("/health")

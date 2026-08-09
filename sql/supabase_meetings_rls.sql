@@ -3,12 +3,15 @@
 -- FastAPI service key), so Row Level Security is the only enforcement layer.
 --
 -- Run this once in the Supabase SQL editor or via a migration.
+-- Idempotent: each policy is dropped (if present) before being recreated, so
+-- this script can be re-run safely (Postgres has no CREATE POLICY IF NOT EXISTS).
 
 ALTER TABLE meetings ENABLE ROW LEVEL SECURITY;
 
 -- ─── SELECT ──────────────────────────────────────────────────────────────────
 
 -- Admins see all meetings.
+DROP POLICY IF EXISTS "meetings_select_admin" ON meetings;
 CREATE POLICY "meetings_select_admin" ON meetings
   FOR SELECT TO authenticated
   USING (
@@ -20,6 +23,7 @@ CREATE POLICY "meetings_select_admin" ON meetings
 
 -- Professors see meetings in classes they own OR meetings they personally created
 -- (covers meetings not tied to any class).
+DROP POLICY IF EXISTS "meetings_select_professor" ON meetings;
 CREATE POLICY "meetings_select_professor" ON meetings
   FOR SELECT TO authenticated
   USING (
@@ -37,6 +41,7 @@ CREATE POLICY "meetings_select_professor" ON meetings
 
 -- Students see only meetings for classes they are enrolled in.
 -- Meetings with no class_id are not visible to students.
+DROP POLICY IF EXISTS "meetings_select_student" ON meetings;
 CREATE POLICY "meetings_select_student" ON meetings
   FOR SELECT TO authenticated
   USING (
@@ -52,6 +57,7 @@ CREATE POLICY "meetings_select_student" ON meetings
 -- ─── INSERT ──────────────────────────────────────────────────────────────────
 
 -- Only admins and professors can create meetings.
+DROP POLICY IF EXISTS "meetings_insert" ON meetings;
 CREATE POLICY "meetings_insert" ON meetings
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -65,6 +71,7 @@ CREATE POLICY "meetings_insert" ON meetings
 
 -- Admins can update any meeting.
 -- Professors can only update meetings they created (covers is_active toggling).
+DROP POLICY IF EXISTS "meetings_update" ON meetings;
 CREATE POLICY "meetings_update" ON meetings
   FOR UPDATE TO authenticated
   USING (
@@ -84,6 +91,7 @@ CREATE POLICY "meetings_update" ON meetings
 
 -- Admins can delete any meeting.
 -- Professors can only delete meetings they created.
+DROP POLICY IF EXISTS "meetings_delete" ON meetings;
 CREATE POLICY "meetings_delete" ON meetings
   FOR DELETE TO authenticated
   USING (

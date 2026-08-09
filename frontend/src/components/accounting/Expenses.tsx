@@ -10,8 +10,11 @@ const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
 const sans = '"Manrope", system-ui, sans-serif';
+const mono = '"JetBrains Mono", ui-monospace, monospace';
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
-const PAYMENT_METHODS = ["Virement", "Chèque", "Espèces", "Carte bancaire", "Prélèvement"];
+// Les modes bancaires (virement, versement, chèque) déclenchent la validation N+1
+// du décaissement côté API : la dépense n'est comptabilisée qu'après approbation.
+const PAYMENT_METHODS = ["Virement", "Versement", "Chèque", "Espèces", "Carte bancaire", "Prélèvement"];
 
 type Category = { id: string; name: string };
 type Supplier = { id: string; company_name: string };
@@ -26,6 +29,8 @@ type Expense = {
   expense_date: string;
   payment_method: string | null;
   description: string | null;
+  reference?: string | null;
+  comment?: string | null;
 };
 type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
 
@@ -53,6 +58,7 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
     expense_date: editing?.expense_date ?? new Date().toISOString().slice(0, 10),
     payment_method: editing?.payment_method ?? "",
     description: editing?.description ?? "",
+    comment: editing?.comment ?? "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -67,11 +73,19 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
       expense_date: form.expense_date,
       payment_method: form.payment_method || null,
       description: form.description || null,
+      comment: form.comment || null,
     };
     try {
-      if (editing) await api.patch(`/api/accounting/expenses/${editing.id}`, payload);
-      else await api.post("/api/accounting/expenses", payload);
-      toast.success(editing ? "Dépense modifiée !" : "Dépense créée !");
+      if (editing) {
+        await api.patch(`/api/accounting/expenses/${editing.id}`, payload);
+        toast.success("Dépense modifiée !");
+      } else {
+        const res = await api.post("/api/accounting/expenses", payload);
+        // Décaissement bancaire → validation N+1 avant comptabilisation (l37, l38).
+        toast.success(res?.pending
+          ? (res.message ?? "Dépense soumise à validation.")
+          : "Dépense créée !");
+      }
       onSaved();
       onClose();
     } catch (err: any) {
@@ -82,7 +96,7 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
   }
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 500, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
           {editing ? "Modifier la dépense" : "Nouvelle dépense"}
@@ -126,7 +140,10 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
         </select>
 
         <label style={labelStyle}>Description</label>
-        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
+        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
+
+        <label style={labelStyle}>Commentaire</label>
+        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -230,12 +247,20 @@ function DetailPanel({ expense, onClose, onChanged }: { expense: Expense; onClos
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13, marginBottom: 16 }}>
+        <Row label="Référence" value={expense.reference} />
         <Row label="Catégorie" value={expense.category_name} />
         <Row label="Fournisseur" value={expense.supplier_name} />
         <Row label="Montant" value={fmtMAD(expense.amount)} />
         <Row label="Date" value={new Date(expense.expense_date).toLocaleDateString("fr-FR")} />
         <Row label="Mode de paiement" value={expense.payment_method} />
       </div>
+
+      {expense.comment && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>Commentaire</div>
+          <p style={{ fontSize: 12.5, color: PAL.ink, lineHeight: 1.5, margin: 0 }}>{expense.comment}</p>
+        </div>
+      )}
 
       <div style={{ height: 1, background: PAL.line, margin: "4px 0 16px" }} />
 
@@ -391,6 +416,7 @@ export function AccountingExpenses() {
                   </span>
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{e.title}</div>
+                    {e.reference && <div style={{ fontFamily: mono, fontSize: 10.5, color: PAL.muted, marginTop: 2 }}>{e.reference}</div>}
                     <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
                       {e.category_name || "Sans catégorie"}{e.supplier_name ? ` · ${e.supplier_name}` : ""} · {new Date(e.expense_date).toLocaleDateString("fr-FR")}
                     </div>

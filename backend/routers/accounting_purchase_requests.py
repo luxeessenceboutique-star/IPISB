@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import PurchaseRequestCreate, PurchaseRequestUpdate, DecisionInput, QuoteSelectInput
+from models import PurchaseRequestCreate, PurchaseRequestUpdate, DecisionInput, QuoteSelectInput, PurchaseInstallmentsReplace
 from utils.audit import log_audit
 from utils.pdf_generators import render_purchase_request_pdf
 
@@ -11,11 +11,19 @@ router = APIRouter(prefix="/accounting/purchase-requests", tags=["accounting"])
 
 REQUEST_TYPES = {"nouveau_besoin", "renouvellement"}
 ASSET_CATEGORIES = {"consommable", "equipement", "locaux", "service"}
+# Critères de conformité standard (cases à cocher).
+CONFORMITY_CRITERIA = {"frais", "congele", "scelle", "peremption", "certificat", "qhse"}
 DECISIONS = {"validation", "retour", "annulation"}
 # Statut résultant d'une décision (besoin ou devis)
 _DECISION_STATUS = {"retour": "retournee", "annulation": "annulee"}
 # Statuts « figés » : on n'édite plus la DA
 LOCKED_STATUSES = {"commande_emise", "annulee"}
+# Modes de règlement d'une échéance ; l'axe n\c en découle.
+INSTALLMENT_MODES = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
+CASH_SOCIAL_MODES = {"caisse_sociale"}  # → caisse sociale ('noir')
+# Le mode/échéancier se saisit APRÈS le choix du devis (devis retenu) et reste
+# modifiable jusqu'à l'émission de la commande incluse.
+INSTALLMENT_EDIT_ALLOWED = {"devis_valide", "commande_emise"}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -28,6 +36,12 @@ def _get_or_404(db: Client, pr_id: str) -> dict:
     if not rows:
         raise HTTPException(404, "Demande d'achat introuvable")
     return rows[0]
+
+
+def _require_owner_or_admin(user: CurrentUser, pr: dict) -> None:
+    """L'admin voit/gère tout ; sinon l'utilisateur ne touche que ses propres DA."""
+    if not user.is_admin() and pr.get("created_by") != user.id:
+        raise HTTPException(403, "Accès réservé à l'auteur de la demande ou à l'administration.")
 
 
 def _now() -> str:
@@ -45,11 +59,13 @@ async def list_requests(
     page: int = 1,
     page_size: int = 25,
 ):
-    _require_admin(user)
+    # Tout utilisateur connecté peut créer et suivre ses demandes ; l'admin voit tout.
     page = max(1, page)
     page_size = max(1, min(100, page_size))
 
     query = db.from_("purchase_requests").select("*", count="exact")
+    if not user.is_admin():
+        query = query.eq("created_by", user.id)
     if q:
         query = query.or_(f"request_number.ilike.%{q}%,justification.ilike.%{q}%")
     if status:
@@ -70,8 +86,8 @@ async def get_request(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
     pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
     quotes = (
         db.from_("quotations")
         .select("*, suppliers(company_name)")
@@ -108,7 +124,7 @@ async def create_request(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
+    # Ouverte à tout utilisateur connecté (la décision reste à l'admin).
     if body.request_type not in REQUEST_TYPES:
         raise HTTPException(400, "request_type invalide")
     if body.asset_category not in ASSET_CATEGORIES:
@@ -116,10 +132,29 @@ async def create_request(
 
     data = body.model_dump()
     data["created_by"] = user.id
+    # Ne conserver que les critères de conformité connus.
+    data["conformity_criteria"] = [c for c in (data.get("conformity_criteria") or []) if c in CONFORMITY_CRITERIA]
     res = db.from_("purchase_requests").insert(data).execute()
     pr = res.data[0]
     log_audit(db, user.id, "purchase_request.create", "purchase_request", pr["id"],
-              {"request_number": pr["request_number"]})
+              {"request_number": pr["request_number"],
+               "reference": pr.get("reference") or pr.get("request_number")})
+    # Non-admin → prévenir l'administration qu'une DA attend une décision.
+    if not user.is_admin():
+        try:
+            from utils.notify import notify_users
+            admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
+            admin_ids = list({r["user_id"] for r in admin_rows if r.get("user_id")})
+            if admin_ids:
+                notify_users(
+                    db, admin_ids,
+                    title="Nouvelle demande d'achat 🛒",
+                    message=f"{user.email} a soumis la demande {pr.get('request_number', '')}. Une décision est attendue.",
+                    type="info",
+                    link="/dashboard/accounting",
+                )
+        except Exception:
+            pass
     return pr
 
 
@@ -130,8 +165,8 @@ async def update_request(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
     pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
     if pr["status"] in LOCKED_STATUSES:
         raise HTTPException(400, "Cette demande est verrouillée (commande émise ou annulée).")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
@@ -141,6 +176,8 @@ async def update_request(
         raise HTTPException(400, "request_type invalide")
     if "asset_category" in updates and updates["asset_category"] not in ASSET_CATEGORIES:
         raise HTTPException(400, "asset_category invalide")
+    if "conformity_criteria" in updates:
+        updates["conformity_criteria"] = [c for c in updates["conformity_criteria"] if c in CONFORMITY_CRITERIA]
 
     res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
     log_audit(db, user.id, "purchase_request.update", "purchase_request", pr_id, updates)
@@ -153,8 +190,8 @@ async def delete_request(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
     pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
     linked = db.from_("purchases").select("id").eq("purchase_request_id", pr_id).execute().data or []
     if linked:
         raise HTTPException(400, "Impossible de supprimer : une commande est liée à cette demande.")
@@ -188,6 +225,34 @@ async def need_decision(
         "status": new_status,
     }
     res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
+    # Prévenir le demandeur de la décision (et l'inviter à saisir les devis si validé).
+    requester_id = pr.get("created_by")
+    if requester_id and requester_id != user.id:
+        try:
+            from utils.notify import notify_users
+            num = pr.get("request_number", "")
+            if body.decision == "validation":
+                title, msg, ntype = (
+                    "Demande d'achat approuvée ✅",
+                    f"Votre demande {num} a été approuvée. Vous pouvez maintenant saisir les devis (pièce jointe + commentaire).",
+                    "success",
+                )
+            elif body.decision == "retour":
+                title, msg, ntype = (
+                    "Demande d'achat retournée ↩️",
+                    f"Votre demande {num} a été retournée." + (f" Motif : {body.comment}" if body.comment else ""),
+                    "warning",
+                )
+            else:
+                title, msg, ntype = (
+                    "Demande d'achat annulée ⛔",
+                    f"Votre demande {num} a été annulée." + (f" Motif : {body.comment}" if body.comment else ""),
+                    "error",
+                )
+            notify_users(db, [requester_id], title=title, message=msg, type=ntype,
+                         link="/dashboard/purchase-requests")
+        except Exception:
+            pass
     log_audit(db, user.id, "purchase_request.need_decision", "purchase_request", pr_id,
               {"decision": body.decision})
     return res.data[0]
@@ -281,15 +346,80 @@ async def create_order(
     return purchase
 
 
+# ── Échéancier de paiement (proposition, en amont de la consultation) ─────────
+
+def _installment_row(it, rank: int, user_id: str, pr_id: str) -> dict:
+    if it.payment_mode not in INSTALLMENT_MODES:
+        raise HTTPException(400, f"Mode de règlement invalide : {it.payment_mode}")
+    return {
+        "purchase_request_id": pr_id,
+        "rank": rank,
+        "label": (it.label or "").strip() or None,
+        "amount": max(float(it.amount or 0), 0),
+        "payment_mode": it.payment_mode,
+        "nc": "noir" if it.payment_mode in CASH_SOCIAL_MODES else "comptable",
+        "due_date": it.due_date or None,
+        "created_by": user_id,
+    }
+
+
+@router.get("/{pr_id}/installments")
+async def list_installments(
+    pr_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Échéancier prévisionnel (proposition de paiement) d'une DA — lecture ouverte
+    aux utilisateurs authentifiés."""
+    rows = (
+        db.from_("purchase_installments").select("*")
+        .eq("purchase_request_id", pr_id).order("rank").execute().data
+    ) or []
+    return rows
+
+
+@router.put("/{pr_id}/installments")
+async def replace_installments(
+    pr_id: str,
+    body: PurchaseInstallmentsReplace,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Remplace intégralement l'échéancier (admin). Saisi une fois le devis retenu,
+    avant/à l'émission de la commande. Total libre : la somme des échéances peut
+    différer du montant retenu (ex. avance « en noir » hors facture)."""
+    _require_admin(user)
+    pr = _get_or_404(db, pr_id)
+    if pr["status"] not in INSTALLMENT_EDIT_ALLOWED:
+        raise HTTPException(400, "Le mode de paiement se définit une fois le devis retenu.")
+
+    to_insert = [
+        _installment_row(it, i, user.id, pr_id)
+        for i, it in enumerate(body.installments, start=1)
+        if float(it.amount or 0) > 0 or (it.label or "").strip()
+    ]
+
+    db.from_("purchase_installments").delete().eq("purchase_request_id", pr_id).execute()
+    if to_insert:
+        db.from_("purchase_installments").insert(to_insert).execute()
+    log_audit(db, user.id, "purchase_request.installments.replace", "purchase_request", pr_id,
+              {"count": len(to_insert)})
+    rows = (
+        db.from_("purchase_installments").select("*")
+        .eq("purchase_request_id", pr_id).order("rank").execute().data
+    ) or []
+    return rows
+
+
 @router.get("/{pr_id}/pdf")
 async def export_request_pdf(
     pr_id: str,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
     pr = _get_or_404(db, pr_id)
-    
+    _require_owner_or_admin(user, pr)
+
     # Fetch quotes
     quotes = (
         db.from_("quotations")
@@ -304,8 +434,14 @@ async def export_request_pdf(
          "supplier_name": (qt.get("suppliers") or {}).get("company_name")}
         for qt in quotes
     ]
-    
-    pdf_bytes = render_purchase_request_pdf(pr, quotes)
+
+    # Échéancier de paiement prévisionnel (rattaché à la DA)
+    installments = (
+        db.from_("purchase_installments").select("*")
+        .eq("purchase_request_id", pr_id).order("rank").execute().data
+    ) or []
+
+    pdf_bytes = render_purchase_request_pdf(pr, quotes, installments)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

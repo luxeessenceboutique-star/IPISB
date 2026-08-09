@@ -18,3 +18,5 @@ python-docx>=1.1.2
 pdfplumber>=0.11.4
 pypdf>=5.1.0
 rapidocr-onnxruntime>=1.4.4
+openpyxl>=3.1.2
+markdown>=3.7

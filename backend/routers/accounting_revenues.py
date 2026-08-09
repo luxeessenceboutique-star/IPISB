@@ -7,8 +7,16 @@ from deps import get_current_user, get_db, CurrentUser
 from models import RevenueCreate, RevenueUpdate
 from utils.audit import log_audit
 from utils.uploads import validate_and_read
+from utils.excel import make_xlsx
 
 router = APIRouter(prefix="/accounting/revenues", tags=["accounting"])
+
+# Modes de règlement passant par la banque (≠ espèces) → « versements bancaires ».
+BANK_METHODS = ["versement", "ov_permanent", "ov_ponctuel", "cheque"]
+_METHOD_LABELS = {
+    "ov_permanent": "OV permanent", "ov_ponctuel": "OV ponctuel", "cheque": "Chèque",
+    "versement": "Versement", "espece": "Espèces", "autre": "Autre",
+}
 
 BUCKET = "accounting"
 SIGNED_URL_TTL = 60 * 60  # 1 hour
@@ -38,6 +46,9 @@ async def list_revenues(
     category_id: Optional[str] = None,
     revenue_type: Optional[str] = None,
     status: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    bank: bool = False,
+    class_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     sort_by: str = "revenue_date",
@@ -62,6 +73,12 @@ async def list_revenues(
         query = query.eq("revenue_type", revenue_type)
     if status:
         query = query.eq("status", status)
+    if payment_method:
+        query = query.eq("payment_method", payment_method)
+    if bank:  # versements bancaires : uniquement les règlements passant par la banque
+        query = query.in_("payment_method", BANK_METHODS)
+    if class_id:  # recettes rattachées à une promo (vue groupée par classe)
+        query = query.eq("class_id", class_id) if class_id != "none" else query.is_("class_id", "null")
     if date_from:
         query = query.gte("revenue_date", date_from)
     if date_to:
@@ -75,6 +92,128 @@ async def list_revenues(
         "total": res.count or 0,
         "page": page,
         "page_size": page_size,
+    }
+
+
+@router.get("/export/xlsx")
+async def export_revenues_xlsx(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    bank: bool = True,
+    status: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """Export Excel. Par défaut (bank=true) : « Versements Bancaires » — les
+    recettes réglées via la banque (virement / OV / chèque). bank=false exporte
+    toutes les recettes."""
+    _require_admin(user)
+
+    query = db.from_("revenues").select("*")
+    if bank:
+        query = query.in_("payment_method", BANK_METHODS)
+    if status:
+        query = query.eq("status", status)
+    if date_from:
+        query = query.gte("revenue_date", date_from)
+    if date_to:
+        query = query.lte("revenue_date", date_to)
+    revenues = query.order("revenue_date", desc=True).execute().data or []
+
+    rows = [
+        {
+            "revenue_date": r.get("revenue_date") or "",
+            "source": r.get("title") or "—",
+            "amount": float(r.get("total_incl_vat") or r.get("amount") or 0),
+            "method": _METHOD_LABELS.get(r.get("payment_method"), r.get("payment_method") or "—"),
+            "reference": r.get("revenue_number") or "",
+        }
+        for r in revenues
+    ]
+
+    today = datetime.now(timezone.utc).date()
+    total = sum(r["amount"] for r in rows)
+    is_bank = bank
+    return make_xlsx(
+        filename=f"{'Versements_bancaires' if is_bank else 'Recettes'}_{today.isoformat()}.xlsx",
+        title="VERSEMENTS BANCAIRES AWB — IPISB" if is_bank else "RECETTES IPISB",
+        subtitle=f"Édité le {today.strftime('%d/%m/%Y')} — {len(rows)} ligne(s) — Total payé actualisé : {total:,.2f} MAD".replace(",", " "),
+        theme="green",
+        sheet_name="Versements bancaires" if is_bank else "Recettes",
+        columns=[
+            {"key": "revenue_date", "label": "Date", "type": "date", "width": 13},
+            {"key": "source", "label": "Source", "width": 34},
+            {"key": "amount", "label": "Montant", "type": "money", "width": 16},
+            {"key": "method", "label": "Type de virement", "width": 18},
+            {"key": "reference", "label": "Référence", "width": 16},
+        ],
+        rows=rows,
+    )
+
+
+@router.get("/by-class")
+async def revenues_by_class(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    q: Optional[str] = None,
+    category_id: Optional[str] = None,
+    revenue_type: Optional[str] = None,
+    status: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    bank: bool = False,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """Recettes agrégées par promo : un total (+ nb + encaissé) par classe.
+    Applique les mêmes filtres que la liste. La classe « none » regroupe les
+    recettes sans rattachement de promo."""
+    _require_admin(user)
+
+    query = db.from_("revenues").select("class_id, amount, total_incl_vat, status")
+    if q:
+        query = query.ilike("title", f"%{q}%")
+    if category_id:
+        query = query.eq("category_id", category_id)
+    if revenue_type:
+        query = query.eq("revenue_type", revenue_type)
+    if status:
+        query = query.eq("status", status)
+    if payment_method:
+        query = query.eq("payment_method", payment_method)
+    if bank:
+        query = query.in_("payment_method", BANK_METHODS)
+    if date_from:
+        query = query.gte("revenue_date", date_from)
+    if date_to:
+        query = query.lte("revenue_date", date_to)
+    rows = query.execute().data or []
+
+    groups: dict = {}
+    for r in rows:
+        cid = r.get("class_id") or "none"
+        g = groups.setdefault(cid, {"class_id": cid, "count": 0, "total": 0.0, "received_total": 0.0})
+        amt = float(r.get("total_incl_vat") or r.get("amount") or 0)
+        g["count"] += 1
+        g["total"] += amt
+        if r.get("status") == "received":
+            g["received_total"] += amt
+
+    real_ids = [c for c in groups if c != "none"]
+    names: dict = {}
+    if real_ids:
+        cls = db.from_("classes").select("id, name").in_("id", real_ids).execute().data or []
+        names = {c["id"]: c["name"] for c in cls}
+
+    out = []
+    for cid, g in groups.items():
+        out.append({**g, "class_name": (None if cid == "none" else names.get(cid))})
+    # Classes nommées d'abord (alpha), « Sans promo » en dernier.
+    out.sort(key=lambda x: (x["class_name"] is None, (x["class_name"] or "").lower()))
+
+    return {
+        "groups": out,
+        "total": sum(g["total"] for g in out),
+        "grand_count": sum(g["count"] for g in out),
     }
 
 
@@ -121,7 +260,47 @@ async def create_revenue(
 
     res = db.from_("revenues").insert(data).execute()
     new_revenue = res.data[0]
-    log_audit(db, user.id, "revenue.create", "revenue", new_revenue["id"], {"title": body.title})
+    log_audit(db, user.id, "revenue.create", "revenue", new_revenue["id"],
+              {"title": body.title, "reference": new_revenue.get("reference") or new_revenue.get("revenue_number")})
+
+    # Journal : encaissement (uniquement si la recette est réellement encaissée),
+    # ventilé selon le mode d'encaissement (virement / chèque / versement / carte
+    # → Journal des comptes, espèces ou mode non précisé → Journal de caisse).
+    if new_revenue.get("status") == "received":
+        try:
+            from routers.accounting_cash_journal import create_cash_entry
+            create_cash_entry(
+                db,
+                user_id=user.id,
+                type="entree",
+                amount=new_revenue.get("total_incl_vat") or new_revenue.get("amount") or 0,
+                prestataire=new_revenue.get("title"),
+                action="Recette — " + (new_revenue.get("description") or new_revenue.get("title") or ""),
+                justificatif="Sans pièce",   # aucune pièce à la création ; re-synchronisé à l'upload
+                nc="noir",                    # pas de pièce justificative → hors comptabilité
+                source_type="revenue",
+                source_id=new_revenue["id"],
+                payment_method=new_revenue.get("payment_method"),
+            )
+            # Chèque REÇU → inscrit au registre et suivi jusqu'à l'encaissement.
+            # Pas de validation N+1 : l'encaissement n'est pas une décision.
+            from routers.accounting_cheques import is_cheque, register_instrument, RECU
+            if is_cheque(new_revenue.get("payment_method")):
+                register_instrument(
+                    db,
+                    direction=RECU,
+                    amount=new_revenue.get("total_incl_vat") or new_revenue.get("amount") or 0,
+                    counterparty=new_revenue.get("title"),
+                    label=f"Recette {new_revenue.get('revenue_number') or ''}".strip(),
+                    issue_date=new_revenue.get("revenue_date"),
+                    status="remis",
+                    source_type="revenue",
+                    source_id=new_revenue["id"],
+                    created_by=user.id,
+                )
+        except Exception:
+            pass
+
     return _shape(new_revenue)
 
 
@@ -174,6 +353,13 @@ async def delete_revenue(
             pass
         db.from_("accounting_attachments").delete().eq("entity_type", ENTITY_TYPE).eq("entity_id", revenue_id).execute()
 
+    # La recette avait été portée au journal (et, si chèque, au registre) : on la
+    # retire des deux, sinon le solde garde un encaissement qui n'existe plus.
+    from routers.accounting_cash_journal import delete_cash_entry
+    from routers.accounting_cheques import unregister_source
+    delete_cash_entry(db, source_type=ENTITY_TYPE, source_id=revenue_id, user_id=user.id)
+    unregister_source(db, source_type=ENTITY_TYPE, source_id=revenue_id, user_id=user.id)
+
     db.from_("revenues").delete().eq("id", revenue_id).execute()
     log_audit(db, user.id, "revenue.delete", "revenue", revenue_id)
     return {"ok": True}
@@ -217,6 +403,12 @@ async def upload_attachment(
     }).execute()
     new_attachment = res.data[0]
     log_audit(db, user.id, "revenue.attachment.upload", "revenue", revenue_id, {"kind": kind, "file_name": file.filename})
+    # Journal de caisse : la recette a désormais une pièce → comptable + type de pièce.
+    try:
+        from routers.accounting_cash_journal import sync_source_piece
+        sync_source_piece(db, source_type="revenue", source_id=revenue_id)
+    except Exception:
+        pass
     return new_attachment
 
 
@@ -258,4 +450,10 @@ async def delete_attachment(
         pass
     db.from_("accounting_attachments").delete().eq("id", attachment_id).execute()
     log_audit(db, user.id, "revenue.attachment.delete", "revenue", rows[0]["entity_id"])
+    # Journal de caisse : re-synchronise (repasse en 'noir' s'il ne reste plus de pièce).
+    try:
+        from routers.accounting_cash_journal import sync_source_piece
+        sync_source_piece(db, source_type="revenue", source_id=rows[0]["entity_id"])
+    except Exception:
+        pass
     return {"ok": True}

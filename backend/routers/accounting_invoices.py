@@ -5,10 +5,19 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import InvoiceCreate, InvoiceUpdate
 from utils.audit import log_audit
+from utils.excel import make_xlsx
 
 router = APIRouter(prefix="/accounting/invoices", tags=["accounting"])
 
 PAYMENT_STATUSES = {"pending", "partially_paid", "paid"}
+
+_STATUS_LABELS = {
+    "pending": "À payer", "partially_paid": "Partiellement payée", "paid": "Payée",
+}
+_METHOD_LABELS = {
+    "ov_permanent": "OV permanent", "ov_ponctuel": "OV ponctuel", "cheque": "Chèque",
+    "versement": "Versement", "espece": "Espèces", "autre": "Autre",
+}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -90,6 +99,65 @@ async def list_invoices(
     }
 
 
+@router.get("/export/xlsx")
+async def export_invoices_xlsx(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    status: str = "unpaid",
+):
+    """Export Excel « Instances fournisseurs » — échéancier des factures
+    fournisseurs. Par défaut (status=unpaid) : uniquement les factures restant à
+    régler (pending + partially_paid). status=all pour tout exporter."""
+    _require_admin(user)
+
+    query = db.from_("invoices").select(
+        "*, suppliers(company_name), purchases(title, payment_method)"
+    )
+    if status == "unpaid":
+        query = query.in_("payment_status", ["pending", "partially_paid"])
+    elif status in PAYMENT_STATUSES:
+        query = query.eq("payment_status", status)
+    invoices = query.order("due_date", desc=False).execute().data or []
+
+    rows = []
+    for inv in invoices:
+        purchase = inv.get("purchases") or {}
+        amount = float(inv.get("amount") or 0)
+        vat = float(inv.get("vat_percent") or 0)
+        method = purchase.get("payment_method")
+        rows.append({
+            "invoice_date": inv.get("invoice_date") or "",
+            "prestation": purchase.get("title") or "—",
+            "supplier": (inv.get("suppliers") or {}).get("company_name") or "—",
+            "amount_ttc": round(amount * (1 + vat / 100), 2),
+            "invoice_number": inv.get("invoice_number") or "",
+            "due_date": inv.get("due_date") or "",
+            "status": _STATUS_LABELS.get(inv.get("payment_status"), inv.get("payment_status")),
+            "method": _METHOD_LABELS.get(method, method or "—"),
+        })
+
+    today = datetime.now(timezone.utc).date()
+    total = sum(r["amount_ttc"] for r in rows)
+    return make_xlsx(
+        filename=f"Instances_fournisseurs_{today.isoformat()}.xlsx",
+        title="INSTANCES FOURNISSEURS — ÉCHÉANCIER",
+        subtitle=f"Édité le {today.strftime('%d/%m/%Y')} — {len(rows)} facture(s) — Total TTC : {total:,.2f} MAD".replace(",", " "),
+        theme="yellow",
+        sheet_name="Instances fournisseurs",
+        columns=[
+            {"key": "invoice_date", "label": "Date", "type": "date", "width": 13},
+            {"key": "prestation", "label": "Prestation", "width": 32},
+            {"key": "supplier", "label": "Prestataire", "width": 26},
+            {"key": "amount_ttc", "label": "Montant TTC", "type": "money", "width": 16},
+            {"key": "invoice_number", "label": "N° de Facture", "width": 18},
+            {"key": "due_date", "label": "Échéance", "type": "date", "width": 13},
+            {"key": "status", "label": "Planification", "width": 18},
+            {"key": "method", "label": "Mode Paiement", "width": 16},
+        ],
+        rows=rows,
+    )
+
+
 @router.get("/{invoice_id}")
 async def get_invoice(
     invoice_id: str,
@@ -122,7 +190,8 @@ async def create_invoice(
 
     res = db.from_("invoices").insert(data).execute()
     new_invoice = res.data[0]
-    log_audit(db, user.id, "invoice.create", "invoice", new_invoice["id"], {"invoice_number": body.invoice_number})
+    log_audit(db, user.id, "invoice.create", "invoice", new_invoice["id"],
+              {"invoice_number": body.invoice_number, "reference": new_invoice.get("reference")})
     return _shape(new_invoice)
 
 

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Plus, Download, Ban, QrCode, RefreshCw, Upload, Trash2, Layers, Eye } from "lucide-react";
+import { FileText, Plus, Download, Ban, QrCode, RefreshCw, Upload, Trash2, Layers, Eye, X } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { PreviewModal, urlIsPdf, type Preview } from "@/components/dashboard/preview";
 
@@ -154,11 +154,14 @@ function GenerateModal({ students, onClose, onGenerated, onPreview }: { students
   }
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 440, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
-          Générer un document
-        </h2>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
+            Générer un document
+          </h2>
+          <button type="button" onClick={onClose} title="Fermer" aria-label="Fermer" style={{ border: "none", background: "transparent", cursor: "pointer", color: PAL.muted, padding: 0, lineHeight: 0 }}><X size={20} /></button>
+        </div>
 
         <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>Modèle</label>
         <select value={choice} onChange={e => setChoice(e.target.value)} className="u-input"

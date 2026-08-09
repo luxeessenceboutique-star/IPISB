@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Plus, Trash2, Loader2, Users, X, BookOpen, Settings } from "lucide-react";
+import { Plus, Trash2, Loader2, Users, X, BookOpen, Settings, GraduationCap, User, CalendarDays, Pencil, ArrowLeftRight } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/classes")({
@@ -15,7 +15,7 @@ export const Route = createFileRoute("/dashboard/classes")({
       .from("user_roles")
       .select("role")
       .eq("user_id", sess.session.user.id)
-      .in("role", ["admin", "professor"]);
+      .in("role", ["admin", "professor", "cashier"]);
     if (!data?.length) throw redirect({ to: "/dashboard" });
   },
   component: ClassesPage,
@@ -46,9 +46,41 @@ type ClassItem = {
   specialty_id: string | null;
   specialty_name: string | null;
   year_number: number | null;
+  formation_id: string | null;
+  formation_name: string | null;
+  formation_code: string | null;
+  trainer_id: string | null;
+  trainer_name: string | null;
+  start_date: string | null;
+  duration_months: number | null;
 };
 
 type Specialty = { id: string; name: string };
+
+type Formation = {
+  id: string;
+  name: string;
+  code: string | null;
+  default_duration_months: number | null;
+  description: string | null;
+};
+
+type Trainer = { id: string; full_name: string | null; email: string | null };
+
+// « sept. 2024 → juin 2025 · 9 mois » à partir d'une date de début + durée en mois
+function fmtMonthYear(d: Date) {
+  return d.toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+}
+function periodLabel(start: string | null, months: number | null): string | null {
+  if (!start) return null;
+  const d = new Date(start + "T00:00:00");
+  if (isNaN(d.getTime())) return null;
+  const startTxt = fmtMonthYear(d);
+  if (!months) return startTxt;
+  const end = new Date(d);
+  end.setMonth(end.getMonth() + months);
+  return `${startTxt} → ${fmtMonthYear(end)} · ${months} mois`;
+}
 
 type StudentItem = {
   id: string;
@@ -66,26 +98,109 @@ type RosterStudent = {
 
 // ── Create class modal ────────────────────────────────────────
 
-function CreateClassModal({ specialties, onClose, onCreated }: { specialties: Specialty[]; onClose: () => void; onCreated: () => void }) {
-  const [name, setName]         = useState("");
-  const [desc, setDesc]         = useState("");
-  const [specialtyId, setSpecialtyId] = useState("");
-  const [yearNumber, setYearNumber]   = useState("");
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "10px 14px",
+  background: PAL.cream, border: `1px solid ${PAL.line}`,
+  borderRadius: 10, fontFamily: sans, fontSize: 14,
+  color: PAL.ink, outline: "none", boxSizing: "border-box",
+};
+const fieldLabelStyle: React.CSSProperties = {
+  display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600,
+  color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 6,
+};
+
+function CreateClassModal({ specialties, editing, onClose, onCreated }: { specialties: Specialty[]; editing?: ClassItem | null; onClose: () => void; onCreated: () => void }) {
+  const [name, setName]         = useState(editing?.name ?? "");
+  const [desc, setDesc]         = useState(editing?.description ?? "");
+  const [specialtyId, setSpecialtyId] = useState(editing?.specialty_id ?? "");
+  const [yearNumber, setYearNumber]   = useState(editing?.year_number != null ? String(editing.year_number) : "");
   const [busy, setBusy]         = useState(false);
+
+  const [formations, setFormations] = useState<Formation[]>([]);
+  const [trainers, setTrainers]     = useState<Trainer[]>([]);
+  const [formationId, setFormationId] = useState(editing?.formation_id ?? "");
+  const [trainerId, setTrainerId]     = useState(editing?.trainer_id ?? "");
+  const [startDate, setStartDate]     = useState(editing?.start_date ?? "");
+  const [duration, setDuration]       = useState(editing?.duration_months != null ? String(editing.duration_months) : "");
+
+  // Création d'une formation à la volée (dépliable sous le sélecteur)
+  const [addingFormation, setAddingFormation]       = useState(false);
+  const [newFName, setNewFName]                     = useState("");
+  const [newFCode, setNewFCode]                     = useState("");
+  const [newFDuration, setNewFDuration]             = useState("");
+  const [savingFormation, setSavingFormation]       = useState(false);
+
   const backdropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [f, t] = await Promise.all([
+          api.get("/api/classes/formations"),
+          api.get("/api/classes/trainers"),
+        ]);
+        setFormations(f ?? []);
+        setTrainers(t ?? []);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Erreur de chargement");
+      }
+    })();
+  }, []);
+
+  function pickFormation(id: string) {
+    setFormationId(id);
+    const f = formations.find(x => x.id === id);
+    if (f?.default_duration_months != null && !duration) setDuration(String(f.default_duration_months));
+  }
+
+  async function createFormation() {
+    const nm = newFName.trim();
+    if (!nm) { toast.error("Nom de la formation requis"); return; }
+    setSavingFormation(true);
+    try {
+      const created: Formation = await api.post("/api/classes/formations", {
+        name: nm,
+        code: newFCode.trim() || null,
+        default_duration_months: newFDuration ? parseInt(newFDuration, 10) : null,
+      });
+      setFormations(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      pickFormation(created.id);
+      setAddingFormation(false);
+      setNewFName(""); setNewFCode(""); setNewFDuration("");
+      toast.success("Formation ajoutée au catalogue");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSavingFormation(false);
+    }
+  }
+
+  const endLabel = periodLabel(startDate || null, duration ? parseInt(duration, 10) : null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { toast.error("Le nom est requis"); return; }
     setBusy(true);
+    const payload = {
+      name: name.trim(),
+      description: desc.trim() || null,
+      specialty_id: specialtyId || null,
+      year_number: yearNumber ? parseInt(yearNumber, 10) : null,
+      formation_id: formationId || null,
+      trainer_id: trainerId || null,
+      start_date: startDate || null,
+      duration_months: duration ? parseInt(duration, 10) : null,
+    };
     try {
-      await api.post("/api/classes", {
-        name: name.trim(),
-        description: desc.trim() || null,
-        specialty_id: specialtyId || null,
-        year_number: yearNumber ? parseInt(yearNumber, 10) : null,
-      });
-      toast.success("Classe créée !");
+      if (editing) {
+        await api.patch(`/api/classes/${editing.id}`, payload);
+        toast.success("Classe mise à jour !");
+      } else {
+        const res = await api.post("/api/classes", payload);
+        // Caissier : création soumise à validation N+1 (backend renvoie {pending:true}).
+        if (res?.pending) toast.success("Classe envoyée pour validation N+1 ✅");
+        else toast.success("Classe créée !");
+      }
       onCreated();
       onClose();
     } catch (err) {
@@ -103,13 +218,13 @@ function CreateClassModal({ specialties, onClose, onCreated }: { specialties: Sp
         position: "fixed", inset: 0, zIndex: 50,
         background: "oklch(0% 0 0 / .45)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: sans,
+        fontFamily: sans, padding: 20,
       }}
     >
       <div style={{
         background: PAL.paper, borderRadius: 16, padding: "32px 36px",
-        width: "100%", maxWidth: 440, boxShadow: "0 24px 64px oklch(0% 0 0 / .18)",
-        position: "relative",
+        width: "100%", maxWidth: 480, maxHeight: "92vh", overflowY: "auto",
+        boxShadow: "0 24px 64px oklch(0% 0 0 / .18)", position: "relative",
       }}>
         <button type="button" onClick={onClose} style={{
           position: "absolute", top: 16, right: 16, background: "none",
@@ -117,10 +232,10 @@ function CreateClassModal({ specialties, onClose, onCreated }: { specialties: Sp
         }}>✕</button>
 
         <h2 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 700, color: PAL.ink }}>
-          Créer une classe
+          {editing ? "Modifier la classe" : "Créer une classe"}
         </h2>
         <p style={{ margin: "0 0 24px", fontSize: 13, color: PAL.muted }}>
-          Regroupez vos étudiants pour les réunions et les cours.
+          Rattachez la classe à une formation, un formateur et une période.
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -128,63 +243,97 @@ function CreateClassModal({ specialties, onClose, onCreated }: { specialties: Sp
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
             <div>
-              <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
-                Spécialité
-              </label>
-              <select
-                value={specialtyId}
-                onChange={e => setSpecialtyId(e.target.value)}
-                style={{
-                  width: "100%", padding: "10px 14px",
-                  background: PAL.cream, border: `1px solid ${PAL.line}`,
-                  borderRadius: 10, fontFamily: sans, fontSize: 14,
-                  color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
-                }}
-              >
+              <label style={fieldLabelStyle}>Spécialité</label>
+              <select value={specialtyId} onChange={e => setSpecialtyId(e.target.value)} style={inputStyle}>
                 <option value="">— Non définie —</option>
                 {specialties.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
-                Année
-              </label>
-              <select
-                value={yearNumber}
-                onChange={e => setYearNumber(e.target.value)}
-                style={{
-                  width: "100%", padding: "10px 14px",
-                  background: PAL.cream, border: `1px solid ${PAL.line}`,
-                  borderRadius: 10, fontFamily: sans, fontSize: 14,
-                  color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
-                }}
-              >
+              <label style={fieldLabelStyle}>Année</label>
+              <select value={yearNumber} onChange={e => setYearNumber(e.target.value)} style={inputStyle}>
                 <option value="">— Non définie —</option>
                 {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>Année {n}</option>)}
               </select>
             </div>
           </div>
 
+          {/* Formation */}
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
-              Description (optionnel)
-            </label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <label style={fieldLabelStyle}>Formation</label>
+              <button type="button" onClick={() => setAddingFormation(v => !v)}
+                style={{ background: "none", border: 0, cursor: "pointer", color: PAL.primary, fontSize: 11, fontWeight: 700, fontFamily: sans, padding: 0, marginBottom: 6 }}>
+                {addingFormation ? "Annuler" : "＋ Nouvelle"}
+              </button>
+            </div>
+            <select value={formationId} onChange={e => pickFormation(e.target.value)} style={inputStyle}>
+              <option value="">— Aucune —</option>
+              {formations.map(f => (
+                <option key={f.id} value={f.id}>{f.code ? `${f.code} · ` : ""}{f.name}</option>
+              ))}
+            </select>
+            {addingFormation && (
+              <div style={{ marginTop: 10, padding: 12, background: PAL.pale, borderRadius: 10, border: `1px solid ${PAL.line}` }}>
+                <input type="text" value={newFName} onChange={e => setNewFName(e.target.value)} placeholder="Nom de la formation" style={{ ...inputStyle, marginBottom: 8 }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="text" value={newFCode} onChange={e => setNewFCode(e.target.value)} placeholder="Code (ex. F001)" style={{ ...inputStyle, flex: 1 }} />
+                  <input type="number" min="0" value={newFDuration} onChange={e => setNewFDuration(e.target.value)} placeholder="Durée (mois)" style={{ ...inputStyle, flex: 1 }} />
+                </div>
+                <button type="button" onClick={createFormation} disabled={savingFormation}
+                  style={{ marginTop: 8, width: "100%", padding: "9px 0", borderRadius: 999, background: PAL.primary, border: 0, color: PAL.paper, fontFamily: sans, fontSize: 12.5, fontWeight: 700, cursor: savingFormation ? "not-allowed" : "pointer", opacity: savingFormation ? 0.65 : 1 }}>
+                  {savingFormation ? "Ajout…" : "Ajouter au catalogue"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Formateur */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={fieldLabelStyle}>Formateur</label>
+            <select value={trainerId} onChange={e => setTrainerId(e.target.value)} style={inputStyle}>
+              <option value="">— Aucun —</option>
+              {trainers.map(t => (
+                <option key={t.id} value={t.id}>{t.full_name || t.email || "—"}</option>
+              ))}
+            </select>
+            {trainers.length === 0 && (
+              <p style={{ fontSize: 11, color: PAL.muted, margin: "6px 0 0" }}>
+                Aucun compte formateur. Créez un utilisateur avec le rôle professeur dans « Utilisateurs ».
+              </p>
+            )}
+          </div>
+
+          {/* Période : date de début + durée */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabelStyle}>Date de début</label>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabelStyle}>Durée (mois)</label>
+              <input type="number" min="0" value={duration} onChange={e => setDuration(e.target.value)} placeholder="9" style={inputStyle} />
+            </div>
+          </div>
+          {endLabel && (
+            <p style={{ fontSize: 12, color: PAL.muted, margin: "0 0 14px" }}>
+              Période : <strong style={{ color: PAL.text }}>{endLabel}</strong>
+            </p>
+          )}
+
+          {/* Description */}
+          <div style={{ marginBottom: 14 }}>
+            <label style={fieldLabelStyle}>Description (optionnel)</label>
             <textarea
               value={desc}
               onChange={e => setDesc(e.target.value)}
               placeholder="Notes sur ce groupe…"
-              rows={3}
-              style={{
-                width: "100%", padding: "10px 14px",
-                background: PAL.cream, border: `1px solid ${PAL.line}`,
-                borderRadius: 10, fontFamily: sans, fontSize: 14,
-                color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
-                resize: "vertical" as const,
-              }}
+              rows={2}
+              style={{ ...inputStyle, resize: "vertical" }}
             />
           </div>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <button type="button" onClick={onClose} style={{
               flex: 1, padding: "11px 0", borderRadius: 999, fontFamily: sans, fontSize: 13,
               fontWeight: 600, cursor: "pointer",
@@ -196,7 +345,7 @@ function CreateClassModal({ specialties, onClose, onCreated }: { specialties: Sp
               background: PAL.ink, border: 0, color: PAL.paper,
               opacity: busy ? 0.65 : 1,
             }}>
-              {busy ? "Création…" : "Créer la classe"}
+              {busy ? "Enregistrement…" : editing ? "Enregistrer" : "Créer la classe"}
             </button>
           </div>
         </form>
@@ -322,6 +471,68 @@ function SpecialtiesModal({ specialties, onClose, onChanged }: {
   );
 }
 
+// ── Transfer student modal (même filière uniquement) ─────────────
+function TransferModal({ student, fromClass, classes, onClose, onDone }: {
+  student: StudentItem; fromClass: ClassItem; classes: ClassItem[]; onClose: () => void; onDone: () => void;
+}) {
+  const [toId, setToId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  // Cibles = classes de la MÊME filière (formation), hors classe d'origine.
+  const targets = classes.filter(c => c.id !== fromClass.id && c.formation_id === fromClass.formation_id);
+
+  async function submit() {
+    if (!toId) { toast.error("Choisissez une classe cible"); return; }
+    setBusy(true);
+    try {
+      const res = await api.post(`/api/classes/${fromClass.id}/students/${student.id}/transfer`, { to_class_id: toId });
+      if (res?.pending) toast.success("Transfert envoyé pour validation N+1 ✅");
+      else toast.success("Élève transféré");
+      onDone();
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div ref={backdropRef} onClick={e => { if (e.target === backdropRef.current) onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 60, background: "oklch(0% 0 0 / .45)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: sans, padding: 20 }}>
+      <div style={{ background: PAL.paper, borderRadius: 16, padding: "28px 32px", width: "100%", maxWidth: 440, boxShadow: "0 24px 64px oklch(0% 0 0 / .18)", position: "relative" }}>
+        <button type="button" onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: 0, cursor: "pointer", fontSize: 18, color: PAL.muted }}>✕</button>
+        <h2 style={{ margin: "0 0 6px", fontSize: 19, fontWeight: 700, color: PAL.ink }}>Transférer l'élève</h2>
+        <p style={{ margin: "0 0 20px", fontSize: 13, color: PAL.muted }}>
+          <strong style={{ color: PAL.text }}>{student.full_name || student.email}</strong> — depuis « {fromClass.name} ».
+          Seules les classes de la <strong>même filière</strong> sont proposées (les prix diffèrent d'une filière à l'autre).
+        </p>
+        {targets.length === 0 ? (
+          <div style={{ padding: "18px 16px", borderRadius: 10, background: PAL.pale, border: `1px solid ${PAL.line}`, fontSize: 13, color: PAL.muted, marginBottom: 18 }}>
+            Aucune autre classe de la même filière n'est disponible.
+          </div>
+        ) : (
+          <div style={{ marginBottom: 18 }}>
+            <label style={fieldLabelStyle}>Classe cible</label>
+            <select value={toId} onChange={e => setToId(e.target.value)} style={inputStyle}>
+              <option value="">— Choisir —</option>
+              {targets.map(c => (
+                <option key={c.id} value={c.id}>{c.name}{c.formation_code ? ` · ${c.formation_code}` : ""}</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: "11px 0", borderRadius: 999, fontFamily: sans, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "transparent", border: `1px solid ${PAL.line}`, color: PAL.muted }}>Annuler</button>
+          <button type="button" onClick={submit} disabled={busy || targets.length === 0 || !toId} style={{ flex: 2, padding: "11px 0", borderRadius: 999, fontFamily: sans, fontSize: 13, fontWeight: 600, cursor: busy || !toId ? "not-allowed" : "pointer", background: PAL.ink, border: 0, color: PAL.paper, opacity: busy || targets.length === 0 || !toId ? 0.6 : 1 }}>
+            {busy ? "Envoi…" : "Transférer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Classes page ──────────────────────────────────────────────
 
 function ClassesPage() {
@@ -331,6 +542,7 @@ function ClassesPage() {
   const [showModal,    setShowModal]    = useState(false);
   const [showSpecialtiesModal, setShowSpecialtiesModal] = useState(false);
   const [specialties,  setSpecialties]  = useState<Specialty[]>([]);
+  const [editClass,    setEditClass]    = useState<ClassItem | null>(null);
   const [selected,     setSelected]     = useState<ClassItem | null>(null);
   const [students,     setStudents]     = useState<StudentItem[]>([]);
   const [studLoading,  setStudLoading]  = useState(false);
@@ -338,8 +550,14 @@ function ClassesPage() {
   const [deletingId,   setDeletingId]   = useState<string | null>(null);
   const [removingId,   setRemovingId]   = useState<string | null>(null);
   const [addingId,     setAddingId]     = useState<string | null>(null);
+  const [transferFor,  setTransferFor]  = useState<StudentItem | null>(null);
 
   const isAdmin = roles.includes("admin");
+  const isCashier = roles.includes("cashier");
+  // Caissier : peut créer une classe, inscrire et transférer (→ validation N+1),
+  // mais PAS modifier/supprimer une classe ni retirer un élève.
+  const canManageClass = !isCashier;      // éditer / supprimer une classe, retirer un élève
+  const canTransfer = isAdmin || isCashier;
 
   async function loadClasses() {
     setLoading(true);
@@ -434,8 +652,10 @@ function ClassesPage() {
     if (!selected) return;
     setAddingId(studentId);
     try {
-      await api.post(`/api/classes/${selected.id}/students`, { student_id: studentId });
-      toast.success("Étudiant ajouté");
+      const res = await api.post(`/api/classes/${selected.id}/students`, { student_id: studentId });
+      // Caissier : inscription soumise à validation N+1 (backend renvoie {pending:true}).
+      if (res?.pending) toast.success("Inscription envoyée pour validation N+1 ✅");
+      else toast.success("Étudiant ajouté");
       await loadStudents(selected.id);
       loadClasses();
     } catch (err) {
@@ -450,10 +670,12 @@ function ClassesPage() {
 
   return (
     <>
-      {showModal && (
+      {(showModal || editClass) && (
         <CreateClassModal
           specialties={specialties}
-          onClose={() => setShowModal(false)}
+          key={editClass?.id ?? "new"}
+          editing={editClass}
+          onClose={() => { setShowModal(false); setEditClass(null); }}
           onCreated={loadClasses}
         />
       )}
@@ -462,6 +684,16 @@ function ClassesPage() {
           specialties={specialties}
           onClose={() => setShowSpecialtiesModal(false)}
           onChanged={loadSpecialties}
+        />
+      )}
+
+      {transferFor && selected && (
+        <TransferModal
+          student={transferFor}
+          fromClass={selected}
+          classes={classes}
+          onClose={() => setTransferFor(null)}
+          onDone={() => { if (selected) loadStudents(selected.id); loadClasses(); }}
         />
       )}
 
@@ -560,7 +792,46 @@ function ClassesPage() {
                           <span style={{ marginInlineStart: 10 }}>· {cls.professor_name}</span>
                         )}
                       </div>
+                      {(cls.formation_name || cls.trainer_name || cls.start_date) && (
+                        <div style={{ display: "flex", flexWrap: "wrap" as const, gap: "4px 12px", fontSize: 11, color: PAL.muted, marginTop: 5 }}>
+                          {cls.formation_name && (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <GraduationCap style={{ width: 11, height: 11 }} />
+                              {cls.formation_code ? `${cls.formation_code} · ` : ""}{cls.formation_name}
+                            </span>
+                          )}
+                          {cls.trainer_name && (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <User style={{ width: 11, height: 11 }} />
+                              {cls.trainer_name}
+                            </span>
+                          )}
+                          {periodLabel(cls.start_date, cls.duration_months) && (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <CalendarDays style={{ width: 11, height: 11 }} />
+                              {periodLabel(cls.start_date, cls.duration_months)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* Edit */}
+                    {canManageClass && (<>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); setEditClass(cls); }}
+                      title="Modifier (formation, formateur, période)"
+                      style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        width: 30, height: 30, borderRadius: 8, border: `1px solid ${PAL.line}`,
+                        background: "transparent", cursor: "pointer", color: PAL.muted, flexShrink: 0,
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = PAL.pale; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                    >
+                      <Pencil style={{ width: 13, height: 13 }} />
+                    </button>
 
                     {/* Delete */}
                     <button
@@ -583,6 +854,7 @@ function ClassesPage() {
                         : <Trash2 style={{ width: 13, height: 13 }} />
                       }
                     </button>
+                    </>)}
                   </div>
                 );
               })}
@@ -701,24 +973,40 @@ function ClassesPage() {
                         {s.email}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeStudent(s.id)}
-                      disabled={removingId === s.id}
-                      title="Retirer de la classe"
-                      style={{
-                        display: "inline-flex", alignItems: "center", justifyContent: "center",
-                        width: 26, height: 26, borderRadius: 6, border: `1px solid ${PAL.line}`,
-                        background: "transparent", cursor: removingId === s.id ? "not-allowed" : "pointer",
-                        color: removingId === s.id ? PAL.muted : PAL.danger,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {removingId === s.id
-                        ? <Loader2 style={{ width: 11, height: 11, animation: "spin 1s linear infinite" }} />
-                        : <X style={{ width: 11, height: 11 }} />
-                      }
-                    </button>
+                    {canTransfer && (
+                      <button
+                        type="button"
+                        onClick={() => setTransferFor(s)}
+                        title="Transférer vers une autre classe (même filière)"
+                        style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 26, height: 26, borderRadius: 6, border: `1px solid ${PAL.line}`,
+                          background: "transparent", cursor: "pointer", color: PAL.primary, flexShrink: 0,
+                        }}
+                      >
+                        <ArrowLeftRight style={{ width: 12, height: 12 }} />
+                      </button>
+                    )}
+                    {canManageClass && (
+                      <button
+                        type="button"
+                        onClick={() => removeStudent(s.id)}
+                        disabled={removingId === s.id}
+                        title="Retirer de la classe"
+                        style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 26, height: 26, borderRadius: 6, border: `1px solid ${PAL.line}`,
+                          background: "transparent", cursor: removingId === s.id ? "not-allowed" : "pointer",
+                          color: removingId === s.id ? PAL.muted : PAL.danger,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {removingId === s.id
+                          ? <Loader2 style={{ width: 11, height: 11, animation: "spin 1s linear infinite" }} />
+                          : <X style={{ width: 11, height: 11 }} />
+                        }
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

@@ -174,7 +174,8 @@ async def create_inventory_item(
             "created_by": user.id,
         }).execute()
 
-    log_audit(db, user.id, "inventory_item.create", "inventory_item", new_item["id"], {"name": body.name})
+    log_audit(db, user.id, "inventory_item.create", "inventory_item", new_item["id"],
+              {"name": body.name, "reference": new_item.get("reference") or new_item.get("code_unique")})
     return _calculate_amortization(new_item)
 
 

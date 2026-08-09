@@ -31,6 +31,7 @@ type Row = {
   full_name: string | null;
   created_at: string | null;
   created_by: string | null;
+  enrollment_number: string | null;
   roles: AppRole[];
 };
 
@@ -372,6 +373,7 @@ function UsersPage() {
                   <TableHead className="font-mono text-[11px] font-semibold uppercase tracking-[.08em]">{t("users.col.user")}</TableHead>
                   <TableHead className="hidden font-mono text-[11px] font-semibold uppercase tracking-[.08em] md:table-cell">{t("users.col.email")}</TableHead>
                   <TableHead className="font-mono text-[11px] font-semibold uppercase tracking-[.08em]">{t("users.col.roles")}</TableHead>
+                  <TableHead className="hidden font-mono text-[11px] font-semibold uppercase tracking-[.08em] sm:table-cell">{t("users.col.ref")}</TableHead>
                   <TableHead className="hidden font-mono text-[11px] font-semibold uppercase tracking-[.08em] lg:table-cell">{t("users.col.created")}</TableHead>
                   {isAdmin && <TableHead className="text-right font-mono text-[11px] font-semibold uppercase tracking-[.08em]">{t("users.col.actions")}</TableHead>}
                 </TableRow>
@@ -405,6 +407,11 @@ function UsersPage() {
                             </Badge>
                           ))}
                         </div>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {r.enrollment_number
+                          ? <span className="chip-c chip-c-blue font-mono text-[11px]">{r.enrollment_number}</span>
+                          : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="hidden font-mono text-[11px] text-muted-foreground lg:table-cell">{fmt(r.created_at)}</TableCell>
                       {isAdmin && (

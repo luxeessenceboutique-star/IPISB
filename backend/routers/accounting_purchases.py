@@ -21,6 +21,60 @@ def _require_admin(user: CurrentUser) -> None:
         raise HTTPException(403, "Admin only")
 
 
+# ------------------------------------------------------------------
+# Livraisons : une commande est suivie jusqu'à sa réception effective.
+# Le statut n'est pas stocké — il se déduit des réceptions enregistrées
+# (table purchase_receptions), pour rester juste même après une correction
+# ou une suppression de réception.
+# ------------------------------------------------------------------
+DELIVERY_STATUSES = {"pending", "partial", "received"}
+DELIVERY_LABELS = {
+    "pending": "En attente de livraison",
+    "partial": "Livraison partielle",
+    "received": "Livré",
+}
+
+
+def _delivery_status(ordered: float, received: float) -> str:
+    if received <= 0:
+        return "pending"
+    if received + 1e-9 < ordered:
+        return "partial"
+    return "received"
+
+
+def _receptions_by_purchase(db: Client, purchase_ids: list[str]) -> dict:
+    """Cumul des réceptions par commande, en une seule requête."""
+    if not purchase_ids:
+        return {}
+    rows = (
+        db.from_("purchase_receptions")
+        .select("purchase_id, received_quantity, quality_status, received_at")
+        .in_("purchase_id", purchase_ids)
+        .execute()
+        .data or []
+    )
+    agg: dict = {}
+    for r in rows:
+        pid = r.get("purchase_id")
+        if not pid:
+            continue
+        a = agg.setdefault(pid, {
+            "received_quantity": 0.0,
+            "receptions_count": 0,
+            "last_reception_at": None,
+            "has_quality_issue": False,
+        })
+        a["received_quantity"] += float(r.get("received_quantity") or 0)
+        a["receptions_count"] += 1
+        at = r.get("received_at")
+        if at and (a["last_reception_at"] is None or at > a["last_reception_at"]):
+            a["last_reception_at"] = at
+        if (r.get("quality_status") or "conforme") != "conforme":
+            a["has_quality_issue"] = True
+    return agg
+
+
 @router.get("")
 async def list_purchases(
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -29,6 +83,7 @@ async def list_purchases(
     category_id: Optional[str] = None,
     supplier_id: Optional[str] = None,
     payment_status: Optional[str] = None,
+    delivery_status: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     min_amount: Optional[float] = None,
@@ -46,39 +101,72 @@ async def list_purchases(
     page = max(1, page)
     page_size = max(1, min(100, page_size))
 
-    query = db.from_("purchases").select(
+    def apply_filters(query):
+        if q:
+            query = query.ilike("title", f"%{q}%")
+        if category_id:
+            query = query.eq("category_id", category_id)
+        if supplier_id:
+            query = query.eq("supplier_id", supplier_id)
+        if payment_status:
+            query = query.eq("payment_status", payment_status)
+        if date_from:
+            query = query.gte("purchase_date", date_from)
+        if date_to:
+            query = query.lte("purchase_date", date_to)
+        if min_amount is not None:
+            query = query.gte("total_incl_vat", min_amount)
+        if max_amount is not None:
+            query = query.lte("total_incl_vat", max_amount)
+        return query
+
+    query = apply_filters(db.from_("purchases").select(
         "*, accounting_categories(name), suppliers(company_name)", count="exact"
-    )
-    if q:
-        query = query.ilike("title", f"%{q}%")
-    if category_id:
-        query = query.eq("category_id", category_id)
-    if supplier_id:
-        query = query.eq("supplier_id", supplier_id)
-    if payment_status:
-        query = query.eq("payment_status", payment_status)
-    if date_from:
-        query = query.gte("purchase_date", date_from)
-    if date_to:
-        query = query.lte("purchase_date", date_to)
-    if min_amount is not None:
-        query = query.gte("total_incl_vat", min_amount)
-    if max_amount is not None:
-        query = query.lte("total_incl_vat", max_amount)
+    ))
+
+    # Le statut de livraison est calculé : on ne peut pas le filtrer en SQL.
+    # On résout d'abord le périmètre (id + quantité commandée), puis on restreint
+    # la requête paginée aux commandes retenues — sinon le total serait faux.
+    if delivery_status:
+        if delivery_status not in DELIVERY_STATUSES:
+            raise HTTPException(400, "Invalid delivery_status")
+        scope = apply_filters(db.from_("purchases").select("id, quantity")).execute().data or []
+        agg_all = _receptions_by_purchase(db, [r["id"] for r in scope])
+        keep = [
+            r["id"] for r in scope
+            if _delivery_status(
+                float(r.get("quantity") or 0),
+                (agg_all.get(r["id"]) or {}).get("received_quantity", 0.0),
+            ) == delivery_status
+        ]
+        if not keep:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        query = query.in_("id", keep)
 
     start = (page - 1) * page_size
     res = query.order(sort_by, desc=(sort_dir == "desc")).range(start, start + page_size - 1).execute()
     items = res.data or []
+    agg = _receptions_by_purchase(db, [p["id"] for p in items])
+
+    out = []
+    for p in items:
+        a = agg.get(p["id"]) or {}
+        received = float(a.get("received_quantity") or 0)
+        status = _delivery_status(float(p.get("quantity") or 0), received)
+        out.append({
+            **{k: v for k, v in p.items() if k not in ("accounting_categories", "suppliers")},
+            "category_name": (p.get("accounting_categories") or {}).get("name"),
+            "supplier_name": (p.get("suppliers") or {}).get("company_name"),
+            "received_quantity": received,
+            "receptions_count": a.get("receptions_count") or 0,
+            "last_reception_at": a.get("last_reception_at"),
+            "has_quality_issue": bool(a.get("has_quality_issue")),
+            "delivery_status": status,
+            "delivery_status_label": DELIVERY_LABELS[status],
+        })
 
     return {
-        "items": [
-            {
-                **{k: v for k, v in p.items() if k not in ("accounting_categories", "suppliers")},
-                "category_name": (p.get("accounting_categories") or {}).get("name"),
-                "supplier_name": (p.get("suppliers") or {}).get("company_name"),
-            }
-            for p in items
-        ],
+        "items": out,
         "total": res.count or 0,
         "page": page,
         "page_size": page_size,
@@ -111,11 +199,20 @@ async def get_purchase(
         .execute()
         .data or []
     )
+    a = _receptions_by_purchase(db, [purchase_id]).get(purchase_id) or {}
+    received = float(a.get("received_quantity") or 0)
+    status = _delivery_status(float(p.get("quantity") or 0), received)
     return {
         **{k: v for k, v in p.items() if k not in ("accounting_categories", "suppliers")},
         "category_name": (p.get("accounting_categories") or {}).get("name"),
         "supplier_name": (p.get("suppliers") or {}).get("company_name"),
         "attachments": attachments,
+        "received_quantity": received,
+        "receptions_count": a.get("receptions_count") or 0,
+        "last_reception_at": a.get("last_reception_at"),
+        "has_quality_issue": bool(a.get("has_quality_issue")),
+        "delivery_status": status,
+        "delivery_status_label": DELIVERY_LABELS[status],
     }
 
 
@@ -136,7 +233,8 @@ async def create_purchase(
 
     res = db.from_("purchases").insert(data).execute()
     new_purchase = res.data[0]
-    log_audit(db, user.id, "purchase.create", "purchase", new_purchase["id"], {"title": body.title})
+    log_audit(db, user.id, "purchase.create", "purchase", new_purchase["id"],
+              {"title": body.title, "reference": new_purchase.get("reference") or new_purchase.get("purchase_number")})
     return new_purchase
 
 
@@ -188,63 +286,76 @@ async def delete_purchase(
     return {"ok": True}
 
 
-# ── Commande : double validation (responsable → comptable) ──────────────────
+# ── Commande : validation unique (admin N+1) + alimentation du journal ───────
 
-@router.post("/{purchase_id}/validate-responsable")
-async def validate_responsable(
+@router.post("/{purchase_id}/validate-order")
+async def validate_order(
     purchase_id: str,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
+    """Validation UNIQUE de la commande (admin). Émet la commande et met la DA à
+    'commande_emise'. La nature (caisse sociale / comptable) N'EST PLUS fixée ici :
+    elle est décidée paiement par paiement dans l'onglet Paiements, où chaque
+    décaissement réel est inscrit au journal de caisse avec sa propre nature. Le
+    journal de caisse n'est donc PAS alimenté à l'émission (ce serait un engagement,
+    pas un décaissement réel, et cela double-compterait les paiements)."""
     _require_admin(user)
-    rows = db.from_("purchases").select("id, valide_responsable_at").eq("id", purchase_id).execute().data
-    if not rows:
-        raise HTTPException(404, "Not found")
-    if rows[0].get("valide_responsable_at"):
-        raise HTTPException(400, "Déjà validé par le responsable.")
-    now = datetime.now(timezone.utc).isoformat()
-    res = db.from_("purchases").update(
-        {"valide_responsable_by": user.id, "valide_responsable_at": now}
-    ).eq("id", purchase_id).execute()
-    log_audit(db, user.id, "purchase.validate_responsable", "purchase", purchase_id)
-    return res.data[0]
 
-
-@router.post("/{purchase_id}/validate-comptable")
-async def validate_comptable(
-    purchase_id: str,
-    user: Annotated[CurrentUser, Depends(get_current_user)],
-    db: Annotated[Client, Depends(get_db)],
-):
-    """Seconde validation. Garde-fou : la validation responsable doit précéder.
-    Une fois les deux validations posées, la DA liée passe à 'commande_emise'."""
-    _require_admin(user)
     rows = (
         db.from_("purchases")
-        .select("id, valide_responsable_at, valide_comptable_at, purchase_request_id")
+        .select("id, valide_responsable_at, purchase_request_id, total_incl_vat, supplier_id, title, purchase_number")
         .eq("id", purchase_id).execute().data
     )
     if not rows:
         raise HTTPException(404, "Not found")
     p = rows[0]
-    if not p.get("valide_responsable_at"):
-        raise HTTPException(400, "La validation du responsable est requise avant celle du comptable.")
-    if p.get("valide_comptable_at"):
-        raise HTTPException(400, "Déjà validé par le comptable.")
+    if p.get("valide_responsable_at"):
+        raise HTTPException(400, "Commande déjà validée.")
 
     now = datetime.now(timezone.utc).isoformat()
-    res = db.from_("purchases").update(
-        {"valide_comptable_by": user.id, "valide_comptable_at": now}
-    ).eq("id", purchase_id).execute()
+    # On pose les deux marqueurs en une fois (compat. avec l'affichage existant).
+    res = db.from_("purchases").update({
+        "valide_responsable_by": user.id, "valide_responsable_at": now,
+        "valide_comptable_by": user.id, "valide_comptable_at": now,
+    }).eq("id", purchase_id).execute()
 
-    # Les deux validations posées → la commande est émise.
+    # DA liée → commande émise (sans axe n/c global : il est porté par chaque
+    # jalon de l'échéancier et par chaque paiement effectif).
     pr_id = p.get("purchase_request_id")
     if pr_id:
-        db.from_("purchase_requests").update({"status": "commande_emise"}).eq("id", pr_id).execute()
+        db.from_("purchase_requests").update({
+            "status": "commande_emise",
+        }).eq("id", pr_id).execute()
         log_audit(db, user.id, "purchase_request.order_emitted", "purchase_request", pr_id,
                   {"purchase_id": purchase_id})
-    log_audit(db, user.id, "purchase.validate_comptable", "purchase", purchase_id)
+
+    log_audit(db, user.id, "purchase.validate_order", "purchase", purchase_id, {})
     return res.data[0]
+
+
+# ── Échéancier de paiement (lecture — rattaché à la DA) ─────────────────────
+# La saisie/édition se fait sur la DA (accounting_purchase_requests, en amont de
+# la consultation). Ce GET reste pour les vues indexées par bon de commande
+# (onglet Paiements) : il résout la DA liée et renvoie son échéancier.
+
+@router.get("/{purchase_id}/installments")
+async def list_installments(
+    purchase_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Échéancier prévisionnel du bon de commande, résolu via la DA liée
+    (lecture ouverte aux utilisateurs authentifiés)."""
+    p_rows = db.from_("purchases").select("purchase_request_id").eq("id", purchase_id).execute().data
+    pr_id = p_rows[0].get("purchase_request_id") if p_rows else None
+    if not pr_id:
+        return []
+    rows = (
+        db.from_("purchase_installments").select("*")
+        .eq("purchase_request_id", pr_id).order("rank").execute().data
+    ) or []
+    return rows
 
 
 # ── Attachments ────────────────────────────────────────────────────────────
@@ -377,7 +488,36 @@ async def export_purchase_pdf(
         if s_rows:
             supplier = s_rows[0]
 
-    pdf_bytes = render_purchase_order_pdf(purchase, supplier)
+    # Toutes les informations du bon de commande proviennent de la DA liée.
+    pr = None
+    if purchase.get("purchase_request_id"):
+        pr_rows = (
+            db.from_("purchase_requests").select("*")
+            .eq("id", purchase["purchase_request_id"]).execute().data
+        )
+        if pr_rows:
+            pr = pr_rows[0]
+
+    # Devis retenu → sert à reporter la livraison sur le bon de commande.
+    quote = None
+    if purchase.get("purchase_request_id"):
+        q_rows = (
+            db.from_("quotations").select("*")
+            .eq("purchase_request_id", purchase["purchase_request_id"])
+            .eq("retenu", True).limit(1).execute().data
+        )
+        if q_rows:
+            quote = q_rows[0]
+
+    # Échéancier prévisionnel (rattaché à la DA) → reporté sur le bon de commande.
+    installments = []
+    if purchase.get("purchase_request_id"):
+        installments = (
+            db.from_("purchase_installments").select("*")
+            .eq("purchase_request_id", purchase["purchase_request_id"]).order("rank").execute().data
+        ) or []
+
+    pdf_bytes = render_purchase_order_pdf(purchase, supplier, pr, quote, installments)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

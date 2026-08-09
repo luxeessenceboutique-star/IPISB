@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Video, Plus, Clock, User as UserIcon, Trash2 } from "lucide-react";
+import { Video, Plus, Clock, User as UserIcon, Trash2, X } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/meetings")({
@@ -387,9 +387,12 @@ function MeetingsPage() {
 
       {/* Create dialog */}
       {showCreate && (
-        <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && setShowCreate(false)}>
+        <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
           <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-            <h2 style={{ fontFamily: serif, fontSize: 28, fontWeight: 500, color: PAL.ink, margin: "0 0 24px" }}>Nouvelle réunion</h2>
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <h2 style={{ fontFamily: serif, fontSize: 28, fontWeight: 500, color: PAL.ink, margin: "0 0 24px" }}>Nouvelle réunion</h2>
+              <button type="button" onClick={() => setShowCreate(false)} title="Fermer" aria-label="Fermer" style={{ border: "none", background: "transparent", cursor: "pointer", color: PAL.muted, padding: 0, lineHeight: 0 }}><X size={20} /></button>
+            </div>
 
             <Field label="Titre *" value={form.title} onChange={v => setForm(f => ({ ...f, title: v }))} placeholder="Ex : Cours d'anatomie" />
 

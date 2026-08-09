@@ -13,11 +13,11 @@ async def list_users(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    if not user.is_admin() and not user.is_prof():
+    if not user.is_admin() and not user.is_prof() and not user.is_cashier():
         raise HTTPException(403, "Admin or professor only")
 
-    if user.is_admin():
-        # Admins see all users
+    if user.is_admin() or user.is_cashier():
+        # Admins et caissier voient tous les utilisateurs (le caissier inscrit/transfère)
         profiles = (
             db.from_("profiles")
             .select("id, email, full_name, created_at, created_by")
@@ -40,7 +40,30 @@ async def list_users(
     role_map: dict[str, list[str]] = {}
     for r in all_roles:
         role_map.setdefault(r["user_id"], []).append(r["role"])
-    return [{**p, "roles": role_map.get(p["id"], [])} for p in profiles]
+
+    # N° d'inscription (ex. 001/IP/2026) — porté par class_students. Un élève peut
+    # être inscrit dans plusieurs promos ; on retient le 1er numéro (ordre d'ajout).
+    ids = [p["id"] for p in profiles]
+    enroll_map: dict[str, str] = {}
+    if ids:
+        memberships = (
+            db.from_("class_students")
+            .select("student_id, enrollment_number, added_at")
+            .in_("student_id", ids)
+            .order("added_at")
+            .execute()
+            .data or []
+        )
+        for m in memberships:
+            sid = m["student_id"]
+            num = (m.get("enrollment_number") or "").strip()
+            if num and sid not in enroll_map:
+                enroll_map[sid] = num
+
+    return [
+        {**p, "roles": role_map.get(p["id"], []), "enrollment_number": enroll_map.get(p["id"])}
+        for p in profiles
+    ]
 
 
 @router.post("/create")
