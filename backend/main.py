@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from deps import FRONTEND_URL
 from routers import courses, assignments, exams, meetings, agenda, notifications, users, dashboard
 from routers import chatbot, resources, classes
-from routers import students, documents, schedules, announcements
+from routers import students, documents, schedules, announcements, timetables
 from routers import accounting_categories, accounting_suppliers, accounting_purchases
 from routers import document_templates, student_files
 from routers import accounting_invoices, accounting_expenses, accounting_revenues
@@ -70,6 +70,7 @@ app.include_router(classes.router, prefix="/api")
 app.include_router(students.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(schedules.router, prefix="/api")
+app.include_router(timetables.router, prefix="/api")
 app.include_router(announcements.router, prefix="/api")
 app.include_router(accounting_categories.router, prefix="/api")
 app.include_router(accounting_suppliers.router, prefix="/api")

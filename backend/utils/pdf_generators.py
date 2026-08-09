@@ -1,8 +1,10 @@
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib import colors as rl_colors
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Table, TableStyle
 
 def fmt_mad(value) -> str:
     try:
@@ -265,6 +267,136 @@ def render_accounting_report_pdf(summary: dict) -> bytes:
         c.drawRightString(width - 20 * mm, y, fmt_mad(cat.get("value", 0)))
 
     draw_footer(c)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+DAY_NAMES_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"]
+
+
+def _fmt_hm(value: str) -> str:
+    """Postgres 'time' comes back as 'HH:MM:SS' (or 'HH:MM') — render French-style ('10h' or '10h30')."""
+    h, m = value.split(":")[0], value.split(":")[1]
+    return f"{int(h)}h{m if m != '00' else ''}"
+
+
+def render_timetable_pdf(timetable: dict, slots: list[dict], class_name: str) -> bytes:
+    """Renders the official weekly 'Emploi du temps' matching the institute's signed template:
+    letterhead + Filière/Année/Semaine header, a Jours×Horaire×Séquence×Formateurs×Salle grid
+    (day cells merged across their slots, gray '-' for empty slots, yellow highlight for
+    'Contrôle continue' exam slots), and a directrice signature footer."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    week_start = datetime.fromisoformat(str(timetable["week_start"])).date()
+    week_end = datetime.fromisoformat(str(timetable["week_end"])).date()
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawCentredString(width / 2, height - 20 * mm, "Institut Privé d'Innovation en Santé et Bien-être El Jadida")
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(width / 2, height - 25 * mm, "Etablissement de Formation Professionnelle Privé")
+    c.drawCentredString(width / 2, height - 29 * mm, "Autorisé sous N° 3/02/3/2024 Du 09/07/2024")
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawCentredString(width / 2, height - 40 * mm, f"Filière : {class_name}")
+    c.drawCentredString(width / 2, height - 45 * mm, f"Année scolaire : {timetable['academic_year']}")
+    c.drawCentredString(
+        width / 2, height - 50 * mm,
+        f"Semaine du {week_start.strftime('%d/%m/%Y')} au {week_end.strftime('%d/%m/%Y')}",
+    )
+
+    by_day: dict[int, list[dict]] = {i: [] for i in range(5)}
+    for s in slots:
+        by_day.setdefault(s["day_of_week"], []).append(s)
+    for d in by_day:
+        by_day[d].sort(key=lambda s: s["start_time"])
+
+    header = ["Jours", "Horaire", "Séquence (Matière)", "Formateurs(trices)", "Salle"]
+    data = [header]
+    row_kinds: list[tuple[int, str]] = []   # (row_index, 'empty' | 'exam')
+    day_spans: list[tuple[int, int]] = []   # (start_row, end_row) inclusive
+
+    row_idx = 1  # row 0 is the header
+    for day_idx in range(5):
+        day_slots = by_day.get(day_idx, [])
+        day_date = week_start + timedelta(days=day_idx)
+        day_label = f"{DAY_NAMES_FR[day_idx]}\n{day_date.strftime('%d/%m/%Y')}"
+
+        if not day_slots:
+            data.append([day_label, "—", "-", "", ""])
+            row_kinds.append((row_idx, "empty"))
+            day_spans.append((row_idx, row_idx))
+            row_idx += 1
+            continue
+
+        start_row = row_idx
+        for s in day_slots:
+            horaire = f"{_fmt_hm(s['start_time'])}-{_fmt_hm(s['end_time'])}"
+            if not s.get("subject"):
+                data.append([day_label, horaire, "-", "", ""])
+                row_kinds.append((row_idx, "empty"))
+            elif s.get("slot_type") == "exam":
+                data.append([day_label, horaire, f"Contrôle continue : {s['subject']}", s.get("professor_name") or "", s.get("room") or ""])
+                row_kinds.append((row_idx, "exam"))
+            else:
+                data.append([day_label, horaire, s["subject"], s.get("professor_name") or "", s.get("room") or ""])
+            row_idx += 1
+        day_spans.append((start_row, row_idx - 1))
+
+    col_widths = [30 * mm, 22 * mm, 65 * mm, 40 * mm, 20 * mm]
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+
+    TEAL = rl_colors.Color(0.10, 0.42, 0.40)
+    ORANGE = rl_colors.Color(0.98, 0.85, 0.65)
+    GRAY = rl_colors.Color(0.85, 0.85, 0.85)
+    YELLOW = rl_colors.Color(1.0, 0.95, 0.4)
+
+    style_cmds = [
+        ("BACKGROUND", (0, 0), (-1, 0), TEAL),
+        ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("GRID", (0, 0), (-1, -1), 0.6, rl_colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (1, -1), "CENTER"),
+        ("ALIGN", (4, 0), (4, -1), "CENTER"),
+    ]
+    for start_r, end_r in day_spans:
+        style_cmds.append(("SPAN", (0, start_r), (0, end_r)))
+        style_cmds.append(("BACKGROUND", (0, start_r), (0, end_r), ORANGE))
+        style_cmds.append(("FONTNAME", (0, start_r), (0, end_r), "Helvetica-Bold"))
+    for r, kind in row_kinds:
+        if kind == "empty":
+            style_cmds.append(("BACKGROUND", (1, r), (-1, r), GRAY))
+        elif kind == "exam":
+            style_cmds.append(("BACKGROUND", (2, r), (2, r), YELLOW))
+            style_cmds.append(("FONTNAME", (2, r), (2, r), "Helvetica-Bold"))
+
+    table.setStyle(TableStyle(style_cmds))
+
+    table_width, table_height = table.wrapOn(c, width, height)
+    table_x = (width - table_width) / 2
+    table_y = height - 60 * mm - table_height
+    table.drawOn(c, table_x, table_y)
+
+    validated_at = timetable.get("validated_at")
+    try:
+        validated_date = datetime.fromisoformat(str(validated_at).replace("Z", "+00:00")).strftime("%d/%m/%Y")
+    except Exception:
+        validated_date = datetime.now().strftime("%d/%m/%Y")
+
+    footer_y = table_y - 15 * mm
+    c.setFont("Helvetica", 9)
+    c.drawRightString(width - 20 * mm, footer_y, f"Fait à El Jadida : {validated_date}")
+    c.setFont("Helvetica-Bold", 9)
+    c.drawRightString(width - 20 * mm, footer_y - 6 * mm, "La directrice de l'établissement")
+
+    c.setFont("Helvetica-Oblique", 7)
+    c.drawString(20 * mm, 15 * mm, "Sise au 24, 3ème étage, Lotissement Ennajd, El Jadida MAROC")
+    c.drawString(20 * mm, 11 * mm, "Tél : 06 32 82 28 98 · www.ipisb.ma · E-mail : ipisbj.infirmiers@gmail.com")
+
     c.showPage()
     c.save()
     return buf.getvalue()

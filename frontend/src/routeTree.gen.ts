@@ -21,6 +21,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
+import { Route as DashboardTimetablesRouteImport } from './routes/dashboard.timetables'
 import { Route as DashboardStudentsRouteImport } from './routes/dashboard.students'
 import { Route as DashboardSchedulesRouteImport } from './routes/dashboard.schedules'
 import { Route as DashboardRhRouteImport } from './routes/dashboard.rh'
@@ -35,6 +36,7 @@ import { Route as DashboardAssignmentsRouteImport } from './routes/dashboard.ass
 import { Route as DashboardAnnouncementsRouteImport } from './routes/dashboard.announcements'
 import { Route as DashboardAgendaRouteImport } from './routes/dashboard.agenda'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
+import { Route as ApplyAdIdRouteImport } from './routes/apply.$adId'
 import { Route as DashboardStudentsStudentIdRouteImport } from './routes/dashboard.students_.$studentId'
 
 const TemoignagesRoute = TemoignagesRouteImport.update({
@@ -95,6 +97,11 @@ const VerifyCodeRoute = VerifyCodeRouteImport.update({
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardTimetablesRoute = DashboardTimetablesRouteImport.update({
+  id: '/timetables',
+  path: '/timetables',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardStudentsRoute = DashboardStudentsRouteImport.update({
@@ -167,6 +174,11 @@ const DashboardAccountingRoute = DashboardAccountingRouteImport.update({
   path: '/accounting',
   getParentRoute: () => DashboardRoute,
 } as any)
+const ApplyAdIdRoute = ApplyAdIdRouteImport.update({
+  id: '/apply/$adId',
+  path: '/apply/$adId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardStudentsStudentIdRoute =
   DashboardStudentsStudentIdRouteImport.update({
     id: '/students_/$studentId',
@@ -184,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/formations': typeof FormationsRoute
   '/plateforme': typeof PlateformeRoute
   '/temoignages': typeof TemoignagesRoute
+  '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
@@ -198,6 +211,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/rh': typeof DashboardRhRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
+  '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -212,6 +226,7 @@ export interface FileRoutesByTo {
   '/formations': typeof FormationsRoute
   '/plateforme': typeof PlateformeRoute
   '/temoignages': typeof TemoignagesRoute
+  '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
@@ -226,6 +241,7 @@ export interface FileRoutesByTo {
   '/dashboard/rh': typeof DashboardRhRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
+  '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -242,6 +258,7 @@ export interface FileRoutesById {
   '/formations': typeof FormationsRoute
   '/plateforme': typeof PlateformeRoute
   '/temoignages': typeof TemoignagesRoute
+  '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
@@ -256,6 +273,7 @@ export interface FileRoutesById {
   '/dashboard/rh': typeof DashboardRhRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
+  '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -273,6 +291,7 @@ export interface FileRouteTypes {
     | '/formations'
     | '/plateforme'
     | '/temoignages'
+    | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/announcements'
@@ -287,6 +306,7 @@ export interface FileRouteTypes {
     | '/dashboard/rh'
     | '/dashboard/schedules'
     | '/dashboard/students'
+    | '/dashboard/timetables'
     | '/dashboard/users'
     | '/verify/$code'
     | '/dashboard/'
@@ -301,6 +321,7 @@ export interface FileRouteTypes {
     | '/formations'
     | '/plateforme'
     | '/temoignages'
+    | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/announcements'
@@ -315,6 +336,7 @@ export interface FileRouteTypes {
     | '/dashboard/rh'
     | '/dashboard/schedules'
     | '/dashboard/students'
+    | '/dashboard/timetables'
     | '/dashboard/users'
     | '/verify/$code'
     | '/dashboard'
@@ -330,6 +352,7 @@ export interface FileRouteTypes {
     | '/formations'
     | '/plateforme'
     | '/temoignages'
+    | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/announcements'
@@ -344,6 +367,7 @@ export interface FileRouteTypes {
     | '/dashboard/rh'
     | '/dashboard/schedules'
     | '/dashboard/students'
+    | '/dashboard/timetables'
     | '/dashboard/users'
     | '/verify/$code'
     | '/dashboard/'
@@ -360,6 +384,7 @@ export interface RootRouteChildren {
   FormationsRoute: typeof FormationsRoute
   PlateformeRoute: typeof PlateformeRoute
   TemoignagesRoute: typeof TemoignagesRoute
+  ApplyAdIdRoute: typeof ApplyAdIdRoute
   VerifyCodeRoute: typeof VerifyCodeRoute
 }
 
@@ -447,6 +472,13 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/dashboard/users'
       preLoaderRoute: typeof DashboardUsersRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/timetables': {
+      id: '/dashboard/timetables'
+      path: '/timetables'
+      fullPath: '/dashboard/timetables'
+      preLoaderRoute: typeof DashboardTimetablesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/students': {
@@ -547,6 +579,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAccountingRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/apply/$adId': {
+      id: '/apply/$adId'
+      path: '/apply/$adId'
+      fullPath: '/apply/$adId'
+      preLoaderRoute: typeof ApplyAdIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/students_/$studentId': {
       id: '/dashboard/students_/$studentId'
       path: '/students/$studentId'
@@ -572,6 +611,7 @@ interface DashboardRouteChildren {
   DashboardRhRoute: typeof DashboardRhRoute
   DashboardSchedulesRoute: typeof DashboardSchedulesRoute
   DashboardStudentsRoute: typeof DashboardStudentsRoute
+  DashboardTimetablesRoute: typeof DashboardTimetablesRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardStudentsStudentIdRoute: typeof DashboardStudentsStudentIdRoute
@@ -592,6 +632,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardRhRoute: DashboardRhRoute,
   DashboardSchedulesRoute: DashboardSchedulesRoute,
   DashboardStudentsRoute: DashboardStudentsRoute,
+  DashboardTimetablesRoute: DashboardTimetablesRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardStudentsStudentIdRoute: DashboardStudentsStudentIdRoute,
@@ -611,6 +652,7 @@ const rootRouteChildren: RootRouteChildren = {
   FormationsRoute: FormationsRoute,
   PlateformeRoute: PlateformeRoute,
   TemoignagesRoute: TemoignagesRoute,
+  ApplyAdIdRoute: ApplyAdIdRoute,
   VerifyCodeRoute: VerifyCodeRoute,
 }
 export const routeTree = rootRouteImport
