@@ -38,6 +38,9 @@ export type Employee = {
   cnss_number: string | null;
   bank_account: string | null;
   notes: string | null;
+  probation_duration_days?: number | null;
+  probation_end_date?: string | null;
+  probation_status?: string | null;
 };
 
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };

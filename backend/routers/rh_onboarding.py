@@ -1,12 +1,22 @@
-from datetime import datetime, timezone
+import logging
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import OnboardingUpdate, PulseSurveyCreate
+from models import OnboardingUpdate, PulseSurveyCreate, ProbationDecision
 from utils.audit import log_audit
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/rh/onboarding", tags=["rh"])
+
+VALID_PROBATION_DECISIONS = {"passed", "failed", "extended"}
+PROBATION_DECISION_LABELS = {
+    "passed": "Confirmé(e) dans le poste",
+    "failed": "Non confirmé(e) — fin de collaboration",
+    "extended": "Période d'essai prolongée",
+}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -199,3 +209,52 @@ async def delete_pulse_survey(
 
     db.from_("pulse_surveys").delete().eq("id", pulse_id).execute()
     return {"ok": True}
+
+
+@router.post("/{employee_id}/probation/decide")
+async def decide_probation(
+    employee_id: str,
+    body: ProbationDecision,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """End-of-probation decision: confirm the hire, end the collaboration,
+    or extend the trial period. Records a performance_reviews entry as a
+    paper trail (best-effort — the decision itself must still succeed)."""
+    _require_admin(user)
+    if body.decision not in VALID_PROBATION_DECISIONS:
+        raise HTTPException(400, f"decision must be one of: {', '.join(sorted(VALID_PROBATION_DECISIONS))}")
+
+    rows = db.from_("employees").select("id, probation_end_date").eq("id", employee_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Employee not found")
+    employee = rows[0]
+
+    updates: dict = {"probation_status": body.decision}
+    if body.decision == "extended":
+        if not body.extend_days or body.extend_days <= 0:
+            raise HTTPException(400, "extend_days (positive integer) is required when decision is 'extended'")
+        base = date.fromisoformat(employee["probation_end_date"]) if employee.get("probation_end_date") else date.today()
+        updates["probation_end_date"] = (base + timedelta(days=body.extend_days)).isoformat()
+        updates["probation_status"] = "in_progress"  # stays active, just pushes the end date out
+    elif body.decision == "failed":
+        updates["status"] = "inactive"
+
+    res = db.from_("employees").update(updates).eq("id", employee_id).execute()
+    if not res.data:
+        raise HTTPException(400, "Could not update probation status")
+
+    try:
+        db.from_("performance_reviews").insert({
+            "employee_id": employee_id,
+            "reviewer_id": user.id,
+            "period": "Fin de période d'essai",
+            "objectives": f"Décision : {PROBATION_DECISION_LABELS.get(body.decision, body.decision)}",
+            "feedback": body.feedback,
+            "status": "submitted",
+        }).execute()
+    except Exception:
+        log.exception("Could not record probation review for employee %s", employee_id)
+
+    log_audit(db, user.id, f"probation.{body.decision}", "employee", employee_id, {"feedback": body.feedback})
+    return res.data[0]

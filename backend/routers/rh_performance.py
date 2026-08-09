@@ -2,10 +2,12 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import PerformanceReviewCreate, PerformanceReviewUpdate
+from models import PerformanceReviewCreate, PerformanceReviewUpdate, GoalCreate, GoalUpdate
 from utils.audit import log_audit
 
 router = APIRouter(prefix="/rh/performance", tags=["rh"])
+
+VALID_GOAL_STATUSES = {"pending", "in_progress", "done"}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -93,4 +95,75 @@ async def delete_review(
 
     db.from_("performance_reviews").delete().eq("id", review_id).execute()
     log_audit(db, user.id, "performance_review.delete", "performance_review", review_id)
+    return {"ok": True}
+
+
+# ── Goals / objectives (used for probation objectives + ongoing goals) ──────
+
+@router.get("/goals")
+async def list_goals(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    employee_id: Optional[str] = None,
+):
+    _require_admin(user)
+    query = db.from_("performance_goals").select("*")
+    if employee_id:
+        query = query.eq("employee_id", employee_id)
+    res = query.order("due_date").order("created_at", desc=True).execute()
+    return res.data or []
+
+
+@router.post("/goals")
+async def create_goal(
+    body: GoalCreate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    data = body.model_dump(exclude_none=True)
+    res = db.from_("performance_goals").insert(data).execute()
+    if not res.data:
+        raise HTTPException(400, "Could not create goal")
+    goal = res.data[0]
+    log_audit(db, user.id, "goal.create", "performance_goal", goal["id"])
+    return goal
+
+
+@router.patch("/goals/{goal_id}")
+async def update_goal(
+    goal_id: str,
+    body: GoalUpdate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    if "status" in updates and updates["status"] not in VALID_GOAL_STATUSES:
+        raise HTTPException(400, f"Invalid status. Use one of: {', '.join(sorted(VALID_GOAL_STATUSES))}")
+    if "progress" in updates and updates["progress"] is not None:
+        updates["progress"] = max(0, min(100, updates["progress"]))
+
+    res = db.from_("performance_goals").update(updates).eq("id", goal_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Not found")
+    log_audit(db, user.id, "goal.update", "performance_goal", goal_id, updates)
+    return res.data[0]
+
+
+@router.delete("/goals/{goal_id}")
+async def delete_goal(
+    goal_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    existing = db.from_("performance_goals").select("id").eq("id", goal_id).execute().data
+    if not existing:
+        raise HTTPException(404, "Not found")
+
+    db.from_("performance_goals").delete().eq("id", goal_id).execute()
+    log_audit(db, user.id, "goal.delete", "performance_goal", goal_id)
     return {"ok": True}

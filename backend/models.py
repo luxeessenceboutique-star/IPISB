@@ -148,6 +148,33 @@ class AnnouncementCreate(BaseModel):
     audience_roles: list[str] = []
 
 
+class TimetableCreate(BaseModel):
+    class_id: str
+    academic_year: str
+    week_start: str  # date "YYYY-MM-DD", Monday
+    week_end: str    # date "YYYY-MM-DD", Friday
+
+
+class TimetableSlotCreate(BaseModel):
+    day_of_week: int    # 0=Lundi .. 4=Vendredi
+    start_time: str     # "HH:MM"
+    end_time: str       # "HH:MM"
+    subject: Optional[str] = None
+    slot_type: str = "course"  # 'course' | 'exam'
+    professor_id: Optional[str] = None
+    room: Optional[str] = None
+
+
+class TimetableSlotUpdate(BaseModel):
+    day_of_week: Optional[int] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    subject: Optional[str] = None
+    slot_type: Optional[str] = None
+    professor_id: Optional[str] = None
+    room: Optional[str] = None
+
+
 class CategoryCreate(BaseModel):
     name: str
 
@@ -550,6 +577,27 @@ class PerformanceReviewUpdate(BaseModel):
     objectives: Optional[str] = None
     achievements: Optional[str] = None
     improvements: Optional[str] = None
+
+
+class GoalCreate(BaseModel):
+    employee_id: str
+    title: str
+    description: Optional[str] = None
+    due_date: Optional[str] = None
+
+
+class GoalUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None      # 'pending' | 'in_progress' | 'done'
+    progress: Optional[int] = None    # 0-100
+    due_date: Optional[str] = None
+
+
+class ProbationDecision(BaseModel):
+    decision: str                     # 'passed' | 'failed' | 'extended'
+    feedback: Optional[str] = None
+    extend_days: Optional[int] = None  # required when decision == 'extended'
     status: Optional[str] = None
 
 
@@ -645,6 +693,8 @@ class CandidateCreate(BaseModel):
 class CandidatePromote(BaseModel):
     hire_date: Optional[str] = None
     position: Optional[str] = None
+    required_documents: Optional[list[str]] = None
+    probation_duration_days: int = 30  # 30 | 60 | 90
 
 
 class InterviewCreate(BaseModel):
