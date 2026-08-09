@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -10,13 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  BookOpen, Plus, Users, Loader2, CheckCircle, Trash2, Search, Pencil,
+  BookOpen, Plus, Users, Loader2, CheckCircle, Trash2, Search, Pencil, Percent,
 } from "lucide-react";
 import { CardGridSkeleton } from "@/components/Skeletons";
 import { PageHead, DashAvatar, EmptyHint } from "@/components/dashboard/ui";
 import {
   FileText, Link2, Video, Upload, ExternalLink, Play,
-  File as FileIcon, FileImage, X, ChevronRight,
+  File as FileIcon, FileImage, X, ChevronRight, Sparkles, RefreshCw, Maximize2, Minimize2, Presentation, Edit3, LayoutGrid,
 } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/courses")({
@@ -34,6 +34,7 @@ type Course = {
   cover_color: string; is_published: boolean; created_at: string;
   professor_name?: string; enrollment_count?: number; is_enrolled?: boolean;
   assigned_classes?: { id: string; name: string }[];
+  pdf_generated_at?: string | null; pdf_chapter_count?: number | null;
 };
 type ClassOption = { id: string; name: string };
 type ResourceType = "file" | "link" | "video";
@@ -184,6 +185,81 @@ function ResRow({ res, canEdit, onRemove }: { res: Resource; canEdit: boolean; o
 }
 
 /* ─── Resources Modal ────────────────────────────────────────── */
+function GradeWeightsModal({ course, onClose }: { course: Course; onClose: () => void }) {
+  const [weights, setWeights] = useState({ exam_weight: 50, devoir_weight: 30, quiz_weight: 20 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get(`/api/courses/${course.id}/grade-weights`)
+      .then(d => setWeights({ exam_weight: d.exam_weight, devoir_weight: d.devoir_weight, quiz_weight: d.quiz_weight }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.id]);
+
+  const total = weights.exam_weight + weights.devoir_weight + weights.quiz_weight;
+
+  async function save() {
+    if (total !== 100) { toast.error(`Les pourcentages doivent totaliser 100 (actuellement ${total}).`); return; }
+    setSaving(true);
+    try {
+      await api.put(`/api/courses/${course.id}/grade-weights`, weights);
+      toast.success("Pondération enregistrée.");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+      <DialogContent className="w-full sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display">Pondération — {course.title}</DialogTitle>
+        </DialogHeader>
+        {loading ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <div className="space-y-3 py-1">
+            <p className="text-xs text-muted-foreground">
+              Répartition du contrôle continu entre catégories d'évaluation (doit totaliser 100%).
+              Chaque catégorie sans note aujourd'hui sera automatiquement ignorée dans le calcul.
+            </p>
+            {[
+              { key: "exam_weight" as const, label: "Examens" },
+              { key: "devoir_weight" as const, label: "Devoirs" },
+              { key: "quiz_weight" as const, label: "Quiz" },
+            ].map(f => (
+              <div key={f.key} className="flex items-center gap-3">
+                <label className="flex-1 text-sm font-medium">{f.label}</label>
+                <Input
+                  type="number" min={0} max={100}
+                  value={weights[f.key]}
+                  onChange={e => setWeights(w => ({ ...w, [f.key]: parseInt(e.target.value, 10) || 0 }))}
+                  className="w-20"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+              </div>
+            ))}
+            <div className="text-right text-xs" style={{ color: total === 100 ? "var(--pal-good, green)" : "var(--pal-danger, red)" }}>
+              Total : {total}%
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Annuler</Button>
+          <Button className="border-0 bg-gradient-brand text-white" disabled={saving || loading} onClick={save}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enregistrer"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ResourcesModal({ course, canEdit, onClose }: { course: Course; canEdit: boolean; onClose: () => void }) {
   const [resources, setResources] = useState<Resource[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -270,7 +346,7 @@ function ResourcesModal({ course, canEdit, onClose }: { course: Course; canEdit:
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] w-full max-w-2xl overflow-hidden flex flex-col p-0">
+      <DialogContent showCloseButton={false} className="max-h-[90vh] w-full sm:max-w-2xl overflow-hidden flex flex-col p-0">
 
         {/* Header */}
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
@@ -516,6 +592,647 @@ function InlineResourceUploader({ courseId }: { courseId: string }) {
   );
 }
 
+/* ─── AI-generated content (modules + lessons) ─────────────────── */
+type LessonImage = { id: string; caption: string | null; url: string };
+type CourseLesson = {
+  id: string; module_id: string; title: string; content: string | null; status: "draft" | "published";
+  images: LessonImage[]; updated_at?: string;
+};
+type CourseModuleT = {
+  id: string; course_id: string; order_num: number; title: string; objectives: string | null;
+  hours_theory: number; hours_practice: number; status: "draft" | "published"; lessons: CourseLesson[];
+};
+
+async function fetchModules(courseId: string): Promise<CourseModuleT[]> {
+  return api.get(`/api/courses/${courseId}/modules`);
+}
+
+function ModuleRow({ courseId, module: mod, canEdit, onChanged }: {
+  courseId: string; module: CourseModuleT; canEdit: boolean; onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(mod.title);
+  const [objectives, setObjectives] = useState(mod.objectives ?? "");
+  const [hoursTh, setHoursTh] = useState(String(mod.hours_theory));
+  const [hoursTp, setHoursTp] = useState(String(mod.hours_practice));
+  const lesson = mod.lessons[0];
+  const [content, setContent] = useState(lesson?.content ?? "");
+  const [savingModule, setSavingModule] = useState(false);
+  const [savingLesson, setSavingLesson] = useState(false);
+  const [genLoading, setGenLoading] = useState(false);
+  const [images, setImages] = useState<LessonImage[]>(lesson?.images ?? []);
+  const [imageCaption, setImageCaption] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const imageFileRef = useRef<HTMLInputElement>(null);
+  const contentFieldRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setTitle(mod.title); setObjectives(mod.objectives ?? "");
+    setHoursTh(String(mod.hours_theory)); setHoursTp(String(mod.hours_practice));
+    setContent(mod.lessons[0]?.content ?? "");
+    setImages(mod.lessons[0]?.images ?? []);
+  }, [mod]);
+
+  async function saveModule() {
+    setSavingModule(true);
+    try {
+      await api.patch(`/api/courses/${courseId}/modules/${mod.id}`, {
+        title, objectives, hours_theory: parseFloat(hoursTh) || 0, hours_practice: parseFloat(hoursTp) || 0,
+      });
+      toast.success("Chapitre enregistré");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur");
+    } finally {
+      setSavingModule(false);
+    }
+  }
+
+  async function generateContent() {
+    setGenLoading(true);
+    try {
+      const l: CourseLesson = await api.post(`/api/courses/${courseId}/modules/${mod.id}/generate-lesson`, {});
+      setContent(l.content ?? "");
+      setOpen(true);
+      toast.success("Contenu généré — à relire avant publication");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message || "Échec de la génération");
+    } finally {
+      setGenLoading(false);
+    }
+  }
+
+  async function saveLesson() {
+    if (!lesson) return;
+    setSavingLesson(true);
+    try {
+      await api.patch(`/api/courses/${courseId}/modules/${mod.id}/lessons/${lesson.id}`, { content });
+      toast.success("Contenu enregistré");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur");
+    } finally {
+      setSavingLesson(false);
+    }
+  }
+
+  // Placing an image "in the middle of the chapter" without a full rich-text
+  // editor: a plain-text token in the markdown content that the PDF renderer
+  // splices an image into at that exact spot (see utils/course_pdf.py). The
+  // prof can freely cut/paste the token to reposition it — it's just text.
+  function imageToken(id: string) {
+    return `[[image:${id}]]`;
+  }
+
+  function insertImageToken(id: string) {
+    const token = `\n\n${imageToken(id)}\n\n`;
+    const el = contentFieldRef.current;
+    if (!el) {
+      setContent(prev => prev + token);
+      return;
+    }
+    const start = el.selectionStart ?? content.length;
+    const end = el.selectionEnd ?? content.length;
+    const next = content.slice(0, start) + token + content.slice(end);
+    setContent(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + token.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  async function copyToken(id: string) {
+    try {
+      await navigator.clipboard.writeText(imageToken(id));
+      toast.success("Balise copiée — collez-la où vous voulez dans le texte");
+    } catch {
+      toast.error("Impossible de copier — sélectionnez le texte manuellement");
+    }
+  }
+
+  async function uploadImage(fileList: FileList | null) {
+    if (!lesson || !fileList || fileList.length === 0) return;
+    const file = fileList[0];
+    if (imageFileRef.current) imageFileRef.current.value = "";
+    setUploadingImage(true);
+    try {
+      const headers = await authHeader();
+      const form = new FormData();
+      form.append("file", file);
+      if (imageCaption.trim()) form.append("caption", imageCaption.trim());
+      const res = await fetch(`${API}/api/courses/${courseId}/modules/${mod.id}/lessons/${lesson.id}/images`, {
+        method: "POST", headers, body: form,
+      });
+      if (!res.ok) throw new Error(parseApiError(await res.text(), `HTTP ${res.status}`));
+      const img: LessonImage = await res.json();
+      setImages(prev => [...prev, img]);
+      setImageCaption("");
+      insertImageToken(img.id);
+      toast.success("Image ajoutée — placée dans le texte à l'endroit du curseur (déplaçable : coupez/collez la balise « [[image:… ]] »)");
+    } catch (e: any) {
+      toast.error(e.message || "Échec de l'ajout de l'image");
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  async function removeImage(image: LessonImage) {
+    if (!lesson) return;
+    if (!window.confirm("Supprimer cette image ?")) return;
+    try {
+      await api.delete(`/api/courses/${courseId}/modules/${mod.id}/lessons/${lesson.id}/images/${image.id}`);
+      setImages(prev => prev.filter(i => i.id !== image.id));
+      toast.success("Image supprimée");
+    } catch (e: any) {
+      toast.error(e.message || "Erreur");
+    }
+  }
+
+  async function togglePublish() {
+    const next = mod.status === "published" ? "draft" : "published";
+    try {
+      await api.patch(`/api/courses/${courseId}/modules/${mod.id}`, { status: next });
+      if (lesson) await api.patch(`/api/courses/${courseId}/modules/${mod.id}/lessons/${lesson.id}`, { status: next });
+      toast.success(next === "published" ? "Chapitre publié" : "Chapitre repassé en brouillon");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur");
+    }
+  }
+
+  async function removeModule() {
+    if (!window.confirm(`Supprimer le chapitre « ${mod.title} » ?`)) return;
+    try {
+      await api.delete(`/api/courses/${courseId}/modules/${mod.id}`);
+      toast.success("Chapitre supprimé");
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message || "Erreur");
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="flex items-start gap-3 px-4 py-3">
+        <span className="mt-0.5 text-xs font-mono font-bold text-muted-foreground tabular-nums">
+          {String(mod.order_num).padStart(2, "0")}
+        </span>
+        <div className="flex-1 min-w-0">
+          {canEdit ? (
+            <input
+              className="w-full bg-transparent text-sm font-semibold outline-none"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+            />
+          ) : (
+            <p className="text-sm font-semibold">{title}</p>
+          )}
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{objectives}</p>
+        </div>
+        <span className={`chip-c shrink-0 ${mod.status === "published" ? "chip-c-green" : ""}`}>
+          {mod.status === "published" ? "Publié" : "Brouillon"}
+        </span>
+        <button type="button" className="h-7 w-7 shrink-0 flex items-center justify-center rounded hover:bg-muted transition-colors" onClick={() => setOpen(o => !o)}>
+          <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="border-t border-border px-4 py-3.5 space-y-3 bg-muted/20">
+          {canEdit && (
+            <>
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                <label className="text-xs text-muted-foreground space-y-1 min-w-0">
+                  <span>Objectifs</span>
+                  {/* Inline style, not a class: the shadcn Textarea's own
+                      field-sizing-content utility class and a same-specificity
+                      override class land in the same Tailwind layer with no
+                      guaranteed win order — confirmed via computed-style
+                      inspection that a [field-sizing:fixed] class was silently
+                      losing. Inline style always wins, no ambiguity. Without
+                      this, the box shrinks to fit its own text width instead of
+                      filling the grid column — on a minmax(0,1fr) track that
+                      collapses the column to ~44px (one letter per line). */}
+                  <Textarea
+                    className="w-full text-xs" rows={2} value={objectives} onChange={e => setObjectives(e.target.value)}
+                    style={{ fieldSizing: "fixed" } as React.CSSProperties}
+                  />
+                </label>
+                <label className="text-xs text-muted-foreground space-y-1">
+                  <span>Th. (h)</span>
+                  <Input className="h-8 w-20 text-xs" type="number" step="0.5" value={hoursTh} onChange={e => setHoursTh(e.target.value)} />
+                </label>
+                <label className="text-xs text-muted-foreground space-y-1">
+                  <span>Prat. (h)</span>
+                  <Input className="h-8 w-20 text-xs" type="number" step="0.5" value={hoursTp} onChange={e => setHoursTp(e.target.value)} />
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" className="h-7 text-xs" disabled={savingModule} onClick={saveModule}>
+                  {savingModule ? <Loader2 className="h-3 w-3 animate-spin" /> : "Enregistrer le chapitre"}
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={removeModule}>
+                  <Trash2 className="h-3 w-3 mr-1" />Supprimer
+                </Button>
+              </div>
+            </>
+          )}
+
+          <div className="pt-2.5 border-t border-border/60">
+            {!lesson ? (
+              canEdit && (
+                <Button size="sm" className="h-8 text-xs border-0 bg-gradient-brand text-white" disabled={genLoading} onClick={generateContent}>
+                  {genLoading
+                    ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération…</>
+                    : <><Sparkles className="h-3.5 w-3.5 mr-1.5" />Générer le contenu</>}
+                </Button>
+              )
+            ) : (
+              <div className="space-y-2">
+                {canEdit ? (
+                  <Textarea
+                    ref={contentFieldRef}
+                    className="w-full text-xs font-mono leading-relaxed" rows={14} value={content} onChange={e => setContent(e.target.value)}
+                    style={{ fieldSizing: "fixed" } as React.CSSProperties}
+                  />
+                ) : (
+                  <div className="text-xs whitespace-pre-wrap leading-relaxed">{content}</div>
+                )}
+                {canEdit && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" className="h-7 text-xs" disabled={savingLesson} onClick={saveLesson}>
+                      {savingLesson ? <Loader2 className="h-3 w-3 animate-spin" /> : "Enregistrer le contenu"}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={genLoading} onClick={generateContent}>
+                      <RefreshCw className="h-3 w-3 mr-1" />Régénérer
+                    </Button>
+                    <Button
+                      size="sm"
+                      className={`h-7 text-xs ${mod.status === "published" ? "" : "border-0 bg-gradient-brand text-white"}`}
+                      variant={mod.status === "published" ? "outline" : "default"}
+                      onClick={togglePublish}
+                    >
+                      {mod.status === "published" ? "Repasser en brouillon" : "Publier ce chapitre"}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
+                      <Link to="/dashboard/courses/$courseId/editor/$moduleId" params={{ courseId, moduleId: mod.id }}>
+                        <LayoutGrid className="h-3 w-3 mr-1" />Éditeur de diapositives
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+
+                {/* Images — teacher-added illustrations, embedded into the PDF after the chapter text */}
+                {(images.length > 0 || canEdit) && (
+                  <div className="pt-2.5 border-t border-border/60 space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Images du chapitre</p>
+                    {images.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {images.map(img => (
+                          <div key={img.id} className="relative w-20 shrink-0">
+                            <a href={img.url} target="_blank" rel="noopener noreferrer">
+                              <img src={img.url} alt={img.caption || ""} className="h-20 w-20 rounded-lg object-cover border border-border" />
+                            </a>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => removeImage(img)}
+                                className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center rounded-full bg-destructive text-white shadow"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                            {img.caption && <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2">{img.caption}</p>}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => copyToken(img.id)}
+                                className="mt-0.5 text-[10px] text-primary hover:underline"
+                                title="Copier la balise pour la replacer ailleurs dans le texte"
+                              >
+                                Copier la balise
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {canEdit && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          className="h-8 text-xs w-48"
+                          placeholder="Légende (optionnel)"
+                          value={imageCaption}
+                          onChange={e => setImageCaption(e.target.value)}
+                        />
+                        <label className="cursor-pointer">
+                          <input
+                            ref={imageFileRef} type="file" accept="image/jpeg,image/png,image/webp"
+                            className="hidden" onChange={e => uploadImage(e.target.files)}
+                          />
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors cursor-pointer">
+                            {uploadingImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                            Ajouter une image
+                          </div>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Live in-platform slide editor (ONLYOFFICE DocSpace) ──────────────
+   Not a from-scratch editor — a real office-suite engine running as its own
+   service, streamed into this page via an iframe the SDK manages. Verified
+   directly against the real DocSpace REST API + this exact SDK pattern
+   before wiring it in (see conversation notes), not guessed from docs. */
+let docSpaceSdkPromise: Promise<void> | null = null;
+function loadDocSpaceSdk(docspaceUrl: string): Promise<void> {
+  if ((window as any).DocSpace?.SDK) return Promise.resolve();
+  if (docSpaceSdkPromise) return docSpaceSdkPromise;
+  docSpaceSdkPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `${docspaceUrl}/static/scripts/sdk/2.2.0/api.js`;
+    script.onload = () => resolve();
+    script.onerror = () => { docSpaceSdkPromise = null; reject(new Error("Impossible de charger l'éditeur en direct")); };
+    document.head.appendChild(script);
+  });
+  return docSpaceSdkPromise;
+}
+
+function DocSpaceEditorOverlay({ fileId, docspaceUrl, title, onClose }: {
+  fileId: string; docspaceUrl: string; title: string; onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const frameRef = useRef<any>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadDocSpaceSdk(docspaceUrl)
+      .then(() => {
+        if (cancelled) return;
+        const sdk = (window as any).DocSpace?.SDK;
+        if (!sdk) { setError("Éditeur en direct indisponible pour le moment."); return; }
+        frameRef.current = sdk.initEditor({ frameId: "docspace-live-editor", src: docspaceUrl, id: fileId, width: "100%", height: "100%" });
+        setLoading(false);
+      })
+      .catch(e => setError(e.message || "Erreur de chargement de l'éditeur"));
+    return () => {
+      cancelled = true;
+      try { frameRef.current?.destroyFrame?.(); } catch { /* best-effort cleanup */ }
+    };
+  }, [fileId, docspaceUrl]);
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-card border-b border-border shrink-0">
+        <p className="text-sm font-semibold truncate">{title} — édition en direct</p>
+        <button onClick={onClose} className="rounded-full p-1.5 hover:bg-muted transition-colors" title="Fermer">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex-1 relative bg-white">
+        {loading && !error && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {error && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+            <p className="text-sm text-destructive font-medium">{error}</p>
+            <p className="text-xs text-muted-foreground max-w-sm">
+              Si ça persiste : l'adresse de cette page doit être autorisée dans DocSpace → Outils développeur → Embed SDK.
+            </p>
+          </div>
+        )}
+        <div id="docspace-live-editor" className="w-full h-full" />
+      </div>
+    </div>
+  );
+}
+
+function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit: boolean; onClose: () => void }) {
+  const [modules, setModules]                 = useState<CourseModuleT[]>([]);
+  const [loading, setLoading]                 = useState(true);
+  const [generatingOutline, setGeneratingOutline] = useState(false);
+  const [generatingPdf, setGeneratingPdf]      = useState(false);
+  const [generatingPptx, setGeneratingPptx]    = useState(false);
+  const [openingEditor, setOpeningEditor]      = useState(false);
+  const [docspaceSession, setDocspaceSession]  = useState<{ fileId: string; docspaceUrl: string } | null>(null);
+  // Seeded from the course row, then updated optimistically right after a
+  // successful generation — avoids a full course-list refetch just to know
+  // "how many chapters did the PDF in Resources last include".
+  const [pdfInfo, setPdfInfo] = useState<{ chapterCount: number | null; generatedAt: string | null }>({
+    chapterCount: course.pdf_chapter_count ?? null,
+    generatedAt: course.pdf_generated_at ?? null,
+  });
+
+  async function load() {
+    setLoading(true);
+    try {
+      setModules(await fetchModules(course.id));
+    } catch (e: any) {
+      toast.error(e.message || "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [course.id]);
+
+  async function generateOutline() {
+    const hasDrafts = modules.some(m => m.status === "draft");
+    const hasPublished = modules.some(m => m.status === "published");
+    const confirmMsg = hasPublished
+      ? "Compléter le plan ? Les chapitres déjà publiés restent inchangés — l'IA générera uniquement les chapitres manquants, à la suite. Les brouillons non publiés actuels seront remplacés."
+      : "Régénérer le plan ? Les chapitres non publiés seront remplacés.";
+    if (hasDrafts && !window.confirm(confirmMsg)) return;
+    setGeneratingOutline(true);
+    try {
+      await api.post(`/api/courses/${course.id}/generate/outline`, {});
+      toast.success("Plan du cours généré");
+      load();
+    } catch (e: any) {
+      toast.error(e.message || "Échec de la génération");
+    } finally {
+      setGeneratingOutline(false);
+    }
+  }
+
+  async function generatePdf() {
+    setGeneratingPdf(true);
+    try {
+      const res: { url: string; chapters: number; generated_at: string } = await api.post(`/api/courses/${course.id}/generate-pdf`, {});
+      setPdfInfo({ chapterCount: res.chapters, generatedAt: res.generated_at });
+      toast.success(`PDF généré (${res.chapters} chapitre${res.chapters > 1 ? "s" : ""}) — visible dans « Ressources »`);
+      window.open(res.url, "_blank");
+    } catch (e: any) {
+      toast.error(e.message || "Échec de la génération du PDF");
+    } finally {
+      setGeneratingPdf(false);
+    }
+  }
+
+  async function generatePptx() {
+    setGeneratingPptx(true);
+    try {
+      const res: { url: string; chapters: number } = await api.post(`/api/courses/${course.id}/generate-pptx`, {});
+      toast.success(`Support PowerPoint généré (${res.chapters} chapitre${res.chapters > 1 ? "s" : ""}) — visible dans « Ressources ». Téléchargez-le pour le finir dans PowerPoint (photos, mise en page libre).`);
+      window.open(res.url, "_blank");
+    } catch (e: any) {
+      toast.error(e.message || "Échec de la génération du support PowerPoint");
+    } finally {
+      setGeneratingPptx(false);
+    }
+  }
+
+  async function openLiveEditor() {
+    setOpeningEditor(true);
+    try {
+      const res: { fileId: string; docspaceUrl: string; created: boolean } = await api.post(`/api/courses/${course.id}/docspace-editor`, {});
+      setDocspaceSession({ fileId: res.fileId, docspaceUrl: res.docspaceUrl });
+      if (res.created) toast.success("Support créé — vous éditez maintenant la version en direct.");
+    } catch (e: any) {
+      toast.error(e.message || "Échec de l'ouverture de l'éditeur en direct");
+    } finally {
+      setOpeningEditor(false);
+    }
+  }
+
+  const totalTh = modules.reduce((s, m) => s + (m.hours_theory || 0), 0);
+  const publishedCount = modules.filter(m => m.status === "published").length;
+  // The PDF is a snapshot, not a live view — it only updates when someone
+  // clicks "Générer le PDF" again. Two ways it can drift from what's live:
+  // (1) the published chapter count moved (publish/unpublish/delete), or
+  // (2) a published chapter's own text was edited after the last PDF —
+  // count alone misses that, since publishing nothing new or removed.
+  const countDrifted = pdfInfo.chapterCount !== null && pdfInfo.chapterCount !== publishedCount;
+  const contentDrifted = pdfInfo.generatedAt !== null && modules.some(m =>
+    m.status === "published" && m.lessons[0]?.updated_at
+    && new Date(m.lessons[0].updated_at) > new Date(pdfInfo.generatedAt!)
+  );
+  const pdfStale = countDrifted || contentDrifted;
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent
+        showCloseButton={false}
+        className={`max-h-[90vh] w-full overflow-hidden flex flex-col p-0 transition-[max-width] duration-150 ${expanded ? "sm:max-w-6xl" : "sm:max-w-3xl"}`}
+      >
+
+        <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
+          <div>
+            <p className="text-xs font-mono font-semibold text-muted-foreground uppercase tracking-wider">Contenu généré par IA</p>
+            <h2 className="font-display text-xl font-semibold mt-0.5 leading-tight">{course.title}</h2>
+            {modules.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {modules.length} chapitre{modules.length > 1 ? "s" : ""} · {totalTh}h de théorie générées
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="mt-0.5 rounded-full p-1.5 hover:bg-muted transition-colors"
+              title={expanded ? "Rétrécir" : "Agrandir"}
+            >
+              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+            <button onClick={onClose} className="mt-0.5 rounded-full p-1.5 hover:bg-muted transition-colors" title="Fermer">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {canEdit && (
+          <div className="px-6 pt-3 pb-1 shrink-0 flex flex-wrap items-center gap-2">
+            <Button size="sm" className="h-8 text-xs border-0 bg-gradient-brand text-white" disabled={generatingOutline} onClick={generateOutline}>
+              {generatingOutline
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération du plan…</>
+                : <><Sparkles className="h-3.5 w-3.5 mr-1.5" />{modules.length === 0 ? "Générer le plan du cours" : "Régénérer le plan"}</>}
+            </Button>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              disabled={generatingPdf || publishedCount === 0}
+              title={publishedCount === 0 ? "Publiez au moins un chapitre d'abord" : undefined}
+              onClick={generatePdf}
+            >
+              {generatingPdf
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération du PDF…</>
+                : <><FileText className="h-3.5 w-3.5 mr-1.5" />{pdfStale ? "Régénérer le PDF" : "Générer le PDF"}{publishedCount > 0 ? ` (${publishedCount})` : ""}</>}
+            </Button>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
+              disabled={generatingPptx || publishedCount === 0}
+              title={publishedCount === 0 ? "Publiez au moins un chapitre d'abord" : "Support PowerPoint modifiable — pour finir la mise en page dans PowerPoint"}
+              onClick={generatePptx}
+            >
+              {generatingPptx
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération…</>
+                : <><Presentation className="h-3.5 w-3.5 mr-1.5" />Support PowerPoint</>}
+            </Button>
+            <Button
+              size="sm" className="h-8 text-xs border-0 bg-gradient-brand text-white"
+              disabled={openingEditor || publishedCount === 0}
+              title={publishedCount === 0 ? "Publiez au moins un chapitre d'abord" : "Modifier les diapositives directement ici, sans quitter la plateforme"}
+              onClick={openLiveEditor}
+            >
+              {openingEditor
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Ouverture…</>
+                : <><Edit3 className="h-3.5 w-3.5 mr-1.5" />Modifier en direct</>}
+            </Button>
+            {pdfStale && (
+              <span className="text-xs font-medium" style={{ color: "var(--pal-danger, #b91c1c)" }}>
+                {countDrifted
+                  ? `Le PDF dans « Ressources » date de ${pdfInfo.chapterCount} chapitre${pdfInfo.chapterCount! > 1 ? "s" : ""} publié${pdfInfo.chapterCount! > 1 ? "s" : ""} — ${publishedCount} maintenant. Régénérez-le.`
+                  : "Un chapitre publié a été modifié depuis la dernière génération — le PDF dans « Ressources » n'a plus le texte à jour. Régénérez-le."}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="overflow-y-auto px-6 pb-6 pt-3 flex-1 space-y-2">
+          {loading ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : modules.length === 0 ? (
+            <div className="flex flex-col items-center py-12 text-center text-muted-foreground">
+              <Sparkles className="h-8 w-8 mb-3 opacity-25" />
+              <p className="text-sm">{canEdit ? "Aucun contenu généré pour ce cours." : "Aucun contenu publié pour ce cours pour le moment."}</p>
+              {canEdit
+                ? <p className="text-xs mt-1 opacity-70">Cliquez sur « Générer le plan du cours » pour commencer.</p>
+                : <p className="text-xs mt-1 opacity-70">Le professeur prépare le contenu — revenez plus tard.</p>}
+            </div>
+          ) : (
+            modules.map(m => (
+              <ModuleRow key={m.id} courseId={course.id} module={m} canEdit={canEdit} onChanged={load} />
+            ))
+          )}
+        </div>
+      </DialogContent>
+
+      {docspaceSession && (
+        <DocSpaceEditorOverlay
+          fileId={docspaceSession.fileId}
+          docspaceUrl={docspaceSession.docspaceUrl}
+          title={course.title}
+          onClose={() => setDocspaceSession(null)}
+        />
+      )}
+    </Dialog>
+  );
+}
+
 /* ─── Courses Page ───────────────────────────────────────────── */
 function CoursesPage() {
   const { t, lang } = useI18n();
@@ -533,12 +1250,15 @@ function CoursesPage() {
   const [loadingClasses,   setLoadingClasses]   = useState(false);
   const [newCourse,        setNewCourse]        = useState<Course | null>(null);
   const [resCourse,        setResCourse]        = useState<Course | null>(null);
+  const [aiCourse,         setAiCourse]         = useState<Course | null>(null);
   const [q,                setQ]                = useState("");
   const [editCourse,       setEditCourse]       = useState<Course | null>(null);
   const [editForm,         setEditForm]         = useState(EMPTY);
   const [editClasses,      setEditClasses]      = useState<ClassOption[]>([]);
   const [loadingEditCls,   setLoadingEditCls]   = useState(false);
   const [updating,         setUpdating]         = useState(false);
+  const [weightsCourse,    setWeightsCourse]    = useState<Course | null>(null);
+  const [filterSemester,   setFilterSemester]   = useState("");
 
   async function load() {
     if (!user) return;
@@ -649,10 +1369,13 @@ function CoursesPage() {
     }
   }
 
-  const displayed = q.trim()
-    ? courses.filter(c =>
-        `${c.title} ${c.code ?? ""} ${c.professor_name ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()))
-    : courses;
+  const semesterOptions = Array.from(new Set(courses.map(c => c.semester).filter((s): s is string => !!s))).sort();
+
+  const displayed = courses
+    .filter(c => !filterSemester || c.semester === filterSemester)
+    .filter(c =>
+      !q.trim() ||
+      `${c.title} ${c.code ?? ""} ${c.professor_name ?? ""}`.toLowerCase().includes(q.trim().toLowerCase()));
 
   return (
     <div className="space-y-6">
@@ -674,6 +1397,19 @@ function CoursesPage() {
                 onChange={e => setQ(e.target.value)}
               />
             </div>
+            {semesterOptions.length > 0 && (
+              <select
+                className="input-c"
+                style={{ width: 220 }}
+                value={filterSemester}
+                onChange={e => setFilterSemester(e.target.value)}
+              >
+                <option value="">{lang === "fr" ? "Toutes les filières" : "All specialties"}</option>
+                {semesterOptions.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
             {canCreate && (
               <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-primary">
                 <Plus size={15} strokeWidth={1.7} />{t("courses.create")}
@@ -768,10 +1504,23 @@ function CoursesPage() {
                     {course.enrollment_count} {lang === "fr" ? "étudiants" : "students"}
                     {course.semester ? ` · ${course.semester}` : ""}
                   </div>
-                  <button type="button" className="btn-c btn-c-soft btn-c-sm" onClick={() => setResCourse(course)}>
-                    {lang === "fr" ? "Ressources" : "Resources"}
-                    {(isAdmin || (isProf && course.professor_id === user!.id)) && <span style={{ opacity: 0.7 }}>+</span>}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {(isAdmin || (isProf && course.professor_id === user!.id)) && (
+                      <button type="button" className="btn-c btn-c-ghost btn-c-sm" onClick={() => setWeightsCourse(course)} title="Pondération du contrôle continu">
+                        <Percent size={12} strokeWidth={1.7} />
+                      </button>
+                    )}
+                    <Link to="/dashboard/courses/$courseId" params={{ courseId: course.id }} className="btn-c btn-c-ghost btn-c-sm" title={lang === "fr" ? "Lire le cours" : "Read the course"}>
+                      <BookOpen size={12} strokeWidth={1.7} />
+                    </Link>
+                    <button type="button" className="btn-c btn-c-ghost btn-c-sm" onClick={() => setAiCourse(course)} title="Contenu généré par IA">
+                      <Sparkles size={12} strokeWidth={1.7} />
+                    </button>
+                    <button type="button" className="btn-c btn-c-soft btn-c-sm" onClick={() => setResCourse(course)}>
+                      {lang === "fr" ? "Ressources" : "Resources"}
+                      {(isAdmin || (isProf && course.professor_id === user!.id)) && <span style={{ opacity: 0.7 }}>+</span>}
+                    </button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -780,7 +1529,11 @@ function CoursesPage() {
             <div className="dash-card">
               <EmptyHint
                 icon={<Search size={28} strokeWidth={1.7} />}
-                text={lang === "fr" ? `Aucun cours ne correspond à « ${q} »` : `No course matches "${q}"`}
+                text={
+                  q.trim()
+                    ? (lang === "fr" ? `Aucun cours ne correspond à « ${q} »` : `No course matches "${q}"`)
+                    : (lang === "fr" ? "Aucun cours dans cette filière" : "No course in this specialty")
+                }
               />
             </div>
           )}
@@ -789,7 +1542,7 @@ function CoursesPage() {
 
       {/* Edit dialog */}
       <Dialog open={!!editCourse} onOpenChange={open => { if (!open) setEditCourse(null); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto w-full max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto w-full sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display">
               {lang === "fr" ? "Modifier le cours" : lang === "ar" ? "تعديل الدرس" : "Edit course"}
@@ -887,6 +1640,11 @@ function CoursesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Grade weights dialog */}
+      {weightsCourse && (
+        <GradeWeightsModal course={weightsCourse} onClose={() => setWeightsCourse(null)} />
+      )}
+
       {/* Resources modal (existing courses) */}
       {resCourse && (
         <ResourcesModal
@@ -896,9 +1654,18 @@ function CoursesPage() {
         />
       )}
 
+      {/* AI content modal */}
+      {aiCourse && (
+        <AIContentModal
+          course={aiCourse}
+          canEdit={isAdmin || (isProf && aiCourse.professor_id === user!.id)}
+          onClose={() => setAiCourse(null)}
+        />
+      )}
+
       {/* Create dialog — two-step */}
       <Dialog open={showCreate} onOpenChange={open => { if (!open) closeCreateDialog(); }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto w-full max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto w-full sm:max-w-lg">
 
           {/* ── Step 1: course details ── */}
           {!newCourse && (

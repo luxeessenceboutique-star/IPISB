@@ -80,11 +80,12 @@ const PAL = {
 };
 const sans = '"Manrope", system-ui, sans-serif';
 
-type DocType = "attestation_scolarite" | "certificat" | "convocation";
+type DocType = "attestation_scolarite" | "certificat" | "convocation" | "releve_notes";
 const TYPE_LABEL: Record<DocType, string> = {
   attestation_scolarite: "Attestation de scolarité",
   certificat: "Certificat",
   convocation: "Convocation",
+  releve_notes: "Relevé de notes",
 };
 
 type Student = { id: string; full_name: string | null; email: string | null };

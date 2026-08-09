@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Plus, Trash2, Loader2, Users, X, BookOpen } from "lucide-react";
+import { Plus, Trash2, Loader2, Users, X, BookOpen, Settings } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/classes")({
@@ -43,7 +43,12 @@ type ClassItem = {
   created_at: string;
   student_count: number;
   professor_name: string;
+  specialty_id: string | null;
+  specialty_name: string | null;
+  year_number: number | null;
 };
+
+type Specialty = { id: string; name: string };
 
 type StudentItem = {
   id: string;
@@ -61,9 +66,11 @@ type RosterStudent = {
 
 // ── Create class modal ────────────────────────────────────────
 
-function CreateClassModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function CreateClassModal({ specialties, onClose, onCreated }: { specialties: Specialty[]; onClose: () => void; onCreated: () => void }) {
   const [name, setName]         = useState("");
   const [desc, setDesc]         = useState("");
+  const [specialtyId, setSpecialtyId] = useState("");
+  const [yearNumber, setYearNumber]   = useState("");
   const [busy, setBusy]         = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
 
@@ -72,7 +79,12 @@ function CreateClassModal({ onClose, onCreated }: { onClose: () => void; onCreat
     if (!name.trim()) { toast.error("Le nom est requis"); return; }
     setBusy(true);
     try {
-      await api.post("/api/classes", { name: name.trim(), description: desc.trim() || null });
+      await api.post("/api/classes", {
+        name: name.trim(),
+        description: desc.trim() || null,
+        specialty_id: specialtyId || null,
+        year_number: yearNumber ? parseInt(yearNumber, 10) : null,
+      });
       toast.success("Classe créée !");
       onCreated();
       onClose();
@@ -113,6 +125,46 @@ function CreateClassModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
         <form onSubmit={handleSubmit}>
           <ModalField label="Nom de la classe" value={name} onChange={setName} placeholder="Ex : Groupe A – Soins Infirmiers L2" />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+            <div>
+              <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                Spécialité
+              </label>
+              <select
+                value={specialtyId}
+                onChange={e => setSpecialtyId(e.target.value)}
+                style={{
+                  width: "100%", padding: "10px 14px",
+                  background: PAL.cream, border: `1px solid ${PAL.line}`,
+                  borderRadius: 10, fontFamily: sans, fontSize: 14,
+                  color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
+                }}
+              >
+                <option value="">— Non définie —</option>
+                {specialties.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                Année
+              </label>
+              <select
+                value={yearNumber}
+                onChange={e => setYearNumber(e.target.value)}
+                style={{
+                  width: "100%", padding: "10px 14px",
+                  background: PAL.cream, border: `1px solid ${PAL.line}`,
+                  borderRadius: 10, fontFamily: sans, fontSize: 14,
+                  color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
+                }}
+              >
+                <option value="">— Non définie —</option>
+                {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>Année {n}</option>)}
+              </select>
+            </div>
+          </div>
+
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
               Description (optionnel)
@@ -177,6 +229,99 @@ function ModalField({ label, value, onChange, placeholder }: {
   );
 }
 
+// ── Manage specialties modal (admin only) ───────────────────────
+
+function SpecialtiesModal({ specialties, onClose, onChanged }: {
+  specialties: Specialty[]; onClose: () => void; onChanged: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  async function addSpecialty() {
+    if (!name.trim()) { toast.error("Le nom est requis"); return; }
+    setBusy(true);
+    try {
+      await api.post("/api/specialties", { name: name.trim() });
+      setName("");
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeSpecialty(s: Specialty) {
+    if (!window.confirm(`Supprimer la spécialité « ${s.name} » ?`)) return;
+    try {
+      await api.delete(`/api/specialties/${s.id}`);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  }
+
+  return (
+    <div
+      ref={backdropRef}
+      onClick={e => { if (e.target === backdropRef.current) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 50,
+        background: "oklch(0% 0 0 / .45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: sans,
+      }}
+    >
+      <div style={{
+        background: PAL.paper, borderRadius: 16, padding: "32px 36px",
+        width: "100%", maxWidth: 420, boxShadow: "0 24px 64px oklch(0% 0 0 / .18)",
+        position: "relative",
+      }}>
+        <button type="button" onClick={onClose} style={{
+          position: "absolute", top: 16, right: 16, background: "none",
+          border: 0, cursor: "pointer", fontSize: 18, color: PAL.muted,
+        }}>✕</button>
+
+        <h2 style={{ margin: "0 0 20px", fontSize: 20, fontWeight: 700, color: PAL.ink }}>
+          Gérer les spécialités
+        </h2>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+          <input
+            type="text" value={name} onChange={e => setName(e.target.value)}
+            placeholder="Nouvelle spécialité…"
+            style={{
+              flex: 1, padding: "9px 12px", background: PAL.cream, border: `1px solid ${PAL.line}`,
+              borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, outline: "none",
+            }}
+          />
+          <button type="button" onClick={addSpecialty} disabled={busy} className="btn-c btn-c-sm btn-c-primary">
+            <Plus size={13} strokeWidth={1.7} />Ajouter
+          </button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {specialties.map(s => (
+            <div key={s.id} style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 10px", borderRadius: 8, background: PAL.pale, border: `1px solid ${PAL.line}`,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: PAL.ink }}>{s.name}</span>
+              <button type="button" onClick={() => removeSpecialty(s)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.danger }}>
+                <Trash2 size={13} strokeWidth={1.7} />
+              </button>
+            </div>
+          ))}
+          {specialties.length === 0 && (
+            <div style={{ textAlign: "center", padding: "16px 0", color: PAL.muted, fontSize: 13 }}>Aucune spécialité.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Classes page ──────────────────────────────────────────────
 
 function ClassesPage() {
@@ -184,6 +329,8 @@ function ClassesPage() {
   const [classes,      setClasses]      = useState<ClassItem[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [showModal,    setShowModal]    = useState(false);
+  const [showSpecialtiesModal, setShowSpecialtiesModal] = useState(false);
+  const [specialties,  setSpecialties]  = useState<Specialty[]>([]);
   const [selected,     setSelected]     = useState<ClassItem | null>(null);
   const [students,     setStudents]     = useState<StudentItem[]>([]);
   const [studLoading,  setStudLoading]  = useState(false);
@@ -231,10 +378,20 @@ function ClassesPage() {
     }
   }
 
+  async function loadSpecialties() {
+    try {
+      const data: Specialty[] = await api.get("/api/specialties");
+      setSpecialties(data);
+    } catch {
+      setSpecialties([]);
+    }
+  }
+
   useEffect(() => {
     if (!authLoading) {
       loadClasses();
       loadRoster();
+      loadSpecialties();
     }
   }, [authLoading]);
 
@@ -295,8 +452,16 @@ function ClassesPage() {
     <>
       {showModal && (
         <CreateClassModal
+          specialties={specialties}
           onClose={() => setShowModal(false)}
           onCreated={loadClasses}
+        />
+      )}
+      {showSpecialtiesModal && (
+        <SpecialtiesModal
+          specialties={specialties}
+          onClose={() => setShowSpecialtiesModal(false)}
+          onChanged={loadSpecialties}
         />
       )}
 
@@ -305,10 +470,18 @@ function ClassesPage() {
         title="Classes"
         sub={isAdmin ? "Toutes les classes de la plateforme" : "Vos groupes d'étudiants"}
         actions={
-          <button type="button" onClick={() => setShowModal(true)} className="btn-c btn-c-primary">
-            <BookOpen size={15} strokeWidth={1.7} />
-            Nouvelle classe
-          </button>
+          <>
+            {isAdmin && (
+              <button type="button" onClick={() => setShowSpecialtiesModal(true)} className="btn-c btn-c-ghost">
+                <Settings size={15} strokeWidth={1.7} />
+                Spécialités
+              </button>
+            )}
+            <button type="button" onClick={() => setShowModal(true)} className="btn-c btn-c-primary">
+              <BookOpen size={15} strokeWidth={1.7} />
+              Nouvelle classe
+            </button>
+          </>
         }
       />
 
@@ -366,6 +539,16 @@ function ClassesPage() {
                       {cls.description && (
                         <div style={{ fontSize: 12, color: PAL.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, marginTop: 2 }}>
                           {cls.description}
+                        </div>
+                      )}
+                      {(cls.specialty_name || cls.year_number) && (
+                        <div style={{ marginTop: 4 }}>
+                          <span style={{
+                            fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                            background: PAL.pale, color: PAL.primary,
+                          }}>
+                            {[cls.specialty_name, cls.year_number ? `Année ${cls.year_number}` : null].filter(Boolean).join(" · ")}
+                          </span>
                         </div>
                       )}
                       <div style={{ fontSize: 11, color: PAL.muted, marginTop: 4 }}>

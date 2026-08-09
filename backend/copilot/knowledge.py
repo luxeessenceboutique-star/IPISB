@@ -57,6 +57,13 @@ PLATFORM_SECTIONS: list[dict] = [
                 "et des professeurs, taux de scolarité par classe.",
     },
     {
+        "key": "library", "title": "Bibliothèque", "path": "/dashboard/library", "roles": ["staff"],
+        "body": "Bibliothèque de documents de référence officiels (cahiers des charges/CDC, programmes de "
+                "formation, fiches et banques d'examens, règlements) fournis par la direction, organisés par "
+                "catégorie en onglets. Consultation pour admin et professeurs ; seul un admin peut ajouter ou "
+                "supprimer un document.",
+    },
+    {
         "key": "users", "title": "Utilisateurs", "path": "/dashboard/users", "roles": ["staff"],
         "body": "Gestion des comptes utilisateurs de la plateforme (rôle, activation), création de "
                 "comptes professeurs/étudiants par un admin.",

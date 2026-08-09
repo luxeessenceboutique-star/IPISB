@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import ExamCreate, QuestionCreate, ExamAnswers
+from models import ExamCreate, QuestionCreate, ExamAnswers, GenerateQuestionsRequest
 from utils.notify import notify_users
 from utils.email import send_email
+from utils.exam_generation import generate_mcq_questions
 
 router = APIRouter(prefix="/exams", tags=["exams"])
 
@@ -104,6 +105,7 @@ async def create_exam(
             "duration_minutes": body.duration_minutes,
             "start_time": body.start_time,
             "course_id": body.course_id,
+            "type": body.type,
             "is_published": False,
         }
     ).execute()
@@ -135,6 +137,28 @@ async def get_questions(
         return questions
     # Students: hide correct_index until they submit
     return [{k: v for k, v in q.items() if k != "correct_index"} for q in questions]
+
+
+@router.post("/questions/generate")
+async def generate_questions(
+    body: GenerateQuestionsRequest,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """AI-assisted QCM drafting, grounded in real IPAIS exam examples. Called
+    while drafting an exam (before it's created), so it's keyed off course_id
+    rather than exam_id. Returns drafts only — nothing is saved; the caller
+    reviews/edits them client-side before the exam + questions are created."""
+    if not user.can_create():
+        raise HTTPException(403, "Not authorized")
+    course = db.from_("courses").select("title").eq("id", body.course_id).execute().data
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    try:
+        return generate_mcq_questions(course[0]["title"], body.topic, body.num_questions)
+    except ValueError as e:
+        raise HTTPException(502, str(e))
 
 
 @router.post("/{exam_id}/questions")

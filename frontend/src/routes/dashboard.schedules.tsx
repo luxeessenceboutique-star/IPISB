@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, CalendarClock, MapPin, Repeat } from "lucide-react";
+import { Plus, Trash2, CalendarClock, MapPin, Repeat, ClipboardCheck } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/schedules")({
@@ -33,25 +33,33 @@ const WEEKDAYS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
 type ClassItem = { id: string; name: string };
 type Prof = { id: string; full_name: string | null; email: string | null };
+type CourseItem = { id: string; title: string };
 type Schedule = {
   id: string;
   class_id: string | null;
   class_name: string | null;
   professor_id: string | null;
+  course_id: string | null;
   room: string;
   title: string | null;
   start_time: string;
   end_time: string;
   recurrence: "once" | "weekly";
 };
+const ATTENDANCE_STATUS: { value: string; label: string }[] = [
+  { value: "present", label: "Présent" },
+  { value: "absent", label: "Absent" },
+  { value: "retard", label: "Retard" },
+  { value: "excuse", label: "Excusé" },
+];
 
 function fmt(dt: string) {
   const d = new Date(dt);
   return `${WEEKDAYS[d.getDay()]} ${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} · ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-function CreateModal({ classes, profs, onClose, onCreated }: { classes: ClassItem[]; profs: Prof[]; onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ room: "", class_id: "", professor_id: "", title: "", start_time: "", end_time: "", recurrence: "once" as "once" | "weekly" });
+function CreateModal({ classes, profs, courses, onClose, onCreated }: { classes: ClassItem[]; profs: Prof[]; courses: CourseItem[]; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({ room: "", class_id: "", professor_id: "", course_id: "", title: "", start_time: "", end_time: "", recurrence: "once" as "once" | "weekly" });
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -63,6 +71,7 @@ function CreateModal({ classes, profs, onClose, onCreated }: { classes: ClassIte
         room: form.room,
         class_id: form.class_id || null,
         professor_id: form.professor_id || null,
+        course_id: form.course_id || null,
         title: form.title || null,
         start_time: new Date(form.start_time).toISOString(),
         end_time: new Date(form.end_time).toISOString(),
@@ -115,6 +124,12 @@ function CreateModal({ classes, profs, onClose, onCreated }: { classes: ClassIte
           {profs.map(p => <option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
         </select>
 
+        <label style={labelStyle}>Cours (optionnel)</label>
+        <select value={form.course_id} onChange={e => setForm(f => ({ ...f, course_id: e.target.value }))} className="u-input" style={fieldStyle}>
+          <option value="">— Aucun —</option>
+          {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <label style={labelStyle}>Début *</label>
@@ -143,12 +158,106 @@ function CreateModal({ classes, profs, onClose, onCreated }: { classes: ClassIte
   );
 }
 
+function AttendanceModal({ schedule, onClose }: { schedule: Schedule; onClose: () => void }) {
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [seanceId, setSeanceId] = useState<string | null>(null);
+  const [roster, setRoster] = useState<{ student_id: string; full_name: string | null; status: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const seance = await api.get(`/api/schedules/${schedule.id}/seances?date=${date}`);
+      setSeanceId(seance.id);
+      const data = await api.get(`/api/seances/${seance.id}/attendance`);
+      setRoster(data.roster ?? []);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du chargement.");
+      setRoster([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [date]);
+
+  function setStatus(studentId: string, status: string) {
+    setRoster(r => r.map(s => s.student_id === studentId ? { ...s, status } : s));
+  }
+
+  async function save() {
+    if (!seanceId) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/seances/${seanceId}/attendance`, {
+        entries: roster.map(s => ({ student_id: s.student_id, status: s.status })),
+      });
+      toast.success("Présence enregistrée.");
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'enregistrement.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const fieldStyle = { marginTop: 8, marginBottom: 16, padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, background: PAL.paper, outline: "none" };
+  const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
+
+  return (
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 460, maxWidth: "95vw", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
+        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 4px" }}>
+          Présence — {schedule.title || schedule.class_name || "Créneau"}
+        </h2>
+        <p style={{ fontSize: 12.5, color: PAL.muted, margin: "0 0 16px" }}>{schedule.room}</p>
+
+        <label style={labelStyle}>Date de la séance</label>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="u-input" style={{ ...fieldStyle, width: 180 }} />
+
+        {loading ? (
+          <div className="shimmer" style={{ height: 18, width: 180, borderRadius: 999 }} />
+        ) : roster.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "20px 0", color: PAL.muted, fontSize: 13 }}>
+            Aucun étudiant dans cette classe.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+            {roster.map(s => (
+              <div key={s.student_id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: `1px solid ${PAL.line}` }}>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: PAL.ink }}>{s.full_name || "—"}</span>
+                <select
+                  value={s.status}
+                  onChange={e => setStatus(s.student_id, e.target.value)}
+                  style={{ padding: "6px 8px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 12, background: PAL.paper }}
+                >
+                  {ATTENDANCE_STATUS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Fermer</button>
+          <button onClick={save} disabled={busy || roster.length === 0} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "10px 24px", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>
+            {busy ? "Enregistrement…" : "Enregistrer la présence"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SchedulesPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [profs, setProfs] = useState<Prof[]>([]);
+  const [courses, setCourses] = useState<CourseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [attendanceFor, setAttendanceFor] = useState<Schedule | null>(null);
 
   async function load() {
     setLoading(true);
@@ -166,6 +275,7 @@ function SchedulesPage() {
     load();
     api.get("/api/classes/all").then((d: ClassItem[]) => setClasses(d ?? [])).catch(() => {});
     api.get("/api/users").then((d: any[]) => setProfs((d ?? []).filter(u => u.roles?.includes("professor")))).catch(() => {});
+    api.get("/api/courses/list").then((d: CourseItem[]) => setCourses(d ?? [])).catch(() => {});
   }, []);
 
   const profMap = Object.fromEntries(profs.map(p => [p.id, p.full_name || p.email || "—"]));
@@ -184,7 +294,10 @@ function SchedulesPage() {
   return (
     <div style={{ fontFamily: sans }}>
       {showCreate && (
-        <CreateModal classes={classes} profs={profs} onClose={() => setShowCreate(false)} onCreated={load} />
+        <CreateModal classes={classes} profs={profs} courses={courses} onClose={() => setShowCreate(false)} onCreated={load} />
+      )}
+      {attendanceFor && (
+        <AttendanceModal schedule={attendanceFor} onClose={() => setAttendanceFor(null)} />
       )}
 
       <PageHead
@@ -242,6 +355,16 @@ function SchedulesPage() {
               <span className="chip-c" style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 10.5 }}>
                 {fmt(s.start_time)}
               </span>
+              {s.class_id && (
+                <button
+                  type="button"
+                  onClick={() => setAttendanceFor(s)}
+                  className="btn-c btn-c-sm btn-c-ghost"
+                  title="Prendre la présence"
+                >
+                  <ClipboardCheck size={13} strokeWidth={1.7} />Présence
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => remove(s)}

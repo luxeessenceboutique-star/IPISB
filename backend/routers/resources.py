@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -9,6 +8,7 @@ from pydantic import BaseModel
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
+from utils.safe_filename import safe_filename
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ async def upload_file(
 
     content_type = file.content_type or "application/octet-stream"
     # Sanitize filename: replace any character that isn't alphanumeric, dot, hyphen, or underscore
-    clean = re.sub(r"[^\w.\-]", "_", file.filename or "file")
+    clean = safe_filename(file.filename or "file")
     safe_name = f"{int(time.time())}_{clean}"
     path = f"{course_id}/files/{safe_name}"
     content = await file.read()

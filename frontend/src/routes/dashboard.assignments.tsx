@@ -436,7 +436,7 @@ function AssignmentsPage() {
 
       {/* ── Grade Dialog ── */}
       <Dialog open={!!gradeDialog} onOpenChange={o => !o && setGradeDialog(null)}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] sm:max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">{t("assignments.submissions")} — {gradeDialog?.assignment.title}</DialogTitle>
             <p className="text-sm text-muted-foreground">
