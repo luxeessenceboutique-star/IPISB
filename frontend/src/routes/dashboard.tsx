@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
   Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet,
-  UserCog, CalendarRange,
+  UserCog, CalendarRange, Library,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -96,6 +96,7 @@ function DashboardLayout() {
       { key: "dash.classes",    to: "/dashboard/classes",    icon: Layers },
       { key: "dash.users",      to: "/dashboard/users",      icon: Users  },
       { key: "dash.timetables", to: "/dashboard/timetables", icon: CalendarRange },
+      { key: "dash.library",    to: "/dashboard/library",    icon: Library },
     ] : []),
     // L2 Gestion Administrative — admin only
     ...(isAdmin ? [

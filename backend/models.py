@@ -53,11 +53,18 @@ class ExamCreate(BaseModel):
     duration_minutes: int = 60
     start_time: Optional[str] = None
     course_id: str
+    type: str = "examen"  # 'examen' | 'quiz'
     questions: list[QuestionCreate] = []
 
 
 class ExamAnswers(BaseModel):
     answers: dict[str, int]
+
+
+class GenerateQuestionsRequest(BaseModel):
+    course_id: str
+    topic: Optional[str] = None
+    num_questions: int = 5
 
 
 class MeetingCreate(BaseModel):
@@ -92,6 +99,15 @@ class CreateUserRequest(BaseModel):
 class ClassCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    specialty_id: Optional[str] = None
+    year_number: Optional[int] = None
+
+
+class ClassUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    specialty_id: Optional[str] = None
+    year_number: Optional[int] = None
 
 
 class AddStudentRequest(BaseModel):
@@ -118,13 +134,14 @@ class StudentDetailsUpdate(BaseModel):
 
 
 class DocumentGenerate(BaseModel):
-    type: str  # 'attestation_scolarite' | 'certificat' | 'convocation'
+    type: str  # 'attestation_scolarite' | 'certificat' | 'convocation' | 'releve_notes'
     student_id: str
 
 
 class ScheduleCreate(BaseModel):
     class_id: Optional[str] = None
     professor_id: Optional[str] = None
+    course_id: Optional[str] = None
     room: str
     title: Optional[str] = None
     start_time: str
@@ -135,11 +152,38 @@ class ScheduleCreate(BaseModel):
 class ScheduleUpdate(BaseModel):
     class_id: Optional[str] = None
     professor_id: Optional[str] = None
+    course_id: Optional[str] = None
     room: Optional[str] = None
     title: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
     recurrence: Optional[str] = None
+
+
+# ── Specialties (filières) ──────────────────────────────────────────────────
+class SpecialtyCreate(BaseModel):
+    name: str
+
+
+class SpecialtyUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+# ── Attendance ───────────────────────────────────────────────────────────────
+class AttendanceEntry(BaseModel):
+    student_id: str
+    status: str = "present"  # 'present' | 'absent' | 'retard' | 'excuse'
+
+
+class AttendanceMark(BaseModel):
+    entries: list[AttendanceEntry]
+
+
+# ── Continuous-assessment grade weighting ───────────────────────────────────
+class CourseGradeWeightsUpdate(BaseModel):
+    exam_weight: int
+    devoir_weight: int
+    quiz_weight: int
 
 
 class AnnouncementCreate(BaseModel):

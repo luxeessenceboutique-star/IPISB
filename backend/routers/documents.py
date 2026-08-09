@@ -5,8 +5,33 @@ from deps import get_current_user, get_db, CurrentUser, FRONTEND_URL
 from models import DocumentGenerate
 from utils.audit import log_audit
 from utils.documents import DOCUMENT_LABELS, new_verification_code, render_document_pdf
+from utils.pdf_generators import render_transcript_pdf
+from routers.grades import compute_course_grade
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+def _build_transcript_pdf(db: Client, student: dict) -> bytes:
+    class_rows = (
+        db.from_("class_students").select("classes(id, name)")
+        .eq("student_id", student["id"]).limit(1).execute().data or []
+    )
+    class_info = class_rows[0].get("classes") if class_rows else None
+    class_name = class_info.get("name") if class_info else None
+
+    course_ids: list[str] = []
+    if class_info:
+        cc = db.from_("class_courses").select("course_id").eq("class_id", class_info["id"]).execute().data or []
+        course_ids = [r["course_id"] for r in cc]
+
+    courses_out = []
+    if course_ids:
+        courses = db.from_("courses").select("id, title, credits").in_("id", course_ids).execute().data or []
+        for course in courses:
+            grade_info = compute_course_grade(db, course["id"], student["id"])
+            courses_out.append({**course, "grade": grade_info["grade"]})
+
+    return render_transcript_pdf({**student, "class_name": class_name}, courses_out)
 
 BUCKET = "documents"
 SIGNED_URL_TTL = 60 * 60  # 1 hour
@@ -58,12 +83,15 @@ async def generate_document(
 
     code = new_verification_code()
     verify_url = f"{FRONTEND_URL}/verify/{code}"
-    pdf_bytes = render_document_pdf(
-        doc_type=body.type,
-        student_name=student[0]["full_name"] or "—",
-        verification_code=code,
-        verify_url=verify_url,
-    )
+    if body.type == "releve_notes":
+        pdf_bytes = _build_transcript_pdf(db, student[0])
+    else:
+        pdf_bytes = render_document_pdf(
+            doc_type=body.type,
+            student_name=student[0]["full_name"] or "—",
+            verification_code=code,
+            verify_url=verify_url,
+        )
 
     file_path = f"{code}.pdf"
     try:

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { api } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { GraduationCap, Plus, Loader2, Timer, AlertTriangle, ChevronRight, Trash2, Eye, EyeOff } from "lucide-react";
+import { GraduationCap, Plus, Loader2, Timer, AlertTriangle, ChevronRight, Trash2, Eye, EyeOff, Sparkles } from "lucide-react";
 import { ListSkeleton } from "@/components/Skeletons";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
@@ -23,7 +24,7 @@ export const Route = createFileRoute("/dashboard/exams")({
   component: ExamsPage,
 });
 
-type Exam = { id: string; course_id: string; title: string; description: string | null; duration_minutes: number; start_time: string | null; end_time: string | null; is_published: boolean; created_at: string; course_title?: string; question_count?: number; my_response?: ExamResponse | null };
+type Exam = { id: string; course_id: string; title: string; description: string | null; duration_minutes: number; start_time: string | null; end_time: string | null; is_published: boolean; created_at: string; type?: "examen" | "quiz"; course_title?: string; question_count?: number; my_response?: ExamResponse | null };
 type Question = { id: string; exam_id: string; question: string; options: string[]; correct_index: number; order_num: number };
 type ExamResponse = { id: string; answers: Record<string, number>; score: number | null; total: number | null; submitted_at: string };
 type Course = { id: string; title: string };
@@ -41,8 +42,9 @@ function ExamsPage() {
   const [loading,    setLoading]    = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [creating,   setCreating]   = useState(false);
-  const [createForm, setCreateForm] = useState({ title: "", description: "", duration_minutes: "60", course_id: "" });
+  const [createForm, setCreateForm] = useState({ title: "", description: "", duration_minutes: "60", course_id: "", type: "examen" as "examen" | "quiz" });
   const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
+  const [generatingAI, setGeneratingAI] = useState(false);
 
   const [takingExam, setTakingExam] = useState<{ exam: Exam; questions: Question[] } | null>(null);
   const [answers,    setAnswers]    = useState<Record<string, number>>({});
@@ -181,18 +183,35 @@ function ExamsPage() {
     const validQuestions = draftQuestions.filter(q => q.question.trim() && q.options.some(o => o.trim()));
     setCreating(true);
     try {
-      const { data: examRow, error } = await supabase.from("exams").insert({ title: createForm.title, description: createForm.description || null, duration_minutes: parseInt(createForm.duration_minutes) || 60, course_id: createForm.course_id, is_published: false }).select().single();
+      const { data: examRow, error } = await supabase.from("exams").insert({ title: createForm.title, description: createForm.description || null, duration_minutes: parseInt(createForm.duration_minutes) || 60, course_id: createForm.course_id, type: createForm.type, is_published: false }).select().single();
       if (error || !examRow) throw error ?? new Error("Failed to create exam");
       if (validQuestions.length) {
         await supabase.from("exam_questions").insert(validQuestions.map((q, i) => ({ exam_id: (examRow as any).id, question: q.question, options: q.options, correct_index: q.correct_index, order_num: i })));
       }
       toast.success(t("exams.created"));
       setShowCreate(false);
-      setCreateForm({ title: "", description: "", duration_minutes: "60", course_id: "" });
+      setCreateForm({ title: "", description: "", duration_minutes: "60", course_id: "", type: "examen" });
       setDraftQuestions([{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
       load();
     } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
     finally { setCreating(false); }
+  }
+
+  async function generateWithAI() {
+    if (!createForm.course_id) { toast.error(lang === "fr" ? "Choisissez d'abord un cours" : "Choose a course first"); return; }
+    setGeneratingAI(true);
+    try {
+      const drafts: DraftQuestion[] = await api.post("/api/exams/questions/generate", {
+        course_id: createForm.course_id, num_questions: 5,
+      });
+      const isBlankStart = draftQuestions.length === 1 && !draftQuestions[0].question.trim();
+      setDraftQuestions(qs => isBlankStart ? drafts : [...qs, ...drafts]);
+      toast.success(lang === "fr" ? `${drafts.length} questions générées — relisez avant d'enregistrer` : `${drafts.length} questions generated — review before saving`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : (lang === "fr" ? "Échec de la génération" : "Generation failed"));
+    } finally {
+      setGeneratingAI(false);
+    }
   }
 
   const fmtTime = (secs: number) => `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
@@ -350,7 +369,7 @@ function ExamsPage() {
 
       {/* Create */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] sm:max-w-2xl overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display">{t("exams.create")}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
@@ -364,9 +383,30 @@ function ExamsPage() {
               <div><label className="text-sm font-medium">{t("exams.form.title")} *</label><Input className="mt-1.5" value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} /></div>
               <div><label className="text-sm font-medium">{t("exams.form.duration")}</label><Input className="mt-1.5" type="number" min="5" value={createForm.duration_minutes} onChange={e => setCreateForm(f => ({ ...f, duration_minutes: e.target.value }))} /></div>
             </div>
+            <div>
+              <label className="text-sm font-medium">{lang === "fr" ? "Type" : "Type"}</label>
+              <Select value={createForm.type} onValueChange={v => setCreateForm(f => ({ ...f, type: v as "examen" | "quiz" }))}>
+                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="examen">{lang === "fr" ? "Examen" : "Exam"}</SelectItem>
+                  <SelectItem value="quiz">Quiz</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div><label className="text-sm font-medium">{t("exams.form.description")}</label><Textarea className="mt-1.5" rows={2} value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} /></div>
             <div className="border-t border-border pt-4">
-              <h4 className="font-display font-semibold">{lang === "fr" ? "Questions QCM" : "MCQ Questions"}</h4>
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="font-display font-semibold">{lang === "fr" ? "Questions QCM" : "MCQ Questions"}</h4>
+                <Button type="button" variant="outline" size="sm" className="text-xs" disabled={generatingAI} onClick={generateWithAI}>
+                  {generatingAI ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  {lang === "fr" ? "Générer avec l'IA" : "Generate with AI"}
+                </Button>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {lang === "fr"
+                  ? "Génère des questions basées sur le style réel des examens IPAIS — à relire avant d'enregistrer."
+                  : "Generates questions grounded in real IPAIS exam style — review before saving."}
+              </p>
               <div className="mt-3 space-y-4">
                 {draftQuestions.map((q, qi) => (
                   <div key={qi} className="rounded-xl border border-border p-4">
@@ -403,7 +443,7 @@ function ExamsPage() {
 
       {/* Results */}
       <Dialog open={!!resultsExam} onOpenChange={o => !o && setResultsExam(null)}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] sm:max-w-2xl overflow-y-auto">
           <DialogHeader><DialogTitle className="font-display">{t("exams.results")} — {resultsExam?.exam.title}</DialogTitle></DialogHeader>
           {resultsExam && (
             <div className="space-y-4">

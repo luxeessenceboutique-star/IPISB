@@ -502,3 +502,79 @@ def render_payslip_pdf(record: dict, employee: dict) -> bytes:
     c.showPage()
     c.save()
     return buf.getvalue()
+
+
+def _mention(grade: float) -> str:
+    if grade >= 16:
+        return "Excellent"
+    if grade >= 14:
+        return "Bien"
+    if grade >= 12:
+        return "Assez bien"
+    if grade >= 10:
+        return "Passable"
+    return "Insuffisant"
+
+
+def render_transcript_pdf(student: dict, courses: list[dict], period_label: str = "") -> bytes:
+    """Relevé de notes — one row per course (contrôle continu grade /20 +
+    mention), with a credit-weighted overall average at the bottom."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    draw_header(c, "RELEVÉ DE NOTES")
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(20 * mm, height - 50 * mm, f"Étudiant : {student.get('full_name', 'N/A')}")
+    c.setFont("Helvetica", 9)
+    c.drawString(20 * mm, height - 56 * mm, f"Classe : {student.get('class_name', 'N/A') or '—'}")
+    if period_label:
+        c.drawRightString(width - 20 * mm, height - 50 * mm, period_label)
+
+    y = height - 70 * mm
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Cours")
+    c.drawString(120 * mm, y, "Coeff.")
+    c.drawString(140 * mm, y, "Note / 20")
+    c.drawRightString(width - 20 * mm, y, "Mention")
+    c.setLineWidth(0.5)
+    c.line(20 * mm, y - 2 * mm, width - 20 * mm, y - 2 * mm)
+
+    c.setFont("Helvetica", 9)
+    total_weighted, total_credits = 0.0, 0
+    for course in courses:
+        y -= 8 * mm
+        title = course.get("title", "—")
+        if len(title) > 45:
+            title = title[:42] + "..."
+        c.drawString(20 * mm, y, title)
+        credits = course.get("credits") or 1
+        c.drawString(120 * mm, y, str(credits))
+        grade = course.get("grade")
+        if grade is None:
+            c.drawString(140 * mm, y, "—")
+            c.drawRightString(width - 20 * mm, y, "Non évalué")
+        else:
+            c.drawString(140 * mm, y, f"{grade:.2f}")
+            c.drawRightString(width - 20 * mm, y, _mention(grade))
+            total_weighted += grade * credits
+            total_credits += credits
+
+    y -= 14 * mm
+    c.setLineWidth(0.8)
+    c.line(20 * mm, y + 5 * mm, width - 20 * mm, y + 5 * mm)
+    overall = round(total_weighted / total_credits, 2) if total_credits else None
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "MOYENNE GÉNÉRALE")
+    c.drawRightString(width - 20 * mm, y, f"{overall:.2f} / 20" if overall is not None else "—")
+
+    y -= 30 * mm
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(20 * mm, y, "Signature Direction")
+    c.drawRightString(width - 20 * mm, y, "Cachet de l'établissement")
+
+    draw_footer(c)
+    c.showPage()
+    c.save()
+    return buf.getvalue()

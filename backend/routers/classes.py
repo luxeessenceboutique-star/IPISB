@@ -2,9 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import ClassCreate, AddStudentRequest
+from models import ClassCreate, ClassUpdate, AddStudentRequest
 
 router = APIRouter(prefix="/classes", tags=["classes"])
+
+
+def _with_specialty(classes: list[dict], db: Client) -> list[dict]:
+    specialty_ids = list({c["specialty_id"] for c in classes if c.get("specialty_id")})
+    specialty_map: dict[str, str] = {}
+    if specialty_ids:
+        rows = db.from_("specialties").select("id, name").in_("id", specialty_ids).execute().data or []
+        specialty_map = {r["id"]: r["name"] for r in rows}
+    return [{**c, "specialty_name": specialty_map.get(c.get("specialty_id", ""))} for c in classes]
 
 
 @router.get("/all")
@@ -49,6 +58,7 @@ async def list_classes(
         profs = db.from_("profiles").select("id, full_name").in_("id", prof_ids).execute().data or []
         prof_map = {p["id"]: p["full_name"] or "—" for p in profs}
 
+    classes = _with_specialty(classes, db)
     return [
         {
             **c,
@@ -70,9 +80,34 @@ async def create_class(
     res = db.from_("classes").insert({
         "name": body.name,
         "description": body.description,
+        "specialty_id": body.specialty_id,
+        "year_number": body.year_number,
         "created_by": user.id,
     }).execute()
-    return res.data[0]
+    return _with_specialty(res.data, db)[0]
+
+
+@router.patch("/{class_id}")
+async def update_class(
+    class_id: str,
+    body: ClassUpdate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    cls = db.from_("classes").select("created_by").eq("id", class_id).execute().data
+    if not cls:
+        raise HTTPException(404, "Classe introuvable")
+    if not user.is_admin() and cls[0]["created_by"] != user.id:
+        raise HTTPException(403, "Non autorisé")
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(400, "Aucun champ à modifier")
+
+    res = db.from_("classes").update(updates).eq("id", class_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Classe introuvable")
+    return _with_specialty(res.data, db)[0]
 
 
 @router.delete("/{class_id}")

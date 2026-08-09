@@ -12,6 +12,7 @@ DOCUMENT_LABELS = {
     "attestation_scolarite": "Attestation de Scolarité",
     "certificat": "Certificat",
     "convocation": "Convocation",
+    "releve_notes": "Relevé de Notes",
 }
 
 
