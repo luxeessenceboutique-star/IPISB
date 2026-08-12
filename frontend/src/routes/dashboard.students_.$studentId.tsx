@@ -248,8 +248,7 @@ function FilesTab({ student, onPhotoChanged, onPreview }: {
       const res = await api.get(`/api/students/${student.id}/files/${f.id}/download`);
       if (!res.signed_url) return;
       if (urlIsInlineViewable(res.signed_url)) {
-        onPreview({ url: res.signed_url, title: `${FILE_TYPE_LABEL[f.type] ?? f.type} — ${f.filename}`, isPdf: urlIsPdf(res.signed_url) || /\.(jpe?g|png)$/i.test(res.signed_url.split("?")[0]) ? urlIsPdf(res.signed_url) : false });
-        if (!urlIsPdf(res.signed_url)) window.open(res.signed_url, "_blank");
+        onPreview({ url: res.signed_url, title: `${FILE_TYPE_LABEL[f.type] ?? f.type} — ${f.filename}`, isPdf: urlIsPdf(res.signed_url) });
       } else {
         window.open(res.signed_url, "_blank");
       }

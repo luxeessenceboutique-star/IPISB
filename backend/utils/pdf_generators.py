@@ -4,6 +4,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
+from utils import institution
+
 def fmt_mad(value) -> str:
     try:
         val = float(value or 0)
@@ -14,11 +16,11 @@ def fmt_mad(value) -> str:
 def draw_header(c, title: str):
     width, height = A4
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(20 * mm, height - 25 * mm, "IPISB")
+    c.drawString(20 * mm, height - 25 * mm, institution.SHORT_NAME)
     c.setFont("Helvetica", 9)
-    c.drawString(20 * mm, height - 30 * mm, "Institut Privé d'Innovation en Santé et Bien-être")
-    c.drawString(20 * mm, height - 34 * mm, "Rabat, Maroc")
-    
+    c.drawString(20 * mm, height - 30 * mm, institution.NAME)
+    c.drawString(20 * mm, height - 34 * mm, institution.CITY + " — MAROC")
+
     c.setFont("Helvetica-Bold", 14)
     c.drawRightString(width - 20 * mm, height - 25 * mm, title)
     

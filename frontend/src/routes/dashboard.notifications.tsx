@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -24,6 +24,7 @@ const TYPE_CHIP: Record<string, string> = { info: "chip-c-blue", success: "chip-
 function NotificationsPage() {
   const { t, lang } = useI18n();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState<string | null>(null);
@@ -103,7 +104,12 @@ function NotificationsPage() {
               <div
                 key={n.id}
                 className="row-c"
-                style={n.read ? undefined : { background: "oklch(97% 0.015 165 / .6)" }}
+                style={{ ...(n.read ? undefined : { background: "oklch(97% 0.015 165 / .6)" }), cursor: n.link ? "pointer" : undefined }}
+                onClick={() => {
+                  if (!n.link) return;
+                  if (!n.read) markRead(n.id);
+                  navigate({ to: n.link });
+                }}
               >
                 <span
                   className="flex shrink-0 items-center justify-center rounded-full"
@@ -125,11 +131,11 @@ function NotificationsPage() {
                 <span className="shrink-0 whitespace-nowrap" style={{ fontSize: 11.5, color: "var(--pal-muted)" }}>{fmtDate(n.created_at)}</span>
                 <div className="flex shrink-0 items-center gap-1">
                   {!n.read && (
-                    <button type="button" disabled={marking === n.id} onClick={() => markRead(n.id)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title={t("notifications.mark_read")}>
+                    <button type="button" disabled={marking === n.id} onClick={e => { e.stopPropagation(); markRead(n.id); }} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title={t("notifications.mark_read")}>
                       {marking === n.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
                     </button>
                   )}
-                  <button type="button" onClick={() => deleteNotification(n.id)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete">
+                  <button type="button" onClick={e => { e.stopPropagation(); deleteNotification(n.id); }} className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>

@@ -40,6 +40,16 @@ def _require_staff(user: CurrentUser):
         raise HTTPException(403, "Staff only")
 
 
+def _my_specialty_ids(db: Client, user_id: str) -> set[str]:
+    """A professor's filière(s) — inferred from the classes they created,
+    since there's no direct professor->specialty table. Admins bypass this
+    entirely (see call sites); this is only ever consulted for professors."""
+    rows = (
+        db.from_("classes").select("specialty_id").eq("created_by", user_id).execute().data or []
+    )
+    return {r["specialty_id"] for r in rows if r.get("specialty_id")}
+
+
 @router.get("/categories")
 async def list_categories(user: Annotated[CurrentUser, Depends(get_current_user)]):
     _require_staff(user)
@@ -58,8 +68,24 @@ async def list_files(
         raise HTTPException(404, "Unknown category")
 
     query = db.from_("library_files").select("*, specialties(name)").eq("category", category)
-    if specialty_id:
+
+    # Admins see every filière's documents, always. A professor only sees
+    # their own filière(s) — inferred from the classes they created — plus
+    # anything genuinely institution-wide (specialty_id IS NULL, e.g. a
+    # single "Liste des Coefficients" that covers several filières at once).
+    if not user.is_admin() and category in SPECIALTY_SCOPED:
+        my_specialties = _my_specialty_ids(db, user.id)
+        if specialty_id:
+            if specialty_id not in my_specialties:
+                raise HTTPException(403, "Ce n'est pas votre filière")
+            query = query.eq("specialty_id", specialty_id)
+        elif my_specialties:
+            query = query.or_(f"specialty_id.in.({','.join(my_specialties)}),specialty_id.is.null")
+        else:
+            query = query.is_("specialty_id", "null")
+    elif specialty_id:
         query = query.eq("specialty_id", specialty_id)
+
     rows = query.order("created_at", desc=True).execute().data or []
 
     return [
@@ -96,6 +122,9 @@ async def upload_file(
     # else: specialty_id stays optional even for scoped categories — NULL means
     # "toutes filières / général" (some real documents, e.g. a single "Liste des
     # Coefficients" file covering 3 filières at once, genuinely aren't one filière).
+    elif specialty_id and not user.is_admin():
+        if specialty_id not in _my_specialty_ids(db, user.id):
+            raise HTTPException(403, "Ce n'est pas votre filière")
 
     content_type = file.content_type or "application/octet-stream"
     clean = safe_filename(file.filename or "file")

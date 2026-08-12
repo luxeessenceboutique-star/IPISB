@@ -37,6 +37,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
+from utils import institution
+
 log = logging.getLogger(__name__)
 
 BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://toknroutertybot.tybotflow.com/")
@@ -55,7 +57,17 @@ SUPPORTED_FIELDS = {
     "last_name": "le nom de famille SEUL, quand le document sépare « Nom » et « Prénom(s) »",
     "first_name": "le ou les prénoms SEULS, quand ils sont séparés du nom de famille",
     "student_email": "son adresse email",
-    "class_name": "sa classe, filière ou promotion",
+    "class_name": "sa classe, son groupe ou sa promotion (ex. « Groupe B », « Classe 2 »)",
+    "filiere": (
+        "sa filière / spécialité / branche de formation (ex. « Infirmier "
+        "Polyvalent », « Aide-Soignant ») — la matière étudiée, PAS le nom du "
+        "groupe de classe"
+    ),
+    "niveau": (
+        "son niveau / son année d'études dans la formation (ex. « 1ère année », "
+        "« 2ème année », « Licence »)"
+    ),
+    "enrollment_date": "sa date d'inscription / d'entrée dans l'établissement",
     "date_of_birth": "sa date de naissance",
     "place_of_birth": "son lieu de naissance",
     "city": "la ville où le document est établi/signé (ex. la ville après « Fait à »)",
@@ -67,6 +79,28 @@ SUPPORTED_FIELDS = {
         "téléphone). ATTENTION : le nom d'une faculté ou d'un département n'est "
         "PAS une adresse — c'est other_personal"
     ),
+    "establishment_legal_status": (
+        "le statut légal/administratif de l'établissement de l'exemple (ex. "
+        "« Établissement de Formation Professionnelle Privé », « Université "
+        "publique »)"
+    ),
+    "establishment_authorization": (
+        "le numéro et/ou la date d'autorisation officielle d'ouverture de "
+        "l'établissement de l'exemple (ex. « Autorisé sous N° … du … »)"
+    ),
+    "establishment_website": "le site web de l'établissement de l'exemple",
+    "establishment_email": "l'adresse email de contact de l'établissement de l'exemple (pas celle de l'étudiant)",
+    "establishment_director_name": (
+        "le nom (avec civilité — Mme/M.) du directeur ou de la directrice de "
+        "l'ÉTABLISSEMENT de l'exemple lui-même — PAS un autre signataire (doyen, "
+        "chef de scolarité, responsable de stage…). C'est un fait permanent de "
+        "l'établissement, pas une donnée à effacer"
+    ),
+    "establishment_director_title": (
+        "le titre du directeur/de la directrice de l'établissement de l'exemple "
+        "(ex. « Directeur de l'Établissement », « Directrice de l'Établissement »), "
+        "séparément de son nom"
+    ),
     "verification_code": "un code de référence ou de vérification déjà présent sur le document",
     "cin": "son numéro de carte d'identité nationale (CIN)",
     "matricule": (
@@ -76,7 +110,9 @@ SUPPORTED_FIELDS = {
     "other_personal": (
         "toute AUTRE donnée spécifique à l'exemple qui ne correspond à aucun champ "
         "ci-dessus : téléphone, niveau d'études, "
-        "faculté/département, noms des signataires, et pour un stage TOUTES les "
+        "faculté/département, noms des AUTRES signataires (PAS le directeur/la "
+        "directrice de l'établissement lui-même, voir establishment_director_name/"
+        "title ci-dessus), et pour un stage TOUTES les "
         "informations du stage (nom de l'entreprise, numéro d'immatriculation/RC, "
         "adresse de l'entreprise, dates et durée du stage, sujet du stage, "
         "encadrants/superviseurs)… Chaque valeur sera effacée du document généré "
@@ -89,7 +125,10 @@ FIELD_LABELS = {
     "last_name": "Nom de famille",
     "first_name": "Prénom",
     "student_email": "Email",
-    "class_name": "Classe / filière",
+    "class_name": "Classe / groupe",
+    "filiere": "Filière de formation",
+    "niveau": "Niveau de formation",
+    "enrollment_date": "Date d'inscription",
     "date_of_birth": "Date de naissance",
     "place_of_birth": "Lieu de naissance",
     "city": "Ville",
@@ -98,6 +137,12 @@ FIELD_LABELS = {
     "academic_year": "Année scolaire",
     "establishment_name": "Nom de l'établissement",
     "establishment_address": "Adresse de l'établissement",
+    "establishment_legal_status": "Statut légal de l'établissement",
+    "establishment_authorization": "N° d'autorisation de l'établissement",
+    "establishment_website": "Site web de l'établissement",
+    "establishment_email": "Email de l'établissement",
+    "establishment_director_name": "Nom du directeur/de la directrice",
+    "establishment_director_title": "Titre du directeur/de la directrice",
     "verification_code": "Code de vérification",
     "cin": "N° CIN",
     "matricule": "Matricule",
@@ -158,6 +203,85 @@ def _field_vocab_prompt() -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Deterministic institution-fact detection — runs BEFORE the LLM pass and
+# always wins where the two disagree.
+#
+# The LLM's "other_personal → erase" rule exists to protect against a real
+# risk: an uploaded example is usually a DIFFERENT institution's document
+# (a school the admin found online, a colleague's old file), so a
+# signatory's name in it is somebody else's business, correctly erased. But
+# when the "example" IS our own institution's real template — the normal
+# case once IPISB has its own house style — that same rule blanks out
+# facts that should be on every single document: OUR director's name and
+# title, OUR address, OUR authorization number. No amount of prompt
+# tuning makes an LLM's judgment call 100% reliable (temperature-0 recall
+# still varies run to run, per the 3-pass union below); matching our own
+# already-known-correct strings by exact text is not a judgment call.
+# ─────────────────────────────────────────────────────────────────────────
+
+def _known_institution_field_specs() -> list[tuple[str, str]]:
+    """(field_key, exact phrase) for every fixed institutional fact that
+    might appear verbatim in an uploaded example. Longer, more specific
+    phrases first — institution.ADDRESS contains institution.CITY, so
+    matching the full address first and letting the merge below drop any
+    shorter/nested LLM guess (e.g. a stray "city" tag on just "El Jadida"
+    inside it) keeps the two from fighting over the same span."""
+    return [
+        ("establishment_address", institution.ADDRESS),
+        ("establishment_authorization", institution.AUTHORIZATION),
+        ("establishment_legal_status", institution.LEGAL_STATUS),
+        ("establishment_director_name", f"{institution.DIRECTOR_CIVILITY} {institution.DIRECTOR_NAME}"),
+        ("establishment_director_title", institution.DIRECTOR_TITLE),
+        ("establishment_name", institution.NAME),
+        ("establishment_phone", institution.PHONE),
+        ("establishment_website", institution.WEBSITE),
+        ("establishment_email", institution.EMAIL),
+        # There is deliberately no bare-"IPISB" short-name field at all
+        # (removed from SUPPORTED_FIELDS entirely, not just here): self-
+        # replacing "IPISB" with "IPISB" is a no-op with zero benefit, and
+        # testing showed real cost — a substring match hits it INSIDE
+        # www.ipisb.com and ipisbj.infirmiers@gmail.com too (corrupting
+        # both to "www.IPISB.com" / "IPISBj.infirmiers@gmail.com"), and
+        # even the LLM's own better-judged match still stripped the
+        # guillemets off "« IPISB »" when replacing it with the bare value.
+        # Leaving "IPISB" as untouched fixed boilerplate is strictly safer.
+        ("city", institution.CITY),
+    ]
+
+
+def _detect_known_institution_fields(text: str) -> list[dict]:
+    """Only emits a field for a phrase that's actually IN this document —
+    an uploaded template that predates a constant (e.g. an old file without
+    the authorization number) simply doesn't get that entry, same as if
+    the LLM had never found it either."""
+    norm = _norm_text(text)
+    return [
+        {"key": key, "mode": "replace", "anchor_text": phrase}
+        for key, phrase in _known_institution_field_specs()
+        if _norm_text(phrase) in norm
+    ]
+
+
+def _merge_known_institution(text: str, llm_fields: list[dict]) -> list[dict]:
+    """Deterministic matches first, then whatever the LLM found that isn't
+    just a different (or partial/mistagged) guess at the same span —
+    dropped by substring overlap on normalized text, in either direction,
+    so a shorter mistagged guess nested inside a known phrase (or a longer
+    LLM span that happens to swallow one) doesn't also survive and issue a
+    second, conflicting edit instruction for the same text."""
+    known = _detect_known_institution_fields(text)
+    if not known:
+        return llm_fields
+    known_norms = [_norm_text(k["anchor_text"]) for k in known]
+    filtered = [
+        f for f in llm_fields
+        if not any(na == kn or na in kn or kn in na
+                  for na in [_norm_text(f["anchor_text"])] for kn in known_norms)
+    ]
+    return known + filtered
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Text extraction (docx / pdf)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -200,9 +324,18 @@ _JINJA_EXACT = {
     "code_massar": "matricule",
     "cne": "matricule",
     "numero_etudiant": "matricule",
+    "numero_inscription": "matricule",
     "annee_universitaire": "academic_year",
     "annee_scolaire": "academic_year",
-    "filiere_etudes": "class_name",
+    "classe": "class_name",
+    "filiere": "filiere",
+    "filiere_formation": "filiere",
+    "filiere_etudes": "filiere",
+    "specialite": "filiere",
+    "niveau": "niveau",
+    "niveau_formation": "niveau",
+    "annee_formation": "niveau",
+    "date_inscription": "enrollment_date",
     "email_etudiant": "student_email",
     "date_edition": "issue_date",
     "date_emission": "issue_date",
@@ -211,6 +344,13 @@ _JINJA_EXACT = {
     "nom_etablissement": "establishment_name",
     "adresse_etablissement": "establishment_address",
     "telephone_etablissement": "establishment_phone",
+    "statut_etablissement": "establishment_legal_status",
+    "statut_juridique": "establishment_legal_status",
+    "autorisation": "establishment_authorization",
+    "numero_autorisation": "establishment_authorization",
+    "site_web": "establishment_website",
+    "site_internet": "establishment_website",
+    "email_etablissement": "establishment_email",
     "code_verification": "verification_code",
 }
 
@@ -228,10 +368,25 @@ def _jinja_field_key(var: str) -> str:
         return "cin"
     if "naissance" in v:
         return "place_of_birth" if "lieu" in v else "date_of_birth"
+    # "inscription" before the generic date/numero rules: a date_inscription is
+    # an enrolment date, not the document's issue date, and a numero_inscription
+    # is the student's registration number.
+    if "inscription" in v or "inscrit" in v:
+        return "enrollment_date" if "date" in v else "matricule"
+    if "filiere" in v or "specialit" in v or "branche" in v:
+        return "filiere"
+    if "niveau" in v or "cycle" in v:
+        return "niveau"
     if "annee" in v:
         return "academic_year"
-    if "filiere" in v or "classe" in v:
+    if "classe" in v or "groupe" in v or "promotion" in v:
         return "class_name"
+    if "autorisation" in v or "agrement" in v:
+        return "establishment_authorization"
+    if "site" in v and ("web" in v or "internet" in v):
+        return "establishment_website"
+    if ("email" in v or "mail" in v) and "etablissement" in v:
+        return "establishment_email"
     if "email" in v or "mail" in v:
         return "student_email"
     if "ville" in v:
@@ -240,6 +395,8 @@ def _jinja_field_key(var: str) -> str:
         return "establishment_address" if "etablissement" in v else "other_personal"
     if "telephone" in v or "tel" in v:
         return "establishment_phone" if "etablissement" in v else "other_personal"
+    if "statut" in v:
+        return "establishment_legal_status" if "etablissement" in v else "other_personal"
     if "date" in v:
         return "issue_date"
     if "prenom" in v:
@@ -311,6 +468,12 @@ def _detect_fields_from_text(text: str) -> list[dict]:
         "s'agit d'une autre école ou université) doivent être tagués "
         "establishment_name / establishment_address en mode replace — ils "
         "seront remplacés par ceux de notre établissement.\n"
+        "- De la même façon, si l'exemple mentionne le statut légal de "
+        "l'établissement (ex. « Établissement de Formation Professionnelle "
+        "Privé »), un numéro/date d'autorisation officielle, un site web ou "
+        "un email de l'établissement (pas celui de l'étudiant) → "
+        "establishment_legal_status / establishment_authorization / "
+        "establishment_website / establishment_email en mode replace.\n"
         "- Toute autre valeur propre à l'exemple → une entrée other_personal "
         "PAR VALEUR : numéro d'étudiant, niveau, faculté/département, "
         "signataires, et pour un stage : entreprise, numéro RC, adresse de "
@@ -319,18 +482,35 @@ def _detect_fields_from_text(text: str) -> list[dict]:
         "document réutilisé.\n"
         "- Le niveau, cycle ou l'année d'études de l'exemple (ex. \"3ème Année "
         "(Licence Professionnelle)\", \"Licence\", \"Master\", \"1ere année\", "
-        "\"2ème année\") → une entrée other_personal PAR VALEUR s'il ne "
-        "correspond pas exactement à class_name — ne saute JAMAIS ces valeurs, "
-        "même écrites seules après un label comme \"Cycle d'étude\" ou "
+        "\"2ème année\") → niveau, JAMAIS other_personal — ne saute JAMAIS ces "
+        "valeurs, même écrites seules après un label comme \"Cycle d'étude\" ou "
         "\"Niveau\".\n"
         "- La filière/spécialité/le domaine d'études de l'exemple (ex. "
-        "\"Biologie Médicale\") → class_name en mode replace, JAMAIS "
-        "other_personal.\n"
+        "\"Biologie Médicale\", \"Infirmier Polyvalent\") → filiere en mode "
+        "replace, JAMAIS other_personal. Le nom du GROUPE de classe (ex. "
+        "\"Groupe B\") reste class_name.\n"
+        "- La date d'inscription / d'entrée dans l'établissement → "
+        "enrollment_date, à ne pas confondre avec issue_date (la date à "
+        "laquelle le document est établi, après « Fait à … le »).\n"
         "- Le lieu de naissance de l'exemple (ou son label seul, ex. \"Lieu "
         "de naissance :\") → place_of_birth, JAMAIS other_personal.\n"
         "- Le nom d'établissement figurant dans l'en-tête du document → "
         "establishment_name, même s'il est écrit en majuscules ou collé sans "
         "espaces (le texte peut provenir d'une reconnaissance optique).\n"
+        "- Le nom du directeur/de la directrice DE L'ÉTABLISSEMENT lui-même "
+        "(ex. dans une formule \"Je soussigné(e), Mme/M. X, Directeur/Directrice "
+        "de l'Établissement…\") → establishment_director_name pour le nom "
+        "(avec civilité), establishment_director_title pour son titre — "
+        "JAMAIS other_personal, ce n'est pas une donnée à effacer, c'est un "
+        "fait permanent de l'établissement. Ne confonds pas avec un AUTRE "
+        "signataire (doyen, responsable de stage, chef de scolarité) qui "
+        "reste other_personal.\n"
+        "- Une ligne de contact en pied de page groupant téléphone, site web "
+        "et/ou email de l'établissement (ex. \"Tél : … • www.… • …@…\") → "
+        "repère CHAQUE partie séparément : establishment_phone, "
+        "establishment_website, establishment_email. Ne saute jamais l'email "
+        "ou le site sous prétexte qu'ils sont accolés au téléphone sur la "
+        "même ligne.\n"
         "- Une valeur qui se répète plusieurs fois dans le document : une "
         "seule entrée suffit, toutes les occurrences seront remplacées "
         "automatiquement.\n\n"
@@ -566,7 +746,8 @@ def _suppress_nested_pdf_hits(located: list[dict]) -> list[dict]:
 
 def _detect_fields_pdf_via_text(file_bytes: bytes, text: str) -> list[dict]:
     import pdfplumber
-    fields = _detect_fields_jinja(text) or _detect_fields_from_text(text)
+    jinja_fields = _detect_fields_jinja(text)
+    fields = jinja_fields if jinja_fields else _merge_known_institution(text, _detect_fields_from_text(text))
     located: list[dict] = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for field in fields:
@@ -616,7 +797,7 @@ def _detect_fields_pdf_via_vision(file_bytes: bytes) -> list[dict]:
             page_fields: list[dict] = []
             if lines:
                 text = "\n".join(ln["text"] for ln in lines)
-                tagged = _detect_fields_from_text(text)
+                tagged = _merge_known_institution(text, _detect_fields_from_text(text))
                 page_fields = _locate_fields_via_ocr(lines, tagged)
             if not page_fields:
                 buf = io.BytesIO()
@@ -857,7 +1038,7 @@ def _detect_fields_image(file_bytes: bytes, content_type: str) -> list[dict]:
     lines = _ocr_lines(img)
     if lines:
         text = "\n".join(ln["text"] for ln in lines)
-        fields = _detect_fields_from_text(text)
+        fields = _merge_known_institution(text, _detect_fields_from_text(text))
         located = _locate_fields_via_ocr(lines, fields)
         if located:
             return located + zones
@@ -873,7 +1054,8 @@ def detect_fields(file_bytes: bytes, file_kind: str, content_type: str = "") -> 
     try:
         if file_kind == "docx":
             text = _extract_docx_text(file_bytes)
-            return _detect_fields_jinja(text) or _detect_fields_from_text(text)
+            jinja_fields = _detect_fields_jinja(text)
+            return jinja_fields if jinja_fields else _merge_known_institution(text, _detect_fields_from_text(text))
         if file_kind == "pdf":
             return _detect_fields_pdf(file_bytes)
         if file_kind == "image":

@@ -106,6 +106,13 @@ async def create_course(
 ):
     if not user.can_create():
         raise HTTPException(403, "Only professors and admins can create courses")
+    # Required going forward so AI generation has something real to ground on
+    # beyond the title (see utils/course_generation.py) — only enforced here,
+    # at creation. Existing courses created before this check, and rows
+    # inserted directly (seed_e2e.py, bulk imports), are untouched: nothing
+    # downstream requires a description, generation just uses it when present.
+    if not body.description or len(body.description.strip()) < 15:
+        raise HTTPException(400, "La description est obligatoire (au moins 15 caractères) pour permettre une génération IA fiable.")
 
     res = db.from_("courses").insert({
         "title":       body.title,

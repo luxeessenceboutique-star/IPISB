@@ -45,6 +45,48 @@ class QuestionCreate(BaseModel):
     options: list[str]
     correct_index: int
     order_num: int = 0
+    type: str = "multiple_choice"  # 'multiple_choice' | 'true_false'
+    difficulty: str = "medium"     # 'easy' | 'medium' | 'hard'
+    points: float = 1
+    source_module_id: Optional[str] = None
+    source_lesson_id: Optional[str] = None
+
+
+class QuestionUpdate(BaseModel):
+    """All fields optional — PATCH only touches what the professor actually
+    changed. Image is edited through the dedicated upload/delete endpoints,
+    not here."""
+    question: Optional[str] = None
+    options: Optional[list[str]] = None
+    correct_index: Optional[int] = None
+    type: Optional[str] = None
+    difficulty: Optional[str] = None
+    points: Optional[float] = None
+    source_module_id: Optional[str] = None
+    source_lesson_id: Optional[str] = None
+
+
+class QuestionsReorder(BaseModel):
+    question_ids: list[str]  # full set of this exam's question ids, in the new display order
+
+
+class ExamContentScope(BaseModel):
+    """What course content this exam draws from — persisted so the
+    selection survives a refresh and (Phase 2) is what gets handed to the
+    AI generator. mode='full_course' ignores module_ids/lesson_ids."""
+    mode: str = "selected"  # 'full_course' | 'selected'
+    module_ids: list[str] = []
+    lesson_ids: list[str] = []
+
+
+class ExamGenerationConfig(BaseModel):
+    """Configuration screen (§5) values — read by Phase 2's AI generation,
+    but persisted now so the draft survives a refresh even before that
+    exists."""
+    target_question_count: int = 10
+    question_types: list[str] = ["multiple_choice"]
+    difficulty_mix: dict[str, int] = {"easy": 20, "medium": 60, "hard": 20}
+    default_points: float = 1
 
 
 class ExamCreate(BaseModel):
@@ -55,6 +97,22 @@ class ExamCreate(BaseModel):
     course_id: str
     type: str = "examen"  # 'examen' | 'quiz'
     questions: list[QuestionCreate] = []
+    content_scope: Optional[ExamContentScope] = None
+    generation_config: Optional[ExamGenerationConfig] = None
+    randomize_questions: bool = False
+    randomize_answers: bool = False
+
+
+class ExamUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    start_time: Optional[str] = None
+    type: Optional[str] = None
+    content_scope: Optional[ExamContentScope] = None
+    generation_config: Optional[ExamGenerationConfig] = None
+    randomize_questions: Optional[bool] = None
+    randomize_answers: Optional[bool] = None
 
 
 class ExamAnswers(BaseModel):
@@ -840,4 +898,23 @@ class PdiItemUpdate(BaseModel):
     target_date: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+
+
+# {module_id, lesson_id, slide_id} — slide_id is None for markdown-only lessons
+class TeachingSessionStart(BaseModel):
+    course_id: str
+    class_id: str
+    start_position: Optional[dict] = None
+
+
+class TeachingSessionPositionUpdate(BaseModel):
+    position: dict
+
+
+class TeachingSessionEnd(BaseModel):
+    end_position: Optional[dict] = None
+
+
+class SessionFeedbackSubmit(BaseModel):
+    answers: dict[str, int]  # {question_id: 1-5}
 

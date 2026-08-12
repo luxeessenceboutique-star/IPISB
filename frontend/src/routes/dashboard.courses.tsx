@@ -16,7 +16,7 @@ import { CardGridSkeleton } from "@/components/Skeletons";
 import { PageHead, DashAvatar, EmptyHint } from "@/components/dashboard/ui";
 import {
   FileText, Link2, Video, Upload, ExternalLink, Play,
-  File as FileIcon, FileImage, X, ChevronRight, Sparkles, RefreshCw, Maximize2, Minimize2, Presentation, Edit3, LayoutGrid,
+  File as FileIcon, FileImage, X, ChevronRight, Sparkles, RefreshCw, Maximize2, Minimize2, LayoutGrid,
 } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard/courses")({
@@ -225,12 +225,12 @@ function GradeWeightsModal({ course, onClose }: { course: Course; onClose: () =>
         ) : (
           <div className="space-y-3 py-1">
             <p className="text-xs text-muted-foreground">
-              Répartition du contrôle continu entre catégories d'évaluation (doit totaliser 100%).
+              Répartition de la note finale entre catégories d'évaluation (doit totaliser 100%).
               Chaque catégorie sans note aujourd'hui sera automatiquement ignorée dans le calcul.
             </p>
             {[
               { key: "exam_weight" as const, label: "Examens" },
-              { key: "devoir_weight" as const, label: "Devoirs" },
+              { key: "devoir_weight" as const, label: "Contrôle continu" },
               { key: "quiz_weight" as const, label: "Quiz" },
             ].map(f => (
               <div key={f.key} className="flex items-center gap-3">
@@ -620,17 +620,12 @@ function ModuleRow({ courseId, module: mod, canEdit, onChanged }: {
   const [savingModule, setSavingModule] = useState(false);
   const [savingLesson, setSavingLesson] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
-  const [images, setImages] = useState<LessonImage[]>(lesson?.images ?? []);
-  const [imageCaption, setImageCaption] = useState("");
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const imageFileRef = useRef<HTMLInputElement>(null);
   const contentFieldRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setTitle(mod.title); setObjectives(mod.objectives ?? "");
     setHoursTh(String(mod.hours_theory)); setHoursTp(String(mod.hours_practice));
     setContent(mod.lessons[0]?.content ?? "");
-    setImages(mod.lessons[0]?.images ?? []);
   }, [mod]);
 
   async function saveModule() {
@@ -674,79 +669,6 @@ function ModuleRow({ courseId, module: mod, canEdit, onChanged }: {
       toast.error(e.message || "Erreur");
     } finally {
       setSavingLesson(false);
-    }
-  }
-
-  // Placing an image "in the middle of the chapter" without a full rich-text
-  // editor: a plain-text token in the markdown content that the PDF renderer
-  // splices an image into at that exact spot (see utils/course_pdf.py). The
-  // prof can freely cut/paste the token to reposition it — it's just text.
-  function imageToken(id: string) {
-    return `[[image:${id}]]`;
-  }
-
-  function insertImageToken(id: string) {
-    const token = `\n\n${imageToken(id)}\n\n`;
-    const el = contentFieldRef.current;
-    if (!el) {
-      setContent(prev => prev + token);
-      return;
-    }
-    const start = el.selectionStart ?? content.length;
-    const end = el.selectionEnd ?? content.length;
-    const next = content.slice(0, start) + token + content.slice(end);
-    setContent(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      const pos = start + token.length;
-      el.setSelectionRange(pos, pos);
-    });
-  }
-
-  async function copyToken(id: string) {
-    try {
-      await navigator.clipboard.writeText(imageToken(id));
-      toast.success("Balise copiée — collez-la où vous voulez dans le texte");
-    } catch {
-      toast.error("Impossible de copier — sélectionnez le texte manuellement");
-    }
-  }
-
-  async function uploadImage(fileList: FileList | null) {
-    if (!lesson || !fileList || fileList.length === 0) return;
-    const file = fileList[0];
-    if (imageFileRef.current) imageFileRef.current.value = "";
-    setUploadingImage(true);
-    try {
-      const headers = await authHeader();
-      const form = new FormData();
-      form.append("file", file);
-      if (imageCaption.trim()) form.append("caption", imageCaption.trim());
-      const res = await fetch(`${API}/api/courses/${courseId}/modules/${mod.id}/lessons/${lesson.id}/images`, {
-        method: "POST", headers, body: form,
-      });
-      if (!res.ok) throw new Error(parseApiError(await res.text(), `HTTP ${res.status}`));
-      const img: LessonImage = await res.json();
-      setImages(prev => [...prev, img]);
-      setImageCaption("");
-      insertImageToken(img.id);
-      toast.success("Image ajoutée — placée dans le texte à l'endroit du curseur (déplaçable : coupez/collez la balise « [[image:… ]] »)");
-    } catch (e: any) {
-      toast.error(e.message || "Échec de l'ajout de l'image");
-    } finally {
-      setUploadingImage(false);
-    }
-  }
-
-  async function removeImage(image: LessonImage) {
-    if (!lesson) return;
-    if (!window.confirm("Supprimer cette image ?")) return;
-    try {
-      await api.delete(`/api/courses/${courseId}/modules/${mod.id}/lessons/${lesson.id}/images/${image.id}`);
-      setImages(prev => prev.filter(i => i.id !== image.id));
-      toast.success("Image supprimée");
-    } catch (e: any) {
-      toast.error(e.message || "Erreur");
     }
   }
 
@@ -883,64 +805,6 @@ function ModuleRow({ courseId, module: mod, canEdit, onChanged }: {
                     </Button>
                   </div>
                 )}
-
-                {/* Images — teacher-added illustrations, embedded into the PDF after the chapter text */}
-                {(images.length > 0 || canEdit) && (
-                  <div className="pt-2.5 border-t border-border/60 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Images du chapitre</p>
-                    {images.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {images.map(img => (
-                          <div key={img.id} className="relative w-20 shrink-0">
-                            <a href={img.url} target="_blank" rel="noopener noreferrer">
-                              <img src={img.url} alt={img.caption || ""} className="h-20 w-20 rounded-lg object-cover border border-border" />
-                            </a>
-                            {canEdit && (
-                              <button
-                                type="button"
-                                onClick={() => removeImage(img)}
-                                className="absolute -top-1.5 -right-1.5 h-5 w-5 flex items-center justify-center rounded-full bg-destructive text-white shadow"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            )}
-                            {img.caption && <p className="mt-1 text-[10px] text-muted-foreground line-clamp-2">{img.caption}</p>}
-                            {canEdit && (
-                              <button
-                                type="button"
-                                onClick={() => copyToken(img.id)}
-                                className="mt-0.5 text-[10px] text-primary hover:underline"
-                                title="Copier la balise pour la replacer ailleurs dans le texte"
-                              >
-                                Copier la balise
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {canEdit && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Input
-                          className="h-8 text-xs w-48"
-                          placeholder="Légende (optionnel)"
-                          value={imageCaption}
-                          onChange={e => setImageCaption(e.target.value)}
-                        />
-                        <label className="cursor-pointer">
-                          <input
-                            ref={imageFileRef} type="file" accept="image/jpeg,image/png,image/webp"
-                            className="hidden" onChange={e => uploadImage(e.target.files)}
-                          />
-                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-semibold hover:bg-muted transition-colors cursor-pointer">
-                            {uploadingImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                            Ajouter une image
-                          </div>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -950,85 +814,12 @@ function ModuleRow({ courseId, module: mod, canEdit, onChanged }: {
   );
 }
 
-/* ─── Live in-platform slide editor (ONLYOFFICE DocSpace) ──────────────
-   Not a from-scratch editor — a real office-suite engine running as its own
-   service, streamed into this page via an iframe the SDK manages. Verified
-   directly against the real DocSpace REST API + this exact SDK pattern
-   before wiring it in (see conversation notes), not guessed from docs. */
-let docSpaceSdkPromise: Promise<void> | null = null;
-function loadDocSpaceSdk(docspaceUrl: string): Promise<void> {
-  if ((window as any).DocSpace?.SDK) return Promise.resolve();
-  if (docSpaceSdkPromise) return docSpaceSdkPromise;
-  docSpaceSdkPromise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = `${docspaceUrl}/static/scripts/sdk/2.2.0/api.js`;
-    script.onload = () => resolve();
-    script.onerror = () => { docSpaceSdkPromise = null; reject(new Error("Impossible de charger l'éditeur en direct")); };
-    document.head.appendChild(script);
-  });
-  return docSpaceSdkPromise;
-}
-
-function DocSpaceEditorOverlay({ fileId, docspaceUrl, title, onClose }: {
-  fileId: string; docspaceUrl: string; title: string; onClose: () => void;
-}) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const frameRef = useRef<any>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadDocSpaceSdk(docspaceUrl)
-      .then(() => {
-        if (cancelled) return;
-        const sdk = (window as any).DocSpace?.SDK;
-        if (!sdk) { setError("Éditeur en direct indisponible pour le moment."); return; }
-        frameRef.current = sdk.initEditor({ frameId: "docspace-live-editor", src: docspaceUrl, id: fileId, width: "100%", height: "100%" });
-        setLoading(false);
-      })
-      .catch(e => setError(e.message || "Erreur de chargement de l'éditeur"));
-    return () => {
-      cancelled = true;
-      try { frameRef.current?.destroyFrame?.(); } catch { /* best-effort cleanup */ }
-    };
-  }, [fileId, docspaceUrl]);
-
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-2.5 bg-card border-b border-border shrink-0">
-        <p className="text-sm font-semibold truncate">{title} — édition en direct</p>
-        <button onClick={onClose} className="rounded-full p-1.5 hover:bg-muted transition-colors" title="Fermer">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="flex-1 relative bg-white">
-        {loading && !error && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
-            <p className="text-sm text-destructive font-medium">{error}</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
-              Si ça persiste : l'adresse de cette page doit être autorisée dans DocSpace → Outils développeur → Embed SDK.
-            </p>
-          </div>
-        )}
-        <div id="docspace-live-editor" className="w-full h-full" />
-      </div>
-    </div>
-  );
-}
-
 function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit: boolean; onClose: () => void }) {
   const [modules, setModules]                 = useState<CourseModuleT[]>([]);
   const [loading, setLoading]                 = useState(true);
   const [generatingOutline, setGeneratingOutline] = useState(false);
   const [generatingPdf, setGeneratingPdf]      = useState(false);
-  const [generatingPptx, setGeneratingPptx]    = useState(false);
-  const [openingEditor, setOpeningEditor]      = useState(false);
-  const [docspaceSession, setDocspaceSession]  = useState<{ fileId: string; docspaceUrl: string } | null>(null);
+  const [addingModule, setAddingModule]        = useState(false);
   // Seeded from the course row, then updated optimistically right after a
   // successful generation — avoids a full course-list refetch just to know
   // "how many chapters did the PDF in Resources last include".
@@ -1069,6 +860,19 @@ function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit:
     }
   }
 
+  async function addModule() {
+    setAddingModule(true);
+    try {
+      await api.post(`/api/courses/${course.id}/modules`, {});
+      toast.success("Chapitre ajouté — complétez-le puis générez ou rédigez son contenu");
+      load();
+    } catch (e: any) {
+      toast.error(e.message || "Échec de l'ajout du chapitre");
+    } finally {
+      setAddingModule(false);
+    }
+  }
+
   async function generatePdf() {
     setGeneratingPdf(true);
     try {
@@ -1080,32 +884,6 @@ function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit:
       toast.error(e.message || "Échec de la génération du PDF");
     } finally {
       setGeneratingPdf(false);
-    }
-  }
-
-  async function generatePptx() {
-    setGeneratingPptx(true);
-    try {
-      const res: { url: string; chapters: number } = await api.post(`/api/courses/${course.id}/generate-pptx`, {});
-      toast.success(`Support PowerPoint généré (${res.chapters} chapitre${res.chapters > 1 ? "s" : ""}) — visible dans « Ressources ». Téléchargez-le pour le finir dans PowerPoint (photos, mise en page libre).`);
-      window.open(res.url, "_blank");
-    } catch (e: any) {
-      toast.error(e.message || "Échec de la génération du support PowerPoint");
-    } finally {
-      setGeneratingPptx(false);
-    }
-  }
-
-  async function openLiveEditor() {
-    setOpeningEditor(true);
-    try {
-      const res: { fileId: string; docspaceUrl: string; created: boolean } = await api.post(`/api/courses/${course.id}/docspace-editor`, {});
-      setDocspaceSession({ fileId: res.fileId, docspaceUrl: res.docspaceUrl });
-      if (res.created) toast.success("Support créé — vous éditez maintenant la version en direct.");
-    } catch (e: any) {
-      toast.error(e.message || "Échec de l'ouverture de l'éditeur en direct");
-    } finally {
-      setOpeningEditor(false);
     }
   }
 
@@ -1164,6 +942,16 @@ function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit:
             </Button>
             <Button
               size="sm" variant="outline" className="h-8 text-xs"
+              disabled={addingModule}
+              title="Ajouter un chapitre vide à compléter ou générer manuellement"
+              onClick={addModule}
+            >
+              {addingModule
+                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Ajout…</>
+                : <><Plus className="h-3.5 w-3.5 mr-1.5" />Ajouter un chapitre</>}
+            </Button>
+            <Button
+              size="sm" variant="outline" className="h-8 text-xs"
               disabled={generatingPdf || publishedCount === 0}
               title={publishedCount === 0 ? "Publiez au moins un chapitre d'abord" : undefined}
               onClick={generatePdf}
@@ -1171,26 +959,6 @@ function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit:
               {generatingPdf
                 ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération du PDF…</>
                 : <><FileText className="h-3.5 w-3.5 mr-1.5" />{pdfStale ? "Régénérer le PDF" : "Générer le PDF"}{publishedCount > 0 ? ` (${publishedCount})` : ""}</>}
-            </Button>
-            <Button
-              size="sm" variant="outline" className="h-8 text-xs"
-              disabled={generatingPptx || publishedCount === 0}
-              title={publishedCount === 0 ? "Publiez au moins un chapitre d'abord" : "Support PowerPoint modifiable — pour finir la mise en page dans PowerPoint"}
-              onClick={generatePptx}
-            >
-              {generatingPptx
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Génération…</>
-                : <><Presentation className="h-3.5 w-3.5 mr-1.5" />Support PowerPoint</>}
-            </Button>
-            <Button
-              size="sm" className="h-8 text-xs border-0 bg-gradient-brand text-white"
-              disabled={openingEditor || publishedCount === 0}
-              title={publishedCount === 0 ? "Publiez au moins un chapitre d'abord" : "Modifier les diapositives directement ici, sans quitter la plateforme"}
-              onClick={openLiveEditor}
-            >
-              {openingEditor
-                ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Ouverture…</>
-                : <><Edit3 className="h-3.5 w-3.5 mr-1.5" />Modifier en direct</>}
             </Button>
             {pdfStale && (
               <span className="text-xs font-medium" style={{ color: "var(--pal-danger, #b91c1c)" }}>
@@ -1210,7 +978,7 @@ function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit:
               <Sparkles className="h-8 w-8 mb-3 opacity-25" />
               <p className="text-sm">{canEdit ? "Aucun contenu généré pour ce cours." : "Aucun contenu publié pour ce cours pour le moment."}</p>
               {canEdit
-                ? <p className="text-xs mt-1 opacity-70">Cliquez sur « Générer le plan du cours » pour commencer.</p>
+                ? <p className="text-xs mt-1 opacity-70">Cliquez sur « Générer le plan du cours », ou « Ajouter un chapitre » pour en rédiger un vous-même.</p>
                 : <p className="text-xs mt-1 opacity-70">Le professeur prépare le contenu — revenez plus tard.</p>}
             </div>
           ) : (
@@ -1220,15 +988,6 @@ function AIContentModal({ course, canEdit, onClose }: { course: Course; canEdit:
           )}
         </div>
       </DialogContent>
-
-      {docspaceSession && (
-        <DocSpaceEditorOverlay
-          fileId={docspaceSession.fileId}
-          docspaceUrl={docspaceSession.docspaceUrl}
-          title={course.title}
-          onClose={() => setDocspaceSession(null)}
-        />
-      )}
     </Dialog>
   );
 }
@@ -1298,6 +1057,7 @@ function CoursesPage() {
 
   async function createCourse() {
     if (!form.title.trim()) { toast.error(t("courses.title_required")); return; }
+    if (form.description.trim().length < 15) { toast.error(t("courses.description_required")); return; }
     setCreating(true);
     try {
       const created: Course = await api.post("/api/courses", {
@@ -1744,9 +1504,12 @@ function CoursesPage() {
                     placeholder={lang === "fr" ? "ex : S1 2025-2026" : "e.g. Fall 2025"} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">{t("courses.form.description")}</label>
-                  <Textarea className="mt-1.5" value={form.description}
-                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
+                  <label className="text-sm font-medium">
+                    {t("courses.form.description")} <span style={{ color: "var(--pal-danger, #e0575b)" }}>*</span>
+                  </label>
+                  <Textarea className="mt-1.5" value={form.description} required
+                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3} />
+                  <p className="mt-1 text-xs" style={{ color: "var(--pal-muted)" }}>{t("courses.form.description_hint")}</p>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">{t("courses.form.color")}</label>

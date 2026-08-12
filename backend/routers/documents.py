@@ -4,7 +4,9 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser, FRONTEND_URL
 from models import DocumentGenerate
 from utils.audit import log_audit
-from utils.documents import DOCUMENT_LABELS, new_verification_code, render_document_pdf
+from utils.documents import (
+    DOCUMENT_LABELS, fr_date, new_verification_code, render_document_pdf, resolve_enrollment,
+)
 from utils.pdf_generators import render_transcript_pdf
 from routers.grades import compute_course_grade
 
@@ -86,11 +88,29 @@ async def generate_document(
     if body.type == "releve_notes":
         pdf_bytes = _build_transcript_pdf(db, student[0])
     else:
+        # Same fiche-administrative-is-authoritative preference as the
+        # uploaded-template flow (routers/document_templates.py) — the
+        # fiche's spelling wins over whatever was typed at account creation,
+        # and only when it's actually been filled in.
+        details_rows = (
+            db.from_("student_details").select("nom, prenom, date_naissance, matricule")
+            .eq("student_id", body.student_id).execute().data
+        )
+        details = details_rows[0] if details_rows else {}
+        fiche_name = " ".join(p for p in (details.get("prenom"), details.get("nom")) if p)
+        enrollment = resolve_enrollment(db, body.student_id)
+
         pdf_bytes = render_document_pdf(
             doc_type=body.type,
-            student_name=student[0]["full_name"] or "—",
+            student_name=fiche_name or student[0]["full_name"] or "—",
             verification_code=code,
             verify_url=verify_url,
+            filiere=enrollment["filiere"],
+            niveau=enrollment["niveau"],
+            date_naissance=fr_date(details.get("date_naissance") or ""),
+            enrollment_date=enrollment["enrollment_date"],
+            matricule=details.get("matricule") or "",
+            class_name=enrollment["class_name"],
         )
 
     file_path = f"{code}.pdf"

@@ -49,7 +49,7 @@ def classify_node(state: CopilotState) -> dict:
         "Classify this message from a logged-in user of an internal school-management "
         "web app (IPISB Connect) into ONE intent.\n\n"
         "- howto        : asking HOW to perform a specific action on the platform "
-        "(e.g. 'comment ajouter un devoir ?', 'how do I approve a leave request?').\n"
+        "(e.g. 'comment ajouter un contrôle continu ?', 'how do I approve a leave request?').\n"
         "- explain      : asking WHAT a feature/module/term does or means "
         "(e.g. 'c'est quoi le module RH ?', 'what is the 9-box grid?').\n"
         "- troubleshoot : reporting something broken, missing, or not working as expected.\n"

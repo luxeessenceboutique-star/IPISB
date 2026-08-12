@@ -13,7 +13,7 @@ never explains a feature a given user can't access.
 PLATFORM_SECTIONS: list[dict] = [
     {
         "key": "overview", "title": "Tableau de bord", "path": "/dashboard", "roles": ["all"],
-        "body": "Vue d'ensemble personnalisée : prochains cours/examens, devoirs à rendre, "
+        "body": "Vue d'ensemble personnalisée : prochains cours/examens, contrôle continu à rendre, "
                 "annonces récentes et raccourcis vers les sections les plus utilisées.",
     },
     {
@@ -23,8 +23,8 @@ PLATFORM_SECTIONS: list[dict] = [
                 "Les étudiants y consultent le contenu déposé par leurs professeurs.",
     },
     {
-        "key": "assignments", "title": "Devoirs", "path": "/dashboard/assignments", "roles": ["all"],
-        "body": "Gestion des devoirs : les professeurs créent un devoir (consigne, date limite), "
+        "key": "assignments", "title": "Contrôle continu", "path": "/dashboard/assignments", "roles": ["all"],
+        "body": "Gestion du contrôle continu : les professeurs créent une évaluation (consigne, date limite), "
                 "les étudiants soumettent leur travail et voient leur note une fois corrigée.",
     },
     {
@@ -34,7 +34,7 @@ PLATFORM_SECTIONS: list[dict] = [
     },
     {
         "key": "agenda", "title": "Agenda", "path": "/dashboard/agenda", "roles": ["all"],
-        "body": "Calendrier académique personnel : cours, examens, réunions et échéances de devoirs "
+        "body": "Calendrier académique personnel : cours, examens, réunions et échéances de contrôle continu "
                 "apparaissent automatiquement, avec la possibilité d'ajouter des événements personnels.",
     },
     {
@@ -44,7 +44,7 @@ PLATFORM_SECTIONS: list[dict] = [
     },
     {
         "key": "notifications", "title": "Notifications", "path": "/dashboard/notifications", "roles": ["all"],
-        "body": "Centre de notifications (nouveau devoir, note publiée, annonce, message). "
+        "body": "Centre de notifications (nouveau contrôle continu, note publiée, annonce, message). "
                 "Le badge rouge dans la barre latérale indique le nombre de notifications non lues.",
     },
     {

@@ -63,6 +63,7 @@ function LibraryPage() {
 
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [mySpecialtyIds, setMySpecialtyIds] = useState<Set<string> | null>(null);
   const [specialtyId, setSpecialtyId] = useState("");
   const [files,    setFiles]    = useState<LibFile[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -82,6 +83,33 @@ function LibraryPage() {
       }
     })();
   }, [user]);
+
+  // A professor only browses their own filière(s) here — inferred from the
+  // classes they created, same source of truth the backend now enforces
+  // server-side (list/upload both reject/scope outside this set). Admins
+  // see everything, so this stays null (meaning "no restriction") for them.
+  useEffect(() => {
+    if (!user || isAdmin) return;
+    (async () => {
+      try {
+        const classes: { specialty_id?: string | null }[] = await api.get("/api/classes");
+        setMySpecialtyIds(new Set(classes.map(c => c.specialty_id).filter((id): id is string => !!id)));
+      } catch {
+        setMySpecialtyIds(new Set());
+      }
+    })();
+  }, [user, isAdmin]);
+
+  const visibleSpecialties = mySpecialtyIds ? specialties.filter(s => mySpecialtyIds.has(s.id)) : specialties;
+
+  // Professors land directly on their own filière when they have exactly
+  // one — no reason to make them pick from a list of one, or see a
+  // "toutes les filières" choice that isn't really theirs to make.
+  useEffect(() => {
+    if (mySpecialtyIds && mySpecialtyIds.size === 1 && !specialtyId) {
+      setSpecialtyId([...mySpecialtyIds][0]);
+    }
+  }, [mySpecialtyIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset the filter when leaving a filière-scoped category — no auto-pick of
   // a specialty on entry: "" means "toutes les filières (général)", a valid
@@ -183,8 +211,10 @@ function LibraryPage() {
             onChange={e => setSpecialtyId(e.target.value)}
             className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-medium"
           >
-            <option value="">{lang === "fr" ? "Toutes les filières (général)" : "All filières (general)"}</option>
-            {specialties.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {/* "Toutes les filières" is an admin concept — a professor only
+                ever has their own filière(s) to choose from. */}
+            {isAdmin && <option value="">{lang === "fr" ? "Toutes les filières (général)" : "All filières (general)"}</option>}
+            {visibleSpecialties.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
       )}

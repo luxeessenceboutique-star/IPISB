@@ -6,8 +6,9 @@ from supabase import Client
 
 from deps import CurrentUser, FRONTEND_URL, get_current_user, get_db
 from models import TemplateGenerate
+from utils import institution
 from utils.audit import log_audit
-from utils.documents import new_verification_code
+from utils.documents import current_academic_year, fr_date, new_verification_code, resolve_enrollment
 from utils.templates import (
     FIELD_LABELS,
     detect_fields,
@@ -151,33 +152,6 @@ async def delete_template(
     return {"ok": True}
 
 
-def _resolve_class_name(db: Client, student_id: str) -> str:
-    rows = (
-        db.from_("class_students")
-        .select("classes(name)")
-        .eq("student_id", student_id)
-        .limit(1)
-        .execute()
-        .data or []
-    )
-    if rows and rows[0].get("classes"):
-        return rows[0]["classes"]["name"] or ""
-    return ""
-
-
-# Institution constants — same facts already hardcoded in chatbot/knowledge.py.
-ESTABLISHMENT_NAME = "IPISB"
-ESTABLISHMENT_ADDRESS = "El Jadida, Maroc"
-ESTABLISHMENT_CITY = "El Jadida"
-ESTABLISHMENT_PHONE = "+212 5 23 00 00 00"
-
-
-def _current_academic_year() -> str:
-    """Morocco's school year runs Sept-June — before September, we're still
-    in the year that started the previous September."""
-    now = datetime.now(timezone.utc)
-    start_year = now.year if now.month >= 9 else now.year - 1
-    return f"{start_year}-{start_year + 1}"
 
 
 @router.post("/{template_id}/generate")
@@ -209,10 +183,8 @@ async def generate_document_from_template(
 
     details_rows = db.from_("student_details").select("nom, prenom, date_naissance, lieu_naissance, cin, matricule").eq("student_id", body.student_id).execute().data
     details = details_rows[0] if details_rows else {}
-    date_naissance = details.get("date_naissance") or ""
-    if date_naissance:
-        # PostgREST returns the date column as ISO AAAA-MM-JJ.
-        date_naissance = datetime.strptime(date_naissance, "%Y-%m-%d").strftime("%d/%m/%Y")
+    # PostgREST returns the date column as ISO AAAA-MM-JJ.
+    date_naissance = fr_date(details.get("date_naissance") or "")
 
     # Profile photo, falling back to the dossier's photo file — covers
     # students whose photo was uploaded before the profile wiring existed.
@@ -231,15 +203,22 @@ async def generate_document_from_template(
                 pass  # no photo is a visible-but-acceptable outcome; a crash is not
 
     code = new_verification_code()
+    enrollment = resolve_enrollment(db, body.student_id)
+    # The fiche administrative is the authoritative spelling of the name (the
+    # profile's full_name is whatever was typed at account creation, casing
+    # included) — fall back to it only when the fiche has no name on file.
+    fiche_name = " ".join(p for p in (details.get("prenom"), details.get("nom")) if p)
     context = {
-        "student_name": student.get("full_name") or "",
+        "student_name": fiche_name or student.get("full_name") or "",
         # Split name for {{ nom }} / {{ prenom }} templates — the fiche is
         # authoritative; full_name backs up the family-name slot so machine
         # templates never print a blank where a name belongs.
         "last_name": details.get("nom") or student.get("full_name") or "",
         "first_name": details.get("prenom") or "",
         "student_email": student.get("email") or "",
-        "class_name": _resolve_class_name(db, body.student_id),
+        # Classe, filière, niveau and enrolment date all come from the class the
+        # student currently belongs to.
+        **enrollment,
         # Filled from the fiche administrative when it's been saved; blank
         # placeholder otherwise (the pre-details behaviour).
         "date_of_birth": date_naissance,
@@ -247,11 +226,17 @@ async def generate_document_from_template(
         "cin": details.get("cin") or "",
         "matricule": details.get("matricule") or "",
         "issue_date": datetime.now(timezone.utc).strftime("%d/%m/%Y"),
-        "academic_year": _current_academic_year(),
-        "establishment_name": ESTABLISHMENT_NAME,
-        "establishment_address": ESTABLISHMENT_ADDRESS,
-        "city": ESTABLISHMENT_CITY,
-        "establishment_phone": ESTABLISHMENT_PHONE,
+        "academic_year": current_academic_year(),
+        "establishment_name": institution.NAME,
+        "establishment_address": institution.ADDRESS,
+        "city": institution.CITY,
+        "establishment_phone": institution.PHONE,
+        "establishment_legal_status": institution.LEGAL_STATUS,
+        "establishment_authorization": institution.AUTHORIZATION,
+        "establishment_website": institution.WEBSITE,
+        "establishment_email": institution.EMAIL,
+        "establishment_director_name": f"{institution.DIRECTOR_CIVILITY} {institution.DIRECTOR_NAME}",
+        "establishment_director_title": institution.DIRECTOR_TITLE,
         "verification_code": code,
         # Image-zone replacements (student cards): the profile photo and a
         # fresh QR pointing at this document's public verification page.

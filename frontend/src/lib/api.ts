@@ -12,6 +12,14 @@ async function getHeaders(): Promise<Record<string, string>> {
   };
 }
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 async function request(method: string, path: string, body?: unknown) {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -19,8 +27,12 @@ async function request(method: string, path: string, body?: unknown) {
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
+    // FastAPI's HTTPException always returns a JSON body ({"detail": "..."}),
+    // so `text` is virtually never empty — callers that used to check
+    // e.message.includes("403") never actually matched. Carry the real
+    // status code instead so 403/404/etc. can be detected reliably.
     const text = await res.text();
-    throw new Error(text || `HTTP ${res.status}`);
+    throw new ApiError(text || `HTTP ${res.status}`, res.status);
   }
   const ct = res.headers.get("content-type") ?? "";
   return ct.includes("application/json") ? res.json() : null;
