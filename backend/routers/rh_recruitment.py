@@ -457,11 +457,17 @@ async def list_candidate_comments(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    rows = (
-        db.from_("candidate_comments").select("*")
-        .eq("candidate_id", candidate_id).order("created_at", desc=True)
-        .execute().data or []
-    )
+    try:
+        rows = (
+            db.from_("candidate_comments").select("*")
+            .eq("candidate_id", candidate_id).order("created_at", desc=True)
+            .execute().data or []
+        )
+    except Exception:
+        # candidate_comments not provisioned yet (migration not run) — behave
+        # as "no comments yet" instead of a raw 500.
+        log.warning("candidate_comments read failed — is the migration applied?", exc_info=True)
+        return []
     names = _profile_names(db, [r.get("author_id") for r in rows])
     return [{**r, "author_name": names.get(r.get("author_id"), "—")} for r in rows]
 
@@ -481,9 +487,13 @@ async def add_candidate_comment(
     if not existing:
         raise HTTPException(404, "Candidat introuvable")
 
-    res = db.from_("candidate_comments").insert({
-        "candidate_id": candidate_id, "author_id": user.id, "text": text,
-    }).execute()
+    try:
+        res = db.from_("candidate_comments").insert({
+            "candidate_id": candidate_id, "author_id": user.id, "text": text,
+        }).execute()
+    except Exception:
+        log.warning("candidate_comments insert failed — is the migration applied?", exc_info=True)
+        raise HTTPException(503, "Fonctionnalité commentaires pas encore activée — migration en attente.")
     if not res.data:
         raise HTTPException(400, "Impossible d'ajouter le commentaire")
     comment = res.data[0]
