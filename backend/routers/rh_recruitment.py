@@ -10,7 +10,7 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import (
     JobAdCreate, JobAdUpdate,
-    CandidateCreate, CandidatePromote,
+    CandidateCreate, CandidateCommentCreate, CandidatePromote,
     InterviewCreate, InterviewUpdate,
     SlotCreate,
 )
@@ -440,6 +440,71 @@ async def upload_candidate_cv(
         raise HTTPException(400, "Impossible d'enregistrer le CV")
     log_audit(db, user.id, "candidate.cv_upload", "employee", candidate_id)
     return res.data[0]
+
+
+def _profile_names(db: Client, ids: list[str]) -> dict[str, str]:
+    ids = list({i for i in ids if i})
+    if not ids:
+        return {}
+    rows = db.from_("profiles").select("id, full_name, email").in_("id", ids).execute().data or []
+    return {r["id"]: (r.get("full_name") or r.get("email") or "—") for r in rows}
+
+
+@router.get("/candidates/{candidate_id}/comments")
+async def list_candidate_comments(
+    candidate_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    rows = (
+        db.from_("candidate_comments").select("*")
+        .eq("candidate_id", candidate_id).order("created_at", desc=True)
+        .execute().data or []
+    )
+    names = _profile_names(db, [r.get("author_id") for r in rows])
+    return [{**r, "author_name": names.get(r.get("author_id"), "—")} for r in rows]
+
+
+@router.post("/candidates/{candidate_id}/comments")
+async def add_candidate_comment(
+    candidate_id: str,
+    body: CandidateCommentCreate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Le commentaire ne peut pas être vide")
+    existing = db.from_("employees").select("id").eq("id", candidate_id).eq("status", "candidate").execute().data
+    if not existing:
+        raise HTTPException(404, "Candidat introuvable")
+
+    res = db.from_("candidate_comments").insert({
+        "candidate_id": candidate_id, "author_id": user.id, "text": text,
+    }).execute()
+    if not res.data:
+        raise HTTPException(400, "Impossible d'ajouter le commentaire")
+    comment = res.data[0]
+    log_audit(db, user.id, "candidate.comment.add", "employee", candidate_id)
+    return {**comment, "author_name": _profile_names(db, [user.id]).get(user.id, user.email)}
+
+
+@router.delete("/candidates/{candidate_id}/comments/{comment_id}")
+async def delete_candidate_comment(
+    candidate_id: str,
+    comment_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    existing = db.from_("candidate_comments").select("id").eq("id", comment_id).eq("candidate_id", candidate_id).execute().data
+    if not existing:
+        raise HTTPException(404, "Commentaire introuvable")
+    db.from_("candidate_comments").delete().eq("id", comment_id).execute()
+    log_audit(db, user.id, "candidate.comment.delete", "employee", candidate_id)
+    return {"ok": True}
 
 
 @router.delete("/candidates/{candidate_id}")

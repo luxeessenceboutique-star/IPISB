@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages, MapPin, Home } from "lucide-react";
+import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages, MapPin, Home, MessageSquare } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { parseAdContent, renderInline } from "@/lib/adContent";
 
@@ -360,6 +360,8 @@ type Candidate = {
   years_experience?: number | null; languages?: string | null; city?: string | null; address?: string | null;
 };
 
+type CandidateComment = { id: string; text: string; created_at: string; author_id: string; author_name: string };
+
 type TimeFilter = "24h" | "7d" | "1m" | "all";
 const TIME_FILTERS: { key: TimeFilter; label: string }[] = [
   { key: "24h", label: "Dernières 24h" }, { key: "7d", label: "7 derniers jours" },
@@ -709,6 +711,99 @@ function CvUploadZone({ candidate, onUploadCv }: { candidate: Candidate; onUploa
   );
 }
 
+function CandidateComments({ candidateId }: { candidateId: string }) {
+  const [comments, setComments] = useState<CandidateComment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await api.get(`/api/rh/recruitment/candidates/${candidateId}/comments`);
+      setComments(data ?? []);
+    } catch { /* silent — comments are secondary content */ }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, [candidateId]);
+
+  async function submit() {
+    if (!text.trim()) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/rh/recruitment/candidates/${candidateId}/comments`, { text: text.trim() });
+      setText("");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'ajout du commentaire.");
+    } finally { setBusy(false); }
+  }
+
+  async function remove(id: string) {
+    try {
+      await api.delete(`/api/rh/recruitment/candidates/${candidateId}/comments/${id}`);
+      setComments(cs => cs.filter(cm => cm.id !== id));
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <MessageSquare size={13} strokeWidth={1.8} style={{ color: "var(--pal-primary)" }} />
+        <span style={{ fontFamily: sans, fontSize: 11, fontWeight: 700, color: PAL.muted, textTransform: "uppercase" as const, letterSpacing: ".05em" }}>
+          Commentaires{comments.length > 0 ? ` (${comments.length})` : ""}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="shimmer" style={{ height: 40, borderRadius: 10, marginBottom: 12 }} />
+      ) : comments.length === 0 ? (
+        <div style={{ fontFamily: sans, fontSize: 12.5, color: PAL.muted, fontStyle: "italic" as const, marginBottom: 10 }}>
+          Aucun commentaire pour l'instant.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, marginBottom: 12 }}>
+          {comments.map(cm => (
+            <div key={cm.id} style={{ background: "var(--pal-cream)", border: `1px solid ${PAL.line}`, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, color: PAL.ink }}>{cm.author_name}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontFamily: sans, fontSize: 10.5, color: PAL.muted }}>
+                    {new Date(cm.created_at).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <button onClick={() => remove(cm.id)} title="Supprimer" style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, display: "flex" }}>
+                    <Trash2 size={12} strokeWidth={1.7} />
+                  </button>
+                </div>
+              </div>
+              <div style={{ fontFamily: sans, fontSize: 13, color: PAL.ink, lineHeight: 1.5, whiteSpace: "pre-wrap" as const }}>{cm.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+        <textarea
+          value={text} onChange={e => setText(e.target.value)}
+          placeholder="Ajouter un commentaire — impressions d'entretien, avis de l'équipe…"
+          rows={2}
+          style={{ ...fieldStyle, margin: 0, resize: "vertical" as const, fontSize: 12.5, flex: 1 }}
+          onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); } }}
+        />
+        <button
+          onClick={submit} disabled={busy || !text.trim()} title="Ajouter (Ctrl/Cmd+Entrée)"
+          className="btn-c btn-c-sm btn-c-primary" style={{ flexShrink: 0, opacity: busy || !text.trim() ? .6 : 1 }}
+        >
+          <Send size={13} strokeWidth={1.7} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CandidateDetailModal({ candidate: c, onClose, onDownloadCv, onUploadCv, onPromote, onDelete }: {
   candidate: Candidate; onClose: () => void;
   onDownloadCv: (c: Candidate) => void; onUploadCv: (c: Candidate, file: File) => void | Promise<void>;
@@ -784,6 +879,10 @@ function CandidateDetailModal({ candidate: c, onClose, onDownloadCv, onUploadCv,
             </div>
           )}
           {!c.cv_path && <CvUploadZone candidate={c} onUploadCv={onUploadCv} />}
+
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${PAL.line}` }}>
+            <CandidateComments candidateId={c.id} />
+          </div>
         </div>
 
         <div style={{ padding: "14px 22px", borderTop: `1px solid ${PAL.line}`, display: "flex", gap: 8, justifyContent: "flex-end", flexShrink: 0 }}>

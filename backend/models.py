@@ -1004,6 +1004,10 @@ class CandidateCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class CandidateCommentCreate(BaseModel):
+    text: str
+
+
 class CandidatePromote(BaseModel):
     hire_date: Optional[str] = None
     position: Optional[str] = None
