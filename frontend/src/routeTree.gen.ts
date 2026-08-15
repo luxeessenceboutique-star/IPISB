@@ -21,10 +21,12 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
+import { Route as DashboardTimetablesRouteImport } from './routes/dashboard.timetables'
 import { Route as DashboardTeachingSessionsRouteImport } from './routes/dashboard.teaching-sessions'
 import { Route as DashboardStudentsRouteImport } from './routes/dashboard.students'
 import { Route as DashboardSchedulesRouteImport } from './routes/dashboard.schedules'
 import { Route as DashboardRhRouteImport } from './routes/dashboard.rh'
+import { Route as DashboardPurchaseRequestsRouteImport } from './routes/dashboard.purchase-requests'
 import { Route as DashboardProfileRouteImport } from './routes/dashboard.profile'
 import { Route as DashboardNotificationsRouteImport } from './routes/dashboard.notifications'
 import { Route as DashboardMeetingsRouteImport } from './routes/dashboard.meetings'
@@ -37,10 +39,12 @@ import { Route as DashboardAssignmentsRouteImport } from './routes/dashboard.ass
 import { Route as DashboardAnnouncementsRouteImport } from './routes/dashboard.announcements'
 import { Route as DashboardAgendaRouteImport } from './routes/dashboard.agenda'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
+import { Route as ApplyAdIdRouteImport } from './routes/apply.$adId'
 import { Route as DashboardStudentsStudentIdRouteImport } from './routes/dashboard.students_.$studentId'
 import { Route as DashboardSessionFeedbackSessionIdRouteImport } from './routes/dashboard.session-feedback.$sessionId'
 import { Route as DashboardExamsNewRouteImport } from './routes/dashboard.exams_.new'
 import { Route as DashboardCoursesCourseIdRouteImport } from './routes/dashboard.courses_.$courseId'
+import { Route as DashboardRhEmployeesEmployeeIdRouteImport } from './routes/dashboard.rh_.employees_.$employeeId'
 import { Route as DashboardExamsExamIdEditorRouteImport } from './routes/dashboard.exams_.$examId_.editor'
 import { Route as DashboardCoursesCourseIdEditorModuleIdRouteImport } from './routes/dashboard.courses_.$courseId_.editor.$moduleId'
 
@@ -104,6 +108,11 @@ const DashboardUsersRoute = DashboardUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardTimetablesRoute = DashboardTimetablesRouteImport.update({
+  id: '/timetables',
+  path: '/timetables',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardTeachingSessionsRoute =
   DashboardTeachingSessionsRouteImport.update({
     id: '/teaching-sessions',
@@ -125,6 +134,12 @@ const DashboardRhRoute = DashboardRhRouteImport.update({
   path: '/rh',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPurchaseRequestsRoute =
+  DashboardPurchaseRequestsRouteImport.update({
+    id: '/purchase-requests',
+    path: '/purchase-requests',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardProfileRoute = DashboardProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -185,6 +200,11 @@ const DashboardAccountingRoute = DashboardAccountingRouteImport.update({
   path: '/accounting',
   getParentRoute: () => DashboardRoute,
 } as any)
+const ApplyAdIdRoute = ApplyAdIdRouteImport.update({
+  id: '/apply/$adId',
+  path: '/apply/$adId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardStudentsStudentIdRoute =
   DashboardStudentsStudentIdRouteImport.update({
     id: '/students_/$studentId',
@@ -206,6 +226,12 @@ const DashboardCoursesCourseIdRoute =
   DashboardCoursesCourseIdRouteImport.update({
     id: '/courses_/$courseId',
     path: '/courses/$courseId',
+    getParentRoute: () => DashboardRoute,
+  } as any)
+const DashboardRhEmployeesEmployeeIdRoute =
+  DashboardRhEmployeesEmployeeIdRouteImport.update({
+    id: '/rh_/employees_/$employeeId',
+    path: '/rh/employees/$employeeId',
     getParentRoute: () => DashboardRoute,
   } as any)
 const DashboardExamsExamIdEditorRoute =
@@ -231,6 +257,7 @@ export interface FileRoutesByFullPath {
   '/formations': typeof FormationsRoute
   '/plateforme': typeof PlateformeRoute
   '/temoignages': typeof TemoignagesRoute
+  '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
@@ -243,10 +270,12 @@ export interface FileRoutesByFullPath {
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
   '/dashboard/profile': typeof DashboardProfileRoute
+  '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/rh': typeof DashboardRhRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
   '/dashboard/teaching-sessions': typeof DashboardTeachingSessionsRoute
+  '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -255,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/session-feedback/$sessionId': typeof DashboardSessionFeedbackSessionIdRoute
   '/dashboard/students/$studentId': typeof DashboardStudentsStudentIdRoute
   '/dashboard/exams/$examId/editor': typeof DashboardExamsExamIdEditorRoute
+  '/dashboard/rh/employees/$employeeId': typeof DashboardRhEmployeesEmployeeIdRoute
   '/dashboard/courses/$courseId/editor/$moduleId': typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
 export interface FileRoutesByTo {
@@ -266,6 +296,7 @@ export interface FileRoutesByTo {
   '/formations': typeof FormationsRoute
   '/plateforme': typeof PlateformeRoute
   '/temoignages': typeof TemoignagesRoute
+  '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
@@ -278,10 +309,12 @@ export interface FileRoutesByTo {
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
   '/dashboard/profile': typeof DashboardProfileRoute
+  '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/rh': typeof DashboardRhRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
   '/dashboard/teaching-sessions': typeof DashboardTeachingSessionsRoute
+  '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -290,6 +323,7 @@ export interface FileRoutesByTo {
   '/dashboard/session-feedback/$sessionId': typeof DashboardSessionFeedbackSessionIdRoute
   '/dashboard/students/$studentId': typeof DashboardStudentsStudentIdRoute
   '/dashboard/exams/$examId/editor': typeof DashboardExamsExamIdEditorRoute
+  '/dashboard/rh/employees/$employeeId': typeof DashboardRhEmployeesEmployeeIdRoute
   '/dashboard/courses/$courseId/editor/$moduleId': typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
 export interface FileRoutesById {
@@ -303,6 +337,7 @@ export interface FileRoutesById {
   '/formations': typeof FormationsRoute
   '/plateforme': typeof PlateformeRoute
   '/temoignages': typeof TemoignagesRoute
+  '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
@@ -315,10 +350,12 @@ export interface FileRoutesById {
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
   '/dashboard/profile': typeof DashboardProfileRoute
+  '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/rh': typeof DashboardRhRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
   '/dashboard/teaching-sessions': typeof DashboardTeachingSessionsRoute
+  '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/verify/$code': typeof VerifyCodeRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -327,6 +364,7 @@ export interface FileRoutesById {
   '/dashboard/session-feedback/$sessionId': typeof DashboardSessionFeedbackSessionIdRoute
   '/dashboard/students_/$studentId': typeof DashboardStudentsStudentIdRoute
   '/dashboard/exams_/$examId_/editor': typeof DashboardExamsExamIdEditorRoute
+  '/dashboard/rh_/employees_/$employeeId': typeof DashboardRhEmployeesEmployeeIdRoute
   '/dashboard/courses_/$courseId_/editor/$moduleId': typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
 export interface FileRouteTypes {
@@ -341,6 +379,7 @@ export interface FileRouteTypes {
     | '/formations'
     | '/plateforme'
     | '/temoignages'
+    | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/announcements'
@@ -353,10 +392,12 @@ export interface FileRouteTypes {
     | '/dashboard/meetings'
     | '/dashboard/notifications'
     | '/dashboard/profile'
+    | '/dashboard/purchase-requests'
     | '/dashboard/rh'
     | '/dashboard/schedules'
     | '/dashboard/students'
     | '/dashboard/teaching-sessions'
+    | '/dashboard/timetables'
     | '/dashboard/users'
     | '/verify/$code'
     | '/dashboard/'
@@ -365,6 +406,7 @@ export interface FileRouteTypes {
     | '/dashboard/session-feedback/$sessionId'
     | '/dashboard/students/$studentId'
     | '/dashboard/exams/$examId/editor'
+    | '/dashboard/rh/employees/$employeeId'
     | '/dashboard/courses/$courseId/editor/$moduleId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -376,6 +418,7 @@ export interface FileRouteTypes {
     | '/formations'
     | '/plateforme'
     | '/temoignages'
+    | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/announcements'
@@ -388,10 +431,12 @@ export interface FileRouteTypes {
     | '/dashboard/meetings'
     | '/dashboard/notifications'
     | '/dashboard/profile'
+    | '/dashboard/purchase-requests'
     | '/dashboard/rh'
     | '/dashboard/schedules'
     | '/dashboard/students'
     | '/dashboard/teaching-sessions'
+    | '/dashboard/timetables'
     | '/dashboard/users'
     | '/verify/$code'
     | '/dashboard'
@@ -400,6 +445,7 @@ export interface FileRouteTypes {
     | '/dashboard/session-feedback/$sessionId'
     | '/dashboard/students/$studentId'
     | '/dashboard/exams/$examId/editor'
+    | '/dashboard/rh/employees/$employeeId'
     | '/dashboard/courses/$courseId/editor/$moduleId'
   id:
     | '__root__'
@@ -412,6 +458,7 @@ export interface FileRouteTypes {
     | '/formations'
     | '/plateforme'
     | '/temoignages'
+    | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/announcements'
@@ -424,10 +471,12 @@ export interface FileRouteTypes {
     | '/dashboard/meetings'
     | '/dashboard/notifications'
     | '/dashboard/profile'
+    | '/dashboard/purchase-requests'
     | '/dashboard/rh'
     | '/dashboard/schedules'
     | '/dashboard/students'
     | '/dashboard/teaching-sessions'
+    | '/dashboard/timetables'
     | '/dashboard/users'
     | '/verify/$code'
     | '/dashboard/'
@@ -436,6 +485,7 @@ export interface FileRouteTypes {
     | '/dashboard/session-feedback/$sessionId'
     | '/dashboard/students_/$studentId'
     | '/dashboard/exams_/$examId_/editor'
+    | '/dashboard/rh_/employees_/$employeeId'
     | '/dashboard/courses_/$courseId_/editor/$moduleId'
   fileRoutesById: FileRoutesById
 }
@@ -449,6 +499,7 @@ export interface RootRouteChildren {
   FormationsRoute: typeof FormationsRoute
   PlateformeRoute: typeof PlateformeRoute
   TemoignagesRoute: typeof TemoignagesRoute
+  ApplyAdIdRoute: typeof ApplyAdIdRoute
   VerifyCodeRoute: typeof VerifyCodeRoute
 }
 
@@ -538,6 +589,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardUsersRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/timetables': {
+      id: '/dashboard/timetables'
+      path: '/timetables'
+      fullPath: '/dashboard/timetables'
+      preLoaderRoute: typeof DashboardTimetablesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/teaching-sessions': {
       id: '/dashboard/teaching-sessions'
       path: '/teaching-sessions'
@@ -564,6 +622,13 @@ declare module '@tanstack/react-router' {
       path: '/rh'
       fullPath: '/dashboard/rh'
       preLoaderRoute: typeof DashboardRhRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/purchase-requests': {
+      id: '/dashboard/purchase-requests'
+      path: '/purchase-requests'
+      fullPath: '/dashboard/purchase-requests'
+      preLoaderRoute: typeof DashboardPurchaseRequestsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/profile': {
@@ -650,6 +715,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAccountingRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/apply/$adId': {
+      id: '/apply/$adId'
+      path: '/apply/$adId'
+      fullPath: '/apply/$adId'
+      preLoaderRoute: typeof ApplyAdIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/students_/$studentId': {
       id: '/dashboard/students_/$studentId'
       path: '/students/$studentId'
@@ -676,6 +748,13 @@ declare module '@tanstack/react-router' {
       path: '/courses/$courseId'
       fullPath: '/dashboard/courses/$courseId'
       preLoaderRoute: typeof DashboardCoursesCourseIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/rh_/employees_/$employeeId': {
+      id: '/dashboard/rh_/employees_/$employeeId'
+      path: '/rh/employees/$employeeId'
+      fullPath: '/dashboard/rh/employees/$employeeId'
+      preLoaderRoute: typeof DashboardRhEmployeesEmployeeIdRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/exams_/$examId_/editor': {
@@ -708,10 +787,12 @@ interface DashboardRouteChildren {
   DashboardMeetingsRoute: typeof DashboardMeetingsRoute
   DashboardNotificationsRoute: typeof DashboardNotificationsRoute
   DashboardProfileRoute: typeof DashboardProfileRoute
+  DashboardPurchaseRequestsRoute: typeof DashboardPurchaseRequestsRoute
   DashboardRhRoute: typeof DashboardRhRoute
   DashboardSchedulesRoute: typeof DashboardSchedulesRoute
   DashboardStudentsRoute: typeof DashboardStudentsRoute
   DashboardTeachingSessionsRoute: typeof DashboardTeachingSessionsRoute
+  DashboardTimetablesRoute: typeof DashboardTimetablesRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardCoursesCourseIdRoute: typeof DashboardCoursesCourseIdRoute
@@ -719,6 +800,7 @@ interface DashboardRouteChildren {
   DashboardSessionFeedbackSessionIdRoute: typeof DashboardSessionFeedbackSessionIdRoute
   DashboardStudentsStudentIdRoute: typeof DashboardStudentsStudentIdRoute
   DashboardExamsExamIdEditorRoute: typeof DashboardExamsExamIdEditorRoute
+  DashboardRhEmployeesEmployeeIdRoute: typeof DashboardRhEmployeesEmployeeIdRoute
   DashboardCoursesCourseIdEditorModuleIdRoute: typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
 
@@ -735,10 +817,12 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMeetingsRoute: DashboardMeetingsRoute,
   DashboardNotificationsRoute: DashboardNotificationsRoute,
   DashboardProfileRoute: DashboardProfileRoute,
+  DashboardPurchaseRequestsRoute: DashboardPurchaseRequestsRoute,
   DashboardRhRoute: DashboardRhRoute,
   DashboardSchedulesRoute: DashboardSchedulesRoute,
   DashboardStudentsRoute: DashboardStudentsRoute,
   DashboardTeachingSessionsRoute: DashboardTeachingSessionsRoute,
+  DashboardTimetablesRoute: DashboardTimetablesRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardCoursesCourseIdRoute: DashboardCoursesCourseIdRoute,
@@ -747,6 +831,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
     DashboardSessionFeedbackSessionIdRoute,
   DashboardStudentsStudentIdRoute: DashboardStudentsStudentIdRoute,
   DashboardExamsExamIdEditorRoute: DashboardExamsExamIdEditorRoute,
+  DashboardRhEmployeesEmployeeIdRoute: DashboardRhEmployeesEmployeeIdRoute,
   DashboardCoursesCourseIdEditorModuleIdRoute:
     DashboardCoursesCourseIdEditorModuleIdRoute,
 }
@@ -765,6 +850,7 @@ const rootRouteChildren: RootRouteChildren = {
   FormationsRoute: FormationsRoute,
   PlateformeRoute: PlateformeRoute,
   TemoignagesRoute: TemoignagesRoute,
+  ApplyAdIdRoute: ApplyAdIdRoute,
   VerifyCodeRoute: VerifyCodeRoute,
 }
 export const routeTree = rootRouteImport
