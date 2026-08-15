@@ -15,6 +15,7 @@ import { Route as FormationsRouteImport } from './routes/formations'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ApproveLoginRouteImport } from './routes/approve-login'
 import { Route as ActualitesRouteImport } from './routes/actualites'
 import { Route as AProposRouteImport } from './routes/a-propos'
 import { Route as IndexRouteImport } from './routes/index'
@@ -76,6 +77,11 @@ const ContactRoute = ContactRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApproveLoginRoute = ApproveLoginRouteImport.update({
+  id: '/approve-login',
+  path: '/approve-login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ActualitesRoute = ActualitesRouteImport.update({
@@ -251,6 +257,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/a-propos': typeof AProposRoute
   '/actualites': typeof ActualitesRoute
+  '/approve-login': typeof ApproveLoginRoute
   '/auth': typeof AuthRoute
   '/contact': typeof ContactRoute
   '/dashboard': typeof DashboardRouteWithChildren
@@ -291,6 +298,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/a-propos': typeof AProposRoute
   '/actualites': typeof ActualitesRoute
+  '/approve-login': typeof ApproveLoginRoute
   '/auth': typeof AuthRoute
   '/contact': typeof ContactRoute
   '/formations': typeof FormationsRoute
@@ -331,6 +339,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/a-propos': typeof AProposRoute
   '/actualites': typeof ActualitesRoute
+  '/approve-login': typeof ApproveLoginRoute
   '/auth': typeof AuthRoute
   '/contact': typeof ContactRoute
   '/dashboard': typeof DashboardRouteWithChildren
@@ -373,6 +382,7 @@ export interface FileRouteTypes {
     | '/'
     | '/a-propos'
     | '/actualites'
+    | '/approve-login'
     | '/auth'
     | '/contact'
     | '/dashboard'
@@ -413,6 +423,7 @@ export interface FileRouteTypes {
     | '/'
     | '/a-propos'
     | '/actualites'
+    | '/approve-login'
     | '/auth'
     | '/contact'
     | '/formations'
@@ -452,6 +463,7 @@ export interface FileRouteTypes {
     | '/'
     | '/a-propos'
     | '/actualites'
+    | '/approve-login'
     | '/auth'
     | '/contact'
     | '/dashboard'
@@ -493,6 +505,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AProposRoute: typeof AProposRoute
   ActualitesRoute: typeof ActualitesRoute
+  ApproveLoginRoute: typeof ApproveLoginRoute
   AuthRoute: typeof AuthRoute
   ContactRoute: typeof ContactRoute
   DashboardRoute: typeof DashboardRouteWithChildren
@@ -545,6 +558,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approve-login': {
+      id: '/approve-login'
+      path: '/approve-login'
+      fullPath: '/approve-login'
+      preLoaderRoute: typeof ApproveLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/actualites': {
@@ -844,6 +864,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AProposRoute: AProposRoute,
   ActualitesRoute: ActualitesRoute,
+  ApproveLoginRoute: ApproveLoginRoute,
   AuthRoute: AuthRoute,
   ContactRoute: ContactRoute,
   DashboardRoute: DashboardRouteWithChildren,

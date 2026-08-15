@@ -6,6 +6,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+from utils.login_approval import enforce_login_gate
+
 load_dotenv()
 
 SUPABASE_URL: str = os.environ["SUPABASE_URL"]
@@ -77,4 +79,5 @@ async def get_current_user(
     uid = str(resp.user.id)
     roles_data = db.from_("user_roles").select("role").eq("user_id", uid).execute().data or []
     roles = [r["role"] for r in roles_data]
+    enforce_login_gate(db, uid, resp.user.email or "", roles)
     return CurrentUser(id=uid, email=resp.user.email or "", roles=roles)

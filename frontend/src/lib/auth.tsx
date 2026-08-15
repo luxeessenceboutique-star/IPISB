@@ -1,6 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { api, ApiError } from "@/lib/api";
+
+const PENDING_APPROVAL_MESSAGE =
+  "Votre compte est en attente de validation. Un email a été envoyé pour autoriser cette connexion — réessayez une fois celle-ci validée.";
 
 export type AppRole = "admin" | "professor" | "student" | "cashier" | "accountant";
 
@@ -52,6 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    try {
+      await api.get("/api/auth/me");
+    } catch (err) {
+      await supabase.auth.signOut();
+      if (err instanceof ApiError && err.status === 403) {
+        throw new Error(PENDING_APPROVAL_MESSAGE);
+      }
+      throw err;
+    }
   }
 
   async function signOut() {
