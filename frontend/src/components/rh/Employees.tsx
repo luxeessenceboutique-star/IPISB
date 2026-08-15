@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, Users, Trash2, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
-import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { Plus, Search, Users, Trash2, ChevronLeft, ChevronRight, Pencil, Eye, FileText } from "lucide-react";
+import { SectionLabel, EmptyHint, DashAvatar } from "@/components/dashboard/ui";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -41,6 +42,33 @@ export type Employee = {
   probation_duration_days?: number | null;
   probation_end_date?: string | null;
   probation_status?: string | null;
+  photo_url?: string | null;
+  // Identité complémentaire
+  gender?: string | null;
+  place_of_birth?: string | null;
+  marital_status?: string | null;
+  dependents_count?: number | null;
+  blood_type?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  personal_email?: string | null;
+  // Pièce d'identité
+  cin_issue_date?: string | null;
+  cin_expiry_date?: string | null;
+  passport_number?: string | null;
+  // Contact d'urgence
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relation?: string | null;
+  // Poste / conditions de travail
+  grade?: string | null;
+  work_location?: string | null;
+  weekly_hours?: number | null;
+  // Administratif / paie
+  bank_name?: string | null;
+  amo_number?: string | null;
+  tax_id?: string | null;
+  cimr_number?: string | null;
 };
 
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
@@ -50,9 +78,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div><label style={labelStyle}>{label}</label>{children}</div>;
 }
 
-type LookupItem = { id: string; name: string };
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontFamily: sans, fontSize: 12, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: "var(--pal-primary-deep)", margin: "22px 0 10px", paddingTop: 14, borderTop: `1px solid ${PAL.line}` }}>
+      {children}
+    </div>
+  );
+}
 
-function FormModal({ editing, departments, contractTypes, onClose, onSaved }: {
+export type LookupItem = { id: string; name: string };
+
+export function FormModal({ editing, departments, contractTypes, onClose, onSaved }: {
   editing: Employee | null; departments: LookupItem[]; contractTypes: LookupItem[];
   onClose: () => void; onSaved: () => void;
 }) {
@@ -75,6 +111,28 @@ function FormModal({ editing, departments, contractTypes, onClose, onSaved }: {
     city: editing?.city ?? "",
     nationality: editing?.nationality ?? "",
     notes: editing?.notes ?? "",
+    birth_date: editing?.birth_date ?? "",
+    gender: editing?.gender ?? "",
+    place_of_birth: editing?.place_of_birth ?? "",
+    marital_status: editing?.marital_status ?? "",
+    dependents_count: editing ? String(editing.dependents_count ?? "") : "",
+    blood_type: editing?.blood_type ?? "",
+    postal_code: editing?.postal_code ?? "",
+    country: editing?.country ?? "",
+    personal_email: editing?.personal_email ?? "",
+    cin_issue_date: editing?.cin_issue_date ?? "",
+    cin_expiry_date: editing?.cin_expiry_date ?? "",
+    passport_number: editing?.passport_number ?? "",
+    emergency_contact_name: editing?.emergency_contact_name ?? "",
+    emergency_contact_phone: editing?.emergency_contact_phone ?? "",
+    emergency_contact_relation: editing?.emergency_contact_relation ?? "",
+    grade: editing?.grade ?? "",
+    work_location: editing?.work_location ?? "",
+    weekly_hours: editing ? String(editing.weekly_hours ?? "") : "",
+    bank_name: editing?.bank_name ?? "",
+    amo_number: editing?.amo_number ?? "",
+    tax_id: editing?.tax_id ?? "",
+    cimr_number: editing?.cimr_number ?? "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -103,6 +161,28 @@ function FormModal({ editing, departments, contractTypes, onClose, onSaved }: {
       city: form.city || null,
       nationality: form.nationality || null,
       notes: form.notes || null,
+      birth_date: form.birth_date || null,
+      gender: form.gender || null,
+      place_of_birth: form.place_of_birth || null,
+      marital_status: form.marital_status || null,
+      dependents_count: form.dependents_count ? parseInt(form.dependents_count, 10) : null,
+      blood_type: form.blood_type || null,
+      postal_code: form.postal_code || null,
+      country: form.country || null,
+      personal_email: form.personal_email || null,
+      cin_issue_date: form.cin_issue_date || null,
+      cin_expiry_date: form.cin_expiry_date || null,
+      passport_number: form.passport_number || null,
+      emergency_contact_name: form.emergency_contact_name || null,
+      emergency_contact_phone: form.emergency_contact_phone || null,
+      emergency_contact_relation: form.emergency_contact_relation || null,
+      grade: form.grade || null,
+      work_location: form.work_location || null,
+      weekly_hours: form.weekly_hours ? parseFloat(form.weekly_hours) : null,
+      bank_name: form.bank_name || null,
+      amo_number: form.amo_number || null,
+      tax_id: form.tax_id || null,
+      cimr_number: form.cimr_number || null,
     };
     try {
       if (editing) await api.patch(`/api/rh/employees/${editing.id}`, payload);
@@ -174,6 +254,69 @@ function FormModal({ editing, departments, contractTypes, onClose, onSaved }: {
         </div>
 
         <Field label="Adresse"><input type="text" value={form.address} onChange={e => set("address", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+
+        <SectionTitle>Identité complémentaire</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Date de naissance"><input type="date" value={form.birth_date} onChange={e => set("birth_date", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="Lieu de naissance"><input type="text" value={form.place_of_birth} onChange={e => set("place_of_birth", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Genre">
+            <select value={form.gender} onChange={e => set("gender", e.target.value)} className="u-input" style={fieldStyle}>
+              <option value="">— Non défini —</option>
+              <option value="M">Masculin</option>
+              <option value="F">Féminin</option>
+            </select>
+          </Field>
+          <Field label="Situation familiale">
+            <select value={form.marital_status} onChange={e => set("marital_status", e.target.value)} className="u-input" style={fieldStyle}>
+              <option value="">— Non défini —</option>
+              <option value="célibataire">Célibataire</option>
+              <option value="marié(e)">Marié(e)</option>
+              <option value="divorcé(e)">Divorcé(e)</option>
+              <option value="veuf(ve)">Veuf(ve)</option>
+            </select>
+          </Field>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Personnes à charge"><input type="number" min="0" value={form.dependents_count} onChange={e => set("dependents_count", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="Groupe sanguin"><input type="text" value={form.blood_type} onChange={e => set("blood_type", e.target.value)} className="u-input" style={fieldStyle} placeholder="ex. O+" /></Field>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Code postal"><input type="text" value={form.postal_code} onChange={e => set("postal_code", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="Pays"><input type="text" value={form.country} onChange={e => set("country", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
+        <Field label="Email personnel"><input type="email" value={form.personal_email} onChange={e => set("personal_email", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+
+        <SectionTitle>Pièce d'identité</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="CIN — Date de délivrance"><input type="date" value={form.cin_issue_date} onChange={e => set("cin_issue_date", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="CIN — Date de validité"><input type="date" value={form.cin_expiry_date} onChange={e => set("cin_expiry_date", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
+        <Field label="N° Passeport"><input type="text" value={form.passport_number} onChange={e => set("passport_number", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+
+        <SectionTitle>Contact d'urgence</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Nom"><input type="text" value={form.emergency_contact_name} onChange={e => set("emergency_contact_name", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="Téléphone"><input type="text" value={form.emergency_contact_phone} onChange={e => set("emergency_contact_phone", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
+        <Field label="Lien de parenté"><input type="text" value={form.emergency_contact_relation} onChange={e => set("emergency_contact_relation", e.target.value)} className="u-input" style={fieldStyle} placeholder="ex. Conjoint(e), Parent…" /></Field>
+
+        <SectionTitle>Conditions de travail</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Échelon / Niveau"><input type="text" value={form.grade} onChange={e => set("grade", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="Lieu de travail"><input type="text" value={form.work_location} onChange={e => set("work_location", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
+        <Field label="Heures hebdomadaires"><input type="number" min="0" step="any" value={form.weekly_hours} onChange={e => set("weekly_hours", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+
+        <SectionTitle>Administratif / Paie</SectionTitle>
+        <Field label="Nom de la banque"><input type="text" value={form.bank_name} onChange={e => set("bank_name", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="N° AMO"><input type="text" value={form.amo_number} onChange={e => set("amo_number", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          <Field label="Identifiant fiscal (IF)"><input type="text" value={form.tax_id} onChange={e => set("tax_id", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
+        <Field label="N° CIMR"><input type="text" value={form.cimr_number} onChange={e => set("cimr_number", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+
         <Field label="Notes">
           <textarea value={form.notes} onChange={e => set("notes", e.target.value)} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
         </Field>
@@ -277,9 +420,16 @@ export function RhEmployees() {
           <div className="dash-card overflow-hidden">
             {employees.map(emp => (
               <div key={emp.id} className="row-c flex-wrap">
-                <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}>
-                  <Users size={18} strokeWidth={1.7} />
-                </span>
+                {emp.photo_url ? (
+                  <img
+                    src={emp.photo_url}
+                    alt=""
+                    style={{ width: 34, height: 34, borderRadius: 999, objectFit: "cover", flexShrink: 0 }}
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <DashAvatar name={emp.full_name || "?"} size={34} tone="mid" />
+                )}
                 <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{emp.full_name}</div>
                   <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>
@@ -293,6 +443,8 @@ export function RhEmployees() {
                 }}>
                   {STATUSES.find(s => s.value === emp.status)?.label ?? emp.status}
                 </span>
+                <Link to="/dashboard/rh/employees/$employeeId" params={{ employeeId: emp.id }} search={{ tab: undefined }} style={{ display: "flex", color: PAL.muted }} title="Voir le dossier"><Eye size={14} strokeWidth={1.7} /></Link>
+                <Link to="/dashboard/rh/employees/$employeeId" params={{ employeeId: emp.id }} search={{ tab: "fichiers" }} style={{ display: "flex", color: PAL.muted }} title="Fichiers"><FileText size={14} strokeWidth={1.7} /></Link>
                 <button onClick={() => setModal({ open: true, editing: emp })} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
                 <button onClick={() => remove(emp)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
               </div>

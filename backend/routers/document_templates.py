@@ -51,9 +51,12 @@ async def upload_template(
     db: Annotated[Client, Depends(get_db)],
     name: str = Form(...),
     file: UploadFile = File(...),
+    target_type: str = Form("student"),
 ):
     if not user.is_admin():
         raise HTTPException(403, "Admin only")
+    if target_type not in ("student", "employee"):
+        raise HTTPException(400, "target_type must be 'student' or 'employee'")
 
     content_type = file.content_type or ""
     try:
@@ -84,6 +87,7 @@ async def upload_template(
         "file_kind": file_kind,
         "content_type": content_type,
         "fields": fields,
+        "target_type": target_type,
         "created_by": user.id,
     }).execute()
     new_template = res.data[0]
@@ -180,6 +184,80 @@ def _current_academic_year() -> str:
     return f"{start_year}-{start_year + 1}"
 
 
+def _fmt_date(value) -> str:
+    if not value:
+        return ""
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return str(value)
+
+
+def _months_between(start, end) -> str:
+    if not (start and end):
+        return ""
+    try:
+        s = datetime.strptime(str(start)[:10], "%Y-%m-%d")
+        e = datetime.strptime(str(end)[:10], "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return str(max(0, (e.year - s.year) * 12 + (e.month - s.month)))
+
+
+def _build_employee_context(employee: dict, code: str) -> dict:
+    """Employee documents reuse the same generic keys as student ones
+    (student_name, cin, date_of_birth…) plus the employee-only fields —
+    the key names are internal plumbing, invisible to the end user."""
+    address = ", ".join(p for p in (employee.get("address"), employee.get("city")) if p)
+    salary = employee.get("salary")
+    return {
+        "student_name": employee.get("full_name") or "",
+        "last_name": employee.get("full_name") or "",
+        "first_name": "",
+        "student_email": employee.get("email") or "",
+        "class_name": "",
+        "date_of_birth": _fmt_date(employee.get("birth_date")),
+        "place_of_birth": employee.get("place_of_birth") or "",
+        "cin": employee.get("cin") or "",
+        "matricule": employee.get("matricule") or "",
+        "phone": employee.get("phone") or "",
+        "personal_email": employee.get("personal_email") or "",
+        "address": address,
+        "nationality": employee.get("nationality") or "",
+        "gender": employee.get("gender") or "",
+        "marital_status": employee.get("marital_status") or "",
+        "passport_number": employee.get("passport_number") or "",
+        "position": employee.get("position") or "",
+        "department": employee.get("department") or "",
+        "manager": employee.get("manager") or "",
+        "grade": employee.get("grade") or "",
+        "work_location": employee.get("work_location") or "",
+        "contract_type": employee.get("contract_type") or "",
+        "contract_start": _fmt_date(employee.get("contract_start")),
+        "contract_end": _fmt_date(employee.get("contract_end")),
+        "contract_duration_months": _months_between(employee.get("contract_start"), employee.get("contract_end")),
+        "weekly_hours": str(employee.get("weekly_hours") or ""),
+        "salary": f"{salary:.2f}" if salary is not None else "",
+        "cnss_number": employee.get("cnss_number") or "",
+        "amo_number": employee.get("amo_number") or "",
+        "tax_id": employee.get("tax_id") or "",
+        "cimr_number": employee.get("cimr_number") or "",
+        "bank_account": employee.get("bank_account") or "",
+        "bank_name": employee.get("bank_name") or "",
+        "emergency_contact_name": employee.get("emergency_contact_name") or "",
+        "emergency_contact_phone": employee.get("emergency_contact_phone") or "",
+        "issue_date": datetime.now(timezone.utc).strftime("%d/%m/%Y"),
+        "academic_year": _current_academic_year(),
+        "establishment_name": ESTABLISHMENT_NAME,
+        "establishment_address": ESTABLISHMENT_ADDRESS,
+        "city": ESTABLISHMENT_CITY,
+        "establishment_phone": ESTABLISHMENT_PHONE,
+        "verification_code": code,
+        "student_photo_url": employee.get("photo_url") or "",
+        "verify_url": f"{FRONTEND_URL}/verify/{code}",
+    }
+
+
 @router.post("/{template_id}/generate")
 async def generate_document_from_template(
     template_id: str,
@@ -194,70 +272,93 @@ async def generate_document_from_template(
     if not templates:
         raise HTTPException(404, "Modèle introuvable")
     template = templates[0]
-
-    students = db.from_("profiles").select("id, full_name, email, photo_url, created_by").eq("id", body.student_id).execute().data
-    if not students:
-        raise HTTPException(404, "Étudiant introuvable")
-    student = students[0]
-    if not user.is_admin() and student.get("created_by") != user.id:
-        raise HTTPException(403, "Not authorized for this student")
+    target_type = template.get("target_type") or "student"
 
     try:
         template_bytes = db.storage.from_(TEMPLATE_BUCKET).download(template["file_path"])
     except Exception as e:
         raise HTTPException(500, f"Échec du chargement du modèle : {str(e)}")
 
-    details_rows = db.from_("student_details").select("nom, prenom, date_naissance, lieu_naissance, cin, matricule").eq("student_id", body.student_id).execute().data
-    details = details_rows[0] if details_rows else {}
-    date_naissance = details.get("date_naissance") or ""
-    if date_naissance:
-        # PostgREST returns the date column as ISO AAAA-MM-JJ.
-        date_naissance = datetime.strptime(date_naissance, "%Y-%m-%d").strftime("%d/%m/%Y")
-
-    # Profile photo, falling back to the dossier's photo file — covers
-    # students whose photo was uploaded before the profile wiring existed.
-    photo_url = student.get("photo_url") or ""
-    if not photo_url:
-        photo_files = (
-            db.from_("student_files").select("file_path")
-            .eq("student_id", body.student_id).eq("type", "photo")
-            .order("created_at", desc=True).limit(1).execute().data
-        )
-        if photo_files:
-            try:
-                signed = db.storage.from_("student-files").create_signed_url(photo_files[0]["file_path"], 3600)
-                photo_url = signed.get("signedURL") or signed.get("signed_url") or ""
-            except Exception:
-                pass  # no photo is a visible-but-acceptable outcome; a crash is not
-
     code = new_verification_code()
-    context = {
-        "student_name": student.get("full_name") or "",
-        # Split name for {{ nom }} / {{ prenom }} templates — the fiche is
-        # authoritative; full_name backs up the family-name slot so machine
-        # templates never print a blank where a name belongs.
-        "last_name": details.get("nom") or student.get("full_name") or "",
-        "first_name": details.get("prenom") or "",
-        "student_email": student.get("email") or "",
-        "class_name": _resolve_class_name(db, body.student_id),
-        # Filled from the fiche administrative when it's been saved; blank
-        # placeholder otherwise (the pre-details behaviour).
-        "date_of_birth": date_naissance,
-        "place_of_birth": details.get("lieu_naissance") or "",
-        "cin": details.get("cin") or "",
-        "matricule": details.get("matricule") or "",
-        "issue_date": datetime.now(timezone.utc).strftime("%d/%m/%Y"),
-        "academic_year": _current_academic_year(),
-        "establishment_name": ESTABLISHMENT_NAME,
-        "establishment_address": ESTABLISHMENT_ADDRESS,
-        "city": ESTABLISHMENT_CITY,
-        "establishment_phone": ESTABLISHMENT_PHONE,
+    insert_row: dict = {
+        "type": template["name"],
+        "template_id": template_id,
+        "statut": "valide",
         "verification_code": code,
-        # Image-zone replacements (student cards): the profile photo and a
-        # fresh QR pointing at this document's public verification page.
-        "student_photo_url": photo_url,
-        "verify_url": f"{FRONTEND_URL}/verify/{code}",
+        "generated_by": user.id,
     }
+
+    if target_type == "employee":
+        if not user.is_admin():
+            raise HTTPException(403, "Admin only")
+        if not body.employee_id:
+            raise HTTPException(400, "employee_id requis pour ce modèle")
+        employees = db.from_("employees").select("*").eq("id", body.employee_id).execute().data
+        if not employees:
+            raise HTTPException(404, "Employé introuvable")
+        context = _build_employee_context(employees[0], code)
+        insert_row["employee_id"] = body.employee_id
+    else:
+        if not body.student_id:
+            raise HTTPException(400, "student_id requis pour ce modèle")
+        students = db.from_("profiles").select("id, full_name, email, photo_url, created_by").eq("id", body.student_id).execute().data
+        if not students:
+            raise HTTPException(404, "Étudiant introuvable")
+        student = students[0]
+        if not user.is_admin() and student.get("created_by") != user.id:
+            raise HTTPException(403, "Not authorized for this student")
+
+        details_rows = db.from_("student_details").select("nom, prenom, date_naissance, lieu_naissance, cin, matricule").eq("student_id", body.student_id).execute().data
+        details = details_rows[0] if details_rows else {}
+        date_naissance = details.get("date_naissance") or ""
+        if date_naissance:
+            # PostgREST returns the date column as ISO AAAA-MM-JJ.
+            date_naissance = datetime.strptime(date_naissance, "%Y-%m-%d").strftime("%d/%m/%Y")
+
+        # Profile photo, falling back to the dossier's photo file — covers
+        # students whose photo was uploaded before the profile wiring existed.
+        photo_url = student.get("photo_url") or ""
+        if not photo_url:
+            photo_files = (
+                db.from_("student_files").select("file_path")
+                .eq("student_id", body.student_id).eq("type", "photo")
+                .order("created_at", desc=True).limit(1).execute().data
+            )
+            if photo_files:
+                try:
+                    signed = db.storage.from_("student-files").create_signed_url(photo_files[0]["file_path"], 3600)
+                    photo_url = signed.get("signedURL") or signed.get("signed_url") or ""
+                except Exception:
+                    pass  # no photo is a visible-but-acceptable outcome; a crash is not
+
+        context = {
+            "student_name": student.get("full_name") or "",
+            # Split name for {{ nom }} / {{ prenom }} templates — the fiche is
+            # authoritative; full_name backs up the family-name slot so machine
+            # templates never print a blank where a name belongs.
+            "last_name": details.get("nom") or student.get("full_name") or "",
+            "first_name": details.get("prenom") or "",
+            "student_email": student.get("email") or "",
+            "class_name": _resolve_class_name(db, body.student_id),
+            # Filled from the fiche administrative when it's been saved; blank
+            # placeholder otherwise (the pre-details behaviour).
+            "date_of_birth": date_naissance,
+            "place_of_birth": details.get("lieu_naissance") or "",
+            "cin": details.get("cin") or "",
+            "matricule": details.get("matricule") or "",
+            "issue_date": datetime.now(timezone.utc).strftime("%d/%m/%Y"),
+            "academic_year": _current_academic_year(),
+            "establishment_name": ESTABLISHMENT_NAME,
+            "establishment_address": ESTABLISHMENT_ADDRESS,
+            "city": ESTABLISHMENT_CITY,
+            "establishment_phone": ESTABLISHMENT_PHONE,
+            "verification_code": code,
+            # Image-zone replacements (student cards): the profile photo and a
+            # fresh QR pointing at this document's public verification page.
+            "student_photo_url": photo_url,
+            "verify_url": f"{FRONTEND_URL}/verify/{code}",
+        }
+        insert_row["student_id"] = body.student_id
 
     try:
         output_bytes, output_content_type = generate_from_template(
@@ -273,19 +374,12 @@ async def generate_document_from_template(
     except Exception as e:
         raise HTTPException(500, f"Échec du stockage du document : {str(e)}")
 
-    res = db.from_("documents").insert({
-        "type": template["name"],
-        "student_id": body.student_id,
-        "template_id": template_id,
-        "file_path": file_path,
-        "statut": "valide",
-        "verification_code": code,
-        "generated_by": user.id,
-    }).execute()
+    insert_row["file_path"] = file_path
+    res = db.from_("documents").insert(insert_row).execute()
     new_doc = res.data[0]
 
     log_audit(db, user.id, "document.generate_from_template", "document", new_doc["id"], {
-        "template_id": template_id, "student_id": body.student_id,
+        "template_id": template_id, "student_id": body.student_id, "employee_id": body.employee_id,
     })
 
     signed = db.storage.from_(DOCUMENT_BUCKET).create_signed_url(file_path, SIGNED_URL_TTL)

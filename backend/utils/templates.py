@@ -75,13 +75,42 @@ SUPPORTED_FIELDS = {
     ),
     "other_personal": (
         "toute AUTRE donnée spécifique à l'exemple qui ne correspond à aucun champ "
-        "ci-dessus : téléphone, niveau d'études, "
-        "faculté/département, noms des signataires, et pour un stage TOUTES les "
+        "ci-dessus : niveau d'études, "
+        "faculté/département (pour un étudiant), noms des signataires, et pour un stage TOUTES les "
         "informations du stage (nom de l'entreprise, numéro d'immatriculation/RC, "
         "adresse de l'entreprise, dates et durée du stage, sujet du stage, "
         "encadrants/superviseurs)… Chaque valeur sera effacée du document généré "
         "(remplacée par un blanc à compléter)"
     ),
+    # ── Employé (contrats, fiches de poste…) — la personne concernée peut
+    # être un étudiant OU un employé selon le document ; ces champs ne
+    # s'appliquent qu'aux documents RH.
+    "phone": "son numéro de téléphone personnel",
+    "personal_email": "un email personnel (différent de l'email de la plateforme)",
+    "address": "son adresse de résidence complète (rue, quartier, ville)",
+    "nationality": "sa nationalité",
+    "gender": "son sexe / genre (M ou F)",
+    "marital_status": "sa situation familiale (célibataire, marié(e), divorcé(e), veuf(ve))",
+    "passport_number": "son numéro de passeport",
+    "position": "son poste / intitulé de fonction dans l'entreprise",
+    "department": "son département / service",
+    "manager": "le nom de son responsable hiérarchique / manager",
+    "grade": "son échelon ou niveau hiérarchique",
+    "work_location": "son lieu de travail / site d'affectation",
+    "contract_type": "son type de contrat (CDI, CDD, Stage…)",
+    "contract_start": "la date de début de son contrat de travail",
+    "contract_end": "la date de fin de son contrat de travail (si CDD)",
+    "contract_duration_months": "la durée du contrat en mois, écrite en toutes lettres ou en chiffres",
+    "weekly_hours": "le nombre d'heures de travail par semaine",
+    "salary": "sa rémunération / son salaire (montant net ou brut)",
+    "cnss_number": "son numéro d'affiliation CNSS",
+    "amo_number": "son numéro AMO / mutuelle",
+    "tax_id": "son identifiant fiscal (IF)",
+    "cimr_number": "son numéro CIMR (retraite complémentaire)",
+    "bank_account": "son RIB / numéro de compte bancaire",
+    "bank_name": "le nom de sa banque",
+    "emergency_contact_name": "le nom de son contact d'urgence",
+    "emergency_contact_phone": "le téléphone de son contact d'urgence",
 }
 
 FIELD_LABELS = {
@@ -104,6 +133,32 @@ FIELD_LABELS = {
     "other_personal": "Donnée de l'exemple (effacée)",
     "photo_zone": "Photo du stagiaire",
     "qr_zone": "QR de vérification",
+    "phone": "Téléphone",
+    "personal_email": "Email personnel",
+    "address": "Adresse",
+    "nationality": "Nationalité",
+    "gender": "Genre",
+    "marital_status": "Situation familiale",
+    "passport_number": "N° Passeport",
+    "position": "Poste",
+    "department": "Département",
+    "manager": "Manager",
+    "grade": "Échelon",
+    "work_location": "Lieu de travail",
+    "contract_type": "Type de contrat",
+    "contract_start": "Début du contrat",
+    "contract_end": "Fin du contrat",
+    "contract_duration_months": "Durée du contrat (mois)",
+    "weekly_hours": "Heures hebdomadaires",
+    "salary": "Salaire",
+    "cnss_number": "N° CNSS",
+    "amo_number": "N° AMO",
+    "tax_id": "Identifiant fiscal",
+    "cimr_number": "N° CIMR",
+    "bank_account": "RIB",
+    "bank_name": "Banque",
+    "emergency_contact_name": "Contact d'urgence",
+    "emergency_contact_phone": "Téléphone d'urgence",
 }
 
 

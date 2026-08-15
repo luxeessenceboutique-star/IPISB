@@ -291,7 +291,8 @@ class PurchaseCreate(BaseModel):
 
 
 class TemplateGenerate(BaseModel):
-    student_id: str
+    student_id: Optional[str] = None
+    employee_id: Optional[str] = None
 
 
 class PurchaseUpdate(BaseModel):
@@ -705,6 +706,32 @@ class EmployeeCreate(BaseModel):
     cnss_number: Optional[str] = None
     bank_account: Optional[str] = None
     notes: Optional[str] = None
+    # Identité complémentaire
+    gender: Optional[str] = None
+    place_of_birth: Optional[str] = None
+    marital_status: Optional[str] = None
+    dependents_count: Optional[int] = None
+    blood_type: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    personal_email: Optional[str] = None
+    # Pièce d'identité
+    cin_issue_date: Optional[str] = None
+    cin_expiry_date: Optional[str] = None
+    passport_number: Optional[str] = None
+    # Contact d'urgence
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relation: Optional[str] = None
+    # Poste / conditions de travail
+    grade: Optional[str] = None
+    work_location: Optional[str] = None
+    weekly_hours: Optional[float] = None
+    # Administratif / paie
+    bank_name: Optional[str] = None
+    amo_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    cimr_number: Optional[str] = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -729,12 +756,33 @@ class EmployeeUpdate(BaseModel):
     cnss_number: Optional[str] = None
     bank_account: Optional[str] = None
     notes: Optional[str] = None
+    gender: Optional[str] = None
+    place_of_birth: Optional[str] = None
+    marital_status: Optional[str] = None
+    dependents_count: Optional[int] = None
+    blood_type: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    personal_email: Optional[str] = None
+    cin_issue_date: Optional[str] = None
+    cin_expiry_date: Optional[str] = None
+    passport_number: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relation: Optional[str] = None
+    grade: Optional[str] = None
+    work_location: Optional[str] = None
+    weekly_hours: Optional[float] = None
+    bank_name: Optional[str] = None
+    amo_number: Optional[str] = None
+    tax_id: Optional[str] = None
+    cimr_number: Optional[str] = None
 
 
 # ── RH — Leave requests ────────────────────────────────────────────────────────
 class LeaveRequestCreate(BaseModel):
     employee_id: str
-    type: str = "annual"             # 'annual'|'sick'|'personal'|'maternity'|'paternity'|'unpaid'
+    type: str = "other"              # 'recovery'(R) | 'sick'(M) | 'unpaid'(CS) | 'permission'(P) | 'other'(A) | 'unjustified_absence'(AJ)
     start_date: str
     end_date: str
     days: int
@@ -742,7 +790,7 @@ class LeaveRequestCreate(BaseModel):
 
 
 class LeaveRequestUpdate(BaseModel):
-    status: Optional[str] = None     # 'pending' | 'approved' | 'rejected'
+    status: Optional[str] = None     # 'pending' | 'approved' | 'rejected' | 'cancelled'
     reason: Optional[str] = None
     comment: Optional[str] = None
 

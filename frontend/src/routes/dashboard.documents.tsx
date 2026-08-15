@@ -25,6 +25,7 @@ type Template = {
   name: string;
   file_kind: "docx" | "pdf" | "image";
   fields: TemplateField[];
+  target_type: "student" | "employee";
   created_at: string;
 };
 
@@ -32,11 +33,12 @@ async function listTemplates(): Promise<Template[]> {
   return api.get("/api/document-templates");
 }
 
-async function uploadTemplate(name: string, file: File): Promise<Template> {
+async function uploadTemplate(name: string, file: File, targetType: "student" | "employee"): Promise<Template> {
   const headers = await authHeader();
   const form = new FormData();
   form.append("name", name);
   form.append("file", file);
+  form.append("target_type", targetType);
   const res = await fetch(`${API}/api/document-templates`, { method: "POST", headers, body: form });
   if (!res.ok) throw new Error(parseApiError(await res.text(), `HTTP ${res.status}`));
   return res.json();
@@ -50,8 +52,9 @@ async function redetectTemplate(id: string): Promise<Template> {
   return api.post(`/api/document-templates/${id}/redetect`, {});
 }
 
-async function generateFromTemplate(templateId: string, studentId: string) {
-  return api.post(`/api/document-templates/${templateId}/generate`, { student_id: studentId });
+async function generateFromTemplate(templateId: string, personId: string, targetType: "student" | "employee") {
+  const body = targetType === "employee" ? { employee_id: personId } : { student_id: personId };
+  return api.post(`/api/document-templates/${templateId}/generate`, body);
 }
 
 const KIND_LABEL: Record<Template["file_kind"], string> = { docx: "Word", pdf: "PDF", image: "Image" };
@@ -89,12 +92,15 @@ const TYPE_LABEL: Record<DocType, string> = {
 };
 
 type Student = { id: string; full_name: string | null; email: string | null };
+type EmployeeLite = { id: string; full_name: string };
 type Doc = {
   id: string;
   type: DocType;
   label: string;
-  student_id: string;
-  student_name: string;
+  student_id: string | null;
+  student_name: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
   statut: "valide" | "revoque";
   verification_code: string;
   file_path?: string;
@@ -102,10 +108,10 @@ type Doc = {
 };
 
 
-function GenerateModal({ students, onClose, onGenerated, onPreview }: { students: Student[]; onClose: () => void; onGenerated: () => void; onPreview: (p: Preview) => void }) {
+function GenerateModal({ students, employees, onClose, onGenerated, onPreview }: { students: Student[]; employees: EmployeeLite[]; onClose: () => void; onGenerated: () => void; onPreview: (p: Preview) => void }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [choice, setChoice] = useState("");
-  const [studentId, setStudentId] = useState("");
+  const [personId, setPersonId] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -119,32 +125,32 @@ function GenerateModal({ students, onClose, onGenerated, onPreview }: { students
       .catch(() => setChoice("builtin:attestation_scolarite"));
   }, []);
 
+  const chosenTemplate = choice.startsWith("tpl:") ? templates.find(t => t.id === choice.slice(4)) : undefined;
+  const isEmployeeTarget = chosenTemplate?.target_type === "employee";
+
   async function generate() {
-    if (!studentId) { toast.error("Sélectionnez un stagiaire."); return; }
+    if (!personId) { toast.error(isEmployeeTarget ? "Sélectionnez un employé." : "Sélectionnez un stagiaire."); return; }
     if (!choice) { toast.error("Sélectionnez un modèle."); return; }
     setBusy(true);
     try {
       let doc: any;
       let title: string;
       if (choice.startsWith("tpl:")) {
-        const tpl = templates.find(t => t.id === choice.slice(4));
-        doc = await generateFromTemplate(choice.slice(4), studentId);
-        title = tpl?.name ?? "Document";
+        doc = await generateFromTemplate(choice.slice(4), personId, isEmployeeTarget ? "employee" : "student");
+        title = chosenTemplate?.name ?? "Document";
       } else {
         const type = choice.slice(8) as DocType;
-        doc = await api.post("/api/documents/generate", { type, student_id: studentId });
+        doc = await api.post("/api/documents/generate", { type, student_id: personId });
         title = TYPE_LABEL[type];
       }
       toast.success("Document généré !");
       onGenerated();
       onClose();
       if (doc.signed_url) {
-        const student = students.find(s => s.id === studentId);
-        onPreview({
-          url: doc.signed_url,
-          title: `${title} — ${student?.full_name || student?.email || ""}`,
-          isPdf: urlIsPdf(doc.signed_url),
-        });
+        const name = isEmployeeTarget
+          ? employees.find(e => e.id === personId)?.full_name
+          : (students.find(s => s.id === personId)?.full_name || students.find(s => s.id === personId)?.email);
+        onPreview({ url: doc.signed_url, title: `${title} — ${name || ""}`, isPdf: urlIsPdf(doc.signed_url) });
       }
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors de la génération.");
@@ -164,11 +170,11 @@ function GenerateModal({ students, onClose, onGenerated, onPreview }: { students
         </div>
 
         <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>Modèle</label>
-        <select value={choice} onChange={e => setChoice(e.target.value)} className="u-input"
+        <select value={choice} onChange={e => { setChoice(e.target.value); setPersonId(""); }} className="u-input"
           style={{ marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none" }}>
           {templates.length > 0 && (
             <optgroup label="Vos modèles">
-              {templates.map(t => <option key={t.id} value={`tpl:${t.id}`}>{t.name}</option>)}
+              {templates.map(t => <option key={t.id} value={`tpl:${t.id}`}>{t.name} {t.target_type === "employee" ? "(Employé)" : ""}</option>)}
             </optgroup>
           )}
           <optgroup label="Documents intégrés (mise en page basique)">
@@ -176,11 +182,13 @@ function GenerateModal({ students, onClose, onGenerated, onPreview }: { students
           </optgroup>
         </select>
 
-        <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>Stagiaire</label>
-        <select value={studentId} onChange={e => setStudentId(e.target.value)} className="u-input"
-          style={{ marginTop: 8, marginBottom: 24, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: studentId ? PAL.ink : PAL.muted, background: PAL.paper, outline: "none" }}>
+        <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>{isEmployeeTarget ? "Employé" : "Stagiaire"}</label>
+        <select value={personId} onChange={e => setPersonId(e.target.value)} className="u-input"
+          style={{ marginTop: 8, marginBottom: 24, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: personId ? PAL.ink : PAL.muted, background: PAL.paper, outline: "none" }}>
           <option value="">— Sélectionner —</option>
-          {students.map(s => <option key={s.id} value={s.id}>{s.full_name || s.email}</option>)}
+          {isEmployeeTarget
+            ? employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)
+            : students.map(s => <option key={s.id} value={s.id}>{s.full_name || s.email}</option>)}
         </select>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -197,6 +205,7 @@ function GenerateModal({ students, onClose, onGenerated, onPreview }: { students
 function UploadTemplateModal({ onClose, onUploaded }: { onClose: () => void; onUploaded: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
+  const [targetType, setTargetType] = useState<"student" | "employee">("student");
   const [busy, setBusy] = useState(false);
 
   function pickFile(f: File | null) {
@@ -212,7 +221,7 @@ function UploadTemplateModal({ onClose, onUploaded }: { onClose: () => void; onU
     if (!name.trim()) { toast.error("Donnez un nom au modèle."); return; }
     setBusy(true);
     try {
-      await uploadTemplate(name.trim(), file);
+      await uploadTemplate(name.trim(), file, targetType);
       toast.success("Modèle ajouté ! Détection des champs effectuée.");
       onUploaded();
       onClose();
@@ -249,8 +258,21 @@ function UploadTemplateModal({ onClose, onUploaded }: { onClose: () => void; onU
           onChange={e => setName(e.target.value)}
           placeholder="ex. Convention de stage"
           className="u-input"
-          style={{ marginTop: 8, marginBottom: 24, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none" }}
+          style={{ marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none" }}
         />
+
+        <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>Ce modèle concerne</label>
+        <div style={{ display: "flex", gap: 4, background: "var(--pal-cream)", padding: 3, borderRadius: 10, marginTop: 8, marginBottom: 24, width: "fit-content" }}>
+          {(["student", "employee"] as const).map(t => (
+            <button key={t} type="button" onClick={() => setTargetType(t)} style={{
+              padding: "7px 16px", borderRadius: 7, border: 0, cursor: "pointer",
+              fontFamily: sans, fontSize: 12.5, fontWeight: 600,
+              background: targetType === t ? PAL.paper : "transparent",
+              color: targetType === t ? "var(--pal-primary-deep)" : PAL.muted,
+              boxShadow: targetType === t ? "0 1px 2px rgba(0,0,0,.06)" : "none",
+            }}>{t === "student" ? "Un stagiaire" : "Un employé"}</button>
+          ))}
+        </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
@@ -263,25 +285,24 @@ function UploadTemplateModal({ onClose, onUploaded }: { onClose: () => void; onU
   );
 }
 
-function GenerateFromTemplateModal({ template, students, onClose, onGenerated, onPreview }: { template: Template; students: Student[]; onClose: () => void; onGenerated: () => void; onPreview: (p: Preview) => void }) {
-  const [studentId, setStudentId] = useState("");
+function GenerateFromTemplateModal({ template, students, employees, onClose, onGenerated, onPreview }: { template: Template; students: Student[]; employees: EmployeeLite[]; onClose: () => void; onGenerated: () => void; onPreview: (p: Preview) => void }) {
+  const [personId, setPersonId] = useState("");
   const [busy, setBusy] = useState(false);
+  const isEmployeeTarget = template.target_type === "employee";
 
   async function generate() {
-    if (!studentId) { toast.error("Sélectionnez un stagiaire."); return; }
+    if (!personId) { toast.error(isEmployeeTarget ? "Sélectionnez un employé." : "Sélectionnez un stagiaire."); return; }
     setBusy(true);
     try {
-      const doc = await generateFromTemplate(template.id, studentId);
+      const doc = await generateFromTemplate(template.id, personId, isEmployeeTarget ? "employee" : "student");
       toast.success("Document généré !");
       onGenerated();
       onClose();
       if (doc.signed_url) {
-        const student = students.find(s => s.id === studentId);
-        onPreview({
-          url: doc.signed_url,
-          title: `${template.name} — ${student?.full_name || student?.email || ""}`,
-          isPdf: urlIsPdf(doc.signed_url),
-        });
+        const name = isEmployeeTarget
+          ? employees.find(e => e.id === personId)?.full_name
+          : (students.find(s => s.id === personId)?.full_name || students.find(s => s.id === personId)?.email);
+        onPreview({ url: doc.signed_url, title: `${template.name} — ${name || ""}`, isPdf: urlIsPdf(doc.signed_url) });
       }
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors de la génération.");
@@ -302,11 +323,13 @@ function GenerateFromTemplateModal({ template, students, onClose, onGenerated, o
           </p>
         )}
 
-        <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>Stagiaire</label>
-        <select value={studentId} onChange={e => setStudentId(e.target.value)} className="u-input"
-          style={{ marginTop: 8, marginBottom: 24, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: studentId ? PAL.ink : PAL.muted, background: PAL.paper, outline: "none" }}>
+        <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>{isEmployeeTarget ? "Employé" : "Stagiaire"}</label>
+        <select value={personId} onChange={e => setPersonId(e.target.value)} className="u-input"
+          style={{ marginTop: 8, marginBottom: 24, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: personId ? PAL.ink : PAL.muted, background: PAL.paper, outline: "none" }}>
           <option value="">— Sélectionner —</option>
-          {students.map(s => <option key={s.id} value={s.id}>{s.full_name || s.email}</option>)}
+          {isEmployeeTarget
+            ? employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)
+            : students.map(s => <option key={s.id} value={s.id}>{s.full_name || s.email}</option>)}
         </select>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -320,7 +343,7 @@ function GenerateFromTemplateModal({ template, students, onClose, onGenerated, o
   );
 }
 
-function TemplatesSection({ students, onPreview, onDocsChanged }: { students: Student[]; onPreview: (p: Preview) => void; onDocsChanged: () => void }) {
+function TemplatesSection({ students, employees, onPreview, onDocsChanged }: { students: Student[]; employees: EmployeeLite[]; onPreview: (p: Preview) => void; onDocsChanged: () => void }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -371,6 +394,7 @@ function TemplatesSection({ students, onPreview, onDocsChanged }: { students: St
         <GenerateFromTemplateModal
           template={genTemplate}
           students={students}
+          employees={employees}
           onClose={() => setGenTemplate(null)}
           onGenerated={() => { load(); onDocsChanged(); }}
           onPreview={onPreview}
@@ -413,7 +437,10 @@ function TemplatesSection({ students, onPreview, onDocsChanged }: { students: St
                 <Layers size={20} strokeWidth={1.7} />
               </span>
               <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{t.name}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink, display: "flex", alignItems: "center", gap: 8 }}>
+                  {t.name}
+                  <span className="chip-c" style={{ fontSize: 10 }}>{t.target_type === "employee" ? "Employé" : "Stagiaire"}</span>
+                </div>
                 <div className="mt-1" style={{ fontSize: 12, color: PAL.muted, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 5 }}>
                   <span style={{ marginRight: 3 }}>{KIND_LABEL[t.file_kind]}</span>
                   {t.fields.length === 0 ? (
@@ -459,6 +486,7 @@ function TemplatesSection({ students, onPreview, onDocsChanged }: { students: St
 function DocumentsPage() {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [employees, setEmployees] = useState<EmployeeLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGenerate, setShowGenerate] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -478,6 +506,7 @@ function DocumentsPage() {
   useEffect(() => {
     load();
     api.get("/api/students").then((d: Student[]) => setStudents(d ?? [])).catch(() => {});
+    api.get("/api/rh/employees?page_size=200").then(r => setEmployees(r.items ?? [])).catch(() => {});
   }, []);
 
   async function download(doc: Doc) {
@@ -495,7 +524,7 @@ function DocumentsPage() {
       if (res.signed_url) {
         setPreview({
           url: res.signed_url,
-          title: `${doc.label} — ${doc.student_name}`,
+          title: `${doc.label} — ${doc.employee_name || doc.student_name || ""}`,
           isPdf: urlIsPdf(res.signed_url),
         });
       }
@@ -529,7 +558,7 @@ function DocumentsPage() {
   return (
     <div style={{ fontFamily: sans }}>
       {showGenerate && (
-        <GenerateModal students={students} onClose={() => setShowGenerate(false)} onGenerated={load} onPreview={setPreview} />
+        <GenerateModal students={students} employees={employees} onClose={() => setShowGenerate(false)} onGenerated={load} onPreview={setPreview} />
       )}
       {preview && <PreviewModal preview={preview} onClose={() => setPreview(null)} />}
 
@@ -544,7 +573,7 @@ function DocumentsPage() {
         }
       />
 
-      <TemplatesSection students={students} onPreview={setPreview} onDocsChanged={load} />
+      <TemplatesSection students={students} employees={employees} onPreview={setPreview} onDocsChanged={load} />
 
       <SectionLabel>{docs.length} document{docs.length !== 1 ? "s" : ""} généré{docs.length !== 1 ? "s" : ""}</SectionLabel>
 
@@ -577,7 +606,7 @@ function DocumentsPage() {
               <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{d.label}</div>
                 <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted, display: "flex", alignItems: "center", gap: 6 }}>
-                  {d.student_name}
+                  {d.employee_name || d.student_name}
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 10.5 }}>
                     <QrCode size={11} strokeWidth={1.7} />{d.verification_code}
                   </span>

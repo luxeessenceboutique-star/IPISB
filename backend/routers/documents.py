@@ -56,8 +56,19 @@ async def list_documents(
         profiles = db.from_("profiles").select("id, full_name").in_("id", student_ids).execute().data or []
         name_map = {p["id"]: p["full_name"] or "—" for p in profiles}
 
+    employee_ids = list({d["employee_id"] for d in docs if d.get("employee_id")})
+    employee_name_map: dict[str, str] = {}
+    if employee_ids:
+        employees = db.from_("employees").select("id, full_name").in_("id", employee_ids).execute().data or []
+        employee_name_map = {e["id"]: e["full_name"] or "—" for e in employees}
+
     return [
-        {**d, "student_name": name_map.get(d.get("student_id", ""), "—"), "label": DOCUMENT_LABELS.get(d["type"], d["type"])}
+        {
+            **d,
+            "student_name": name_map.get(d.get("student_id", ""), "—") if d.get("student_id") else None,
+            "employee_name": employee_name_map.get(d.get("employee_id", ""), "—") if d.get("employee_id") else None,
+            "label": DOCUMENT_LABELS.get(d["type"], d["type"]),
+        }
         for d in docs
     ]
 

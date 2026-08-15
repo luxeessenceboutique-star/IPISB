@@ -13,7 +13,7 @@ from routers import accounting_invoices, accounting_expenses, accounting_revenue
 from routers import accounting_budgets, accounting_dashboard, accounting_analytics
 from routers import accounting_purchase_requests, accounting_quotations
 from routers import accounting_receptions, accounting_payments, accounting_inventory
-from routers import rh_employees, rh_leaves, rh_payroll, rh_performance
+from routers import rh_employees, rh_leaves, rh_payroll, rh_performance, employee_files
 from routers import rh_departments, rh_contract_types, rh_assets, rh_onboarding
 from routers import rh_recruitment, rh_orgchart, rh_training, rh_talents
 from routers import copilot as copilot_router
@@ -96,6 +96,7 @@ app.include_router(accounting_receptions.router, prefix="/api")
 app.include_router(accounting_payments.router, prefix="/api")
 app.include_router(accounting_inventory.router, prefix="/api")
 app.include_router(rh_employees.router, prefix="/api")
+app.include_router(employee_files.router, prefix="/api")
 app.include_router(rh_leaves.router, prefix="/api")
 app.include_router(rh_payroll.router, prefix="/api")
 app.include_router(rh_performance.router, prefix="/api")
