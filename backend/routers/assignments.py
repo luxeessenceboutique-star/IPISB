@@ -110,7 +110,7 @@ async def create_assignment(
         notify_users(
             db,
             student_ids,
-            f"Nouveau devoir : {body.title}",
+            f"Nouveau contrôle continu : {body.title}",
             body.description or None,
             "info",
             "/dashboard/assignments",
@@ -130,12 +130,12 @@ async def create_assignment(
                     due_label = body.due_date[:10] if body.due_date else "Non définie"
                     send_email(
                         emails,
-                        f"Nouveau devoir : {body.title}",
+                        f"Nouveau contrôle continu : {body.title}",
                         (
-                            f"<h2>Nouveau devoir</h2>"
+                            f"<h2>Nouveau contrôle continu</h2>"
                             f"<p><b>{body.title}</b> a été ajouté à votre cours.</p>"
                             f"<p>Date limite : {due_label}</p>"
-                            f"<a href='https://ipisb.ma/dashboard/assignments'>Voir le devoir</a>"
+                            f"<a href='https://ipisb.ma/dashboard/assignments'>Voir le contrôle continu</a>"
                         ),
                     )
         except Exception:
@@ -242,11 +242,11 @@ async def grade_submission(
                 .execute()
                 .data
             )
-            assignment_title = assignment_data[0]["title"] if assignment_data else "Devoir"
+            assignment_title = assignment_data[0]["title"] if assignment_data else "Contrôle continu"
             notify_users(
                 db,
                 [sub["student_id"]],
-                f"Devoir noté : {assignment_title}",
+                f"Contrôle continu noté : {assignment_title}",
                 f"Votre note : {body.grade}/20",
                 "success",
                 "/dashboard/assignments",
@@ -264,12 +264,12 @@ async def grade_submission(
                 if student_email:
                     send_email(
                         student_email,
-                        "Votre devoir a été noté",
+                        "Votre contrôle continu a été noté",
                         (
-                            f"<h2>Devoir noté</h2>"
-                            f"<p>Votre devoir <b>{assignment_title}</b> a été noté : "
+                            f"<h2>Contrôle continu noté</h2>"
+                            f"<p>Votre contrôle continu <b>{assignment_title}</b> a été noté : "
                             f"<b>{body.grade}/20</b>.</p>"
-                            f"<a href='https://ipisb.ma/dashboard/assignments'>Voir mes devoirs</a>"
+                            f"<a href='https://ipisb.ma/dashboard/assignments'>Voir mon contrôle continu</a>"
                         ),
                     )
             except Exception:

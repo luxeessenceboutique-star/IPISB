@@ -29,8 +29,8 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-function Field({ label, type = "text", placeholder, value, onChange }: {
-  label: string; type?: string; placeholder?: string; value: string; onChange?: (v: string) => void;
+function Field({ label, type = "text", placeholder, value, onChange, testId }: {
+  label: string; type?: string; placeholder?: string; value: string; onChange?: (v: string) => void; testId?: string;
 }) {
   return (
     <div style={{ marginBottom: 16 }}>
@@ -42,6 +42,7 @@ function Field({ label, type = "text", placeholder, value, onChange }: {
         onChange={e => onChange?.(e.target.value)}
         required
         className="u-input"
+        data-testid={testId}
         style={{ marginTop: 8, width: "100%", padding: "12px 16px", background: PAL.paper, border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, outline: "none", boxSizing: "border-box" as const }}
       />
     </div>
@@ -151,14 +152,14 @@ function AuthPage() {
           </h1>
 
           <form onSubmit={handleSubmit}>
-            <Field label={t("auth.email")} type="email" value={email} onChange={setEmail} placeholder="prenom.nom@ipisb.ma" />
-            <Field label={t("auth.password")} type="password" value={password} onChange={setPassword} placeholder="••••••••" />
+            <Field label={t("auth.email")} type="email" value={email} onChange={setEmail} placeholder="prenom.nom@ipisb.ma" testId="auth-email" />
+            <Field label={t("auth.password")} type="password" value={password} onChange={setPassword} placeholder="••••••••" testId="auth-password" />
 
             <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 8 }}>
               <a href="#" style={{ fontFamily: sans, fontSize: 12, color: PAL.primary, fontWeight: 600 }}>{t("auth.forgot")}</a>
             </div>
 
-            <button type="submit" disabled={busy} className="u-hover-lift" style={{
+            <button type="submit" disabled={busy} data-testid="auth-submit" className="u-hover-lift" style={{
               background: PAL.ink, color: PAL.paper, border: 0, fontFamily: sans, fontSize: 14, fontWeight: 600,
               padding: "14px 0", borderRadius: 999, cursor: busy ? "wait" : "pointer", letterSpacing: ".01em",
               width: "100%", marginTop: 28, opacity: busy ? 0.6 : 1,

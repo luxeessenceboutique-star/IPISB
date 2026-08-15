@@ -36,16 +36,16 @@ const SUGGESTIONS_BY_ROLE: Record<string, Record<Lang, string[]>> = {
     darija: ["Kifach nwafeq 3la conge?", "Shno houwa module RH?", "Fin ngenere paie?"],
   },
   professor: {
-    fr: ["Comment créer un devoir ?", "Où publier un examen ?", "Comment voir mes classes ?"],
-    ar: ["كيف أنشئ واجبًا؟", "أين أنشر امتحانًا؟", "كيف أرى أقسامي؟"],
-    en: ["How do I create an assignment?", "Where do I publish an exam?", "How do I see my classes?"],
-    darija: ["Kifach nsawb devoir?", "Fin npublier examen?", "Kifach nshouf classes dyali?"],
+    fr: ["Comment créer un contrôle continu ?", "Où publier un examen ?", "Comment voir mes classes ?"],
+    ar: ["كيف أنشئ مراقبة مستمرة؟", "أين أنشر امتحانًا؟", "كيف أرى أقسامي؟"],
+    en: ["How do I create a continuous assessment?", "Where do I publish an exam?", "How do I see my classes?"],
+    darija: ["Kifach nsawb controle continu?", "Fin npublier examen?", "Kifach nshouf classes dyali?"],
   },
   student: {
-    fr: ["Où voir mes devoirs ?", "Comment rejoindre une réunion ?", "Où voir mes notes d'examen ?"],
-    ar: ["أين أرى واجباتي؟", "كيف ألتحق باجتماع؟", "أين أرى نتائج امتحاناتي؟"],
-    en: ["Where do I see my assignments?", "How do I join a meeting?", "Where do I see my exam results?"],
-    darija: ["Fin nshouf devoirs dyali?", "Kifach ndkhol l reunion?", "Fin nshouf notes dyal examen?"],
+    fr: ["Où voir mon contrôle continu ?", "Comment rejoindre une réunion ?", "Où voir mes notes d'examen ?"],
+    ar: ["أين أرى مراقبتي المستمرة؟", "كيف ألتحق باجتماع؟", "أين أرى نتائج امتحاناتي؟"],
+    en: ["Where do I see my continuous assessment?", "How do I join a meeting?", "Where do I see my exam results?"],
+    darija: ["Fin nshouf controle continu dyali?", "Kifach ndkhol l reunion?", "Fin nshouf notes dyal examen?"],
   },
 };
 

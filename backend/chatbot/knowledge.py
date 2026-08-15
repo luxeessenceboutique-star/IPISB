@@ -57,7 +57,7 @@ allie rigueur scientifique, pratique hospitalière et technologie numérique.
 ## Plateforme numérique IPISB Connect
 - Cours en ligne avec vidéos HD et supports PDF
 - Examens QCM avec correction automatique
-- Gestion des travaux et devoirs
+- Gestion du contrôle continu
 - Agenda académique synchronisé
 - Messagerie professeur–étudiant
 - Bibliothèque numérique (8 000+ ressources)

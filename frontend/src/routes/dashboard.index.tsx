@@ -401,7 +401,7 @@ function DashboardHome() {
                         {course.assignments.length > 0 && (
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                              {lang === "fr" ? "Devoirs" : "Assignments"}
+                              {lang === "fr" ? "Contrôle continu" : "Continuous assessment"}
                             </p>
                             <div className="overflow-x-auto rounded-xl border border-border">
                               <table className="w-full text-sm">
@@ -484,8 +484,8 @@ function DashboardHome() {
                         {course.assignments.length === 0 && course.exams.length === 0 && (
                           <p className="text-sm text-muted-foreground">
                             {lang === "fr"
-                              ? "Aucun devoir ni examen pour ce cours."
-                              : "No assignments or exams for this course."}
+                              ? "Aucun contrôle continu ni examen pour ce cours."
+                              : "No continuous assessment or exams for this course."}
                           </p>
                         )}
                       </div>

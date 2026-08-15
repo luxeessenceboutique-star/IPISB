@@ -34,7 +34,7 @@ type EventForm = { title: string; description: string; start_time: string; end_t
 
 const EMPTY_FORM: EventForm = { title: "", description: "", start_time: "", end_time: "", event_type: "event", course_id: "" };
 
-// IPISB Connect redesign event tones: Cours green, Devoir amber, Examen red, Événement blue
+// IPISB Connect redesign event tones: Cours green, Contrôle continu amber, Examen red, Événement blue
 const TYPE_CHIP: Record<string, string> = {
   course:     "chip-c-green",
   exam:       "chip-c-red",
@@ -222,7 +222,7 @@ function AgendaPage() {
     const map: Record<string, { fr: string; en: string; ar: string }> = {
       course:     { fr: "Cours",       en: "Class",      ar: "درس"     },
       exam:       { fr: "Examen",      en: "Exam",       ar: "امتحان"  },
-      assignment: { fr: "Devoir",      en: "Assignment", ar: "واجب"    },
+      assignment: { fr: "Contrôle continu", en: "Continuous assessment", ar: "مراقبة مستمرة" },
       event:      { fr: "Événement",   en: "Event",      ar: "حدث"     },
     };
     return map[type]?.[lang as "fr" | "en" | "ar"] ?? type;

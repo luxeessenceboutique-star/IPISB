@@ -23,7 +23,7 @@ const sans  = '"Manrope", system-ui, sans-serif';
 const mono  = '"JetBrains Mono", ui-monospace, monospace';
 
 const TYPE_LABEL: Record<string, string> = {
-  attestation_scolarite: "Attestation de Scolarité",
+  attestation_scolarite: "Certificat de Scolarité",
   certificat: "Certificat",
   convocation: "Convocation",
 };

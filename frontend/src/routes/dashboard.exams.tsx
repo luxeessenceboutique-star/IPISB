@@ -1,20 +1,18 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { GraduationCap, Plus, Loader2, Timer, AlertTriangle, ChevronRight, Trash2, Eye, EyeOff, Sparkles } from "lucide-react";
+import { GraduationCap, Plus, Loader2, Timer, AlertTriangle, ChevronRight, Eye, EyeOff, Pencil } from "lucide-react";
 import { ListSkeleton } from "@/components/Skeletons";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { QuestionView } from "@/components/exams/QuestionView";
 
 export const Route = createFileRoute("/dashboard/exams")({
   beforeLoad: async () => {
@@ -25,10 +23,8 @@ export const Route = createFileRoute("/dashboard/exams")({
 });
 
 type Exam = { id: string; course_id: string; title: string; description: string | null; duration_minutes: number; start_time: string | null; end_time: string | null; is_published: boolean; created_at: string; type?: "examen" | "quiz"; course_title?: string; question_count?: number; my_response?: ExamResponse | null };
-type Question = { id: string; exam_id: string; question: string; options: string[]; correct_index: number; order_num: number };
+type Question = { id: string; exam_id?: string; question: string; options: string[]; correct_index?: number; order_num: number; image_url?: string | null; image_caption?: string | null };
 type ExamResponse = { id: string; answers: Record<string, number>; score: number | null; total: number | null; submitted_at: string };
-type Course = { id: string; title: string };
-type DraftQuestion = { question: string; options: string[]; correct_index: number };
 
 function ExamsPage() {
   const { t, lang } = useI18n();
@@ -38,13 +34,7 @@ function ExamsPage() {
   const canCreate = isAdmin || isProf;
 
   const [exams,      setExams]      = useState<Exam[]>([]);
-  const [myCourses,  setMyCourses]  = useState<Course[]>([]);
   const [loading,    setLoading]    = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [creating,   setCreating]   = useState(false);
-  const [createForm, setCreateForm] = useState({ title: "", description: "", duration_minutes: "60", course_id: "", type: "examen" as "examen" | "quiz" });
-  const [draftQuestions, setDraftQuestions] = useState<DraftQuestion[]>([{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
-  const [generatingAI, setGeneratingAI] = useState(false);
 
   const [takingExam, setTakingExam] = useState<{ exam: Exam; questions: Question[] } | null>(null);
   const [answers,    setAnswers]    = useState<Record<string, number>>({});
@@ -64,7 +54,6 @@ function ExamsPage() {
         const courseQ = isAdmin ? supabase.from("courses").select("id, title") : supabase.from("courses").select("id, title").eq("professor_id", user!.id);
         const { data: courses } = await courseQ;
         const courseMap: Record<string, string> = Object.fromEntries((courses ?? []).map((c: any) => [c.id, c.title]));
-        setMyCourses((courses ?? []) as Course[]);
         const courseIds = Object.keys(courseMap);
         if (!courseIds.length) { setExams([]); return; }
         const { data: raw } = await supabase.from("exams").select("*").in("course_id", courseIds).order("created_at", { ascending: false });
@@ -127,11 +116,19 @@ function ExamsPage() {
 
   async function openExam(exam: Exam) {
     try {
-      const { data: questions } = await supabase.from("exam_questions").select("id, exam_id, question, options, order_num").eq("exam_id", exam.id).order("order_num");
+      // §17/§22 — server-authoritative start: records started_at once so the
+      // deadline (and the countdown shown below) survives a page refresh
+      // instead of resetting to a fresh duration_minutes every time.
+      const start: { started_at: string; deadline_at: string | null; submitted: boolean } = await api.post(`/api/exams/${exam.id}/start`, {});
+      if (start.submitted) { toast.error(lang === "fr" ? "Cet examen a déjà été soumis." : "This exam has already been submitted."); load(); return; }
+      const questions: Question[] = await api.get(`/api/exams/${exam.id}/questions`);
       if (!questions?.length) { toast.error(lang === "fr" ? "Cet examen n'a pas encore de questions." : "This exam has no questions yet."); return; }
-      setAnswers({}); setTabWarnings(0); setTimeLeft(exam.duration_minutes * 60);
-      setTakingExam({ exam, questions: questions as any });
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
+      const secondsLeft = start.deadline_at
+        ? Math.max(0, Math.round((new Date(start.deadline_at).getTime() - Date.now()) / 1000))
+        : exam.duration_minutes * 60;
+      setAnswers({}); setTabWarnings(0); setTimeLeft(secondsLeft);
+      setTakingExam({ exam, questions });
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Error"); }
   }
 
   async function autoSubmitExam() { if (!takingExam) return; await doSubmit(takingExam, answers); }
@@ -139,79 +136,32 @@ function ExamsPage() {
   async function doSubmit(state: { exam: Exam; questions: Question[] }, currentAnswers: Record<string, number>) {
     setSubmitting(true); setConfirmSubmit(false);
     try {
-      const { data: correctData } = await supabase.from("exam_questions").select("id, correct_index").eq("exam_id", state.exam.id);
-      const questions = correctData ?? [];
-      const score = questions.filter((q: any) => String(q.id) in currentAnswers && currentAnswers[String(q.id)] === q.correct_index).length;
-      const total = questions.length;
-      const { data: existing } = await supabase.from("exam_responses").select("id").eq("exam_id", state.exam.id).eq("student_id", user!.id).single();
-      if (existing) {
-        await supabase.from("exam_responses").update({ answers: currentAnswers, score, total }).eq("id", existing.id);
-      } else {
-        await supabase.from("exam_responses").insert({ exam_id: state.exam.id, student_id: user!.id, answers: currentAnswers, score, total });
-      }
+      // Backend is authoritative: grades from exam_questions.correct_index
+      // server-side and rejects late/duplicate submissions — the client
+      // never computes or sees the score before this call returns.
+      const { score, total }: { score: number; total: number } = await api.post(`/api/exams/${state.exam.id}/submit`, { answers: currentAnswers });
       setTakingExam(null);
       if (timerRef.current) clearInterval(timerRef.current);
       toast.success(lang === "fr" ? `Examen soumis ! Score : ${score}/${total}` : `Exam submitted! Score: ${score}/${total}`);
       load();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Error"); }
     finally { setSubmitting(false); }
   }
 
   async function openResults(exam: Exam) {
     try {
-      const [{ data: questions }, { data: respData }] = await Promise.all([
-        supabase.from("exam_questions").select("*").eq("exam_id", exam.id).order("order_num"),
-        supabase.from("exam_responses").select("*").eq("exam_id", exam.id).eq("student_id", user!.id).single(),
-      ]);
-      if (!respData) return;
-      setResultsExam({ exam, questions: (questions ?? []) as Question[], response: respData as ExamResponse });
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
+      const data: { response: ExamResponse; questions: Question[] } = await api.get(`/api/exams/${exam.id}/result`);
+      setResultsExam({ exam, questions: data.questions, response: data.response });
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Error"); }
   }
 
   async function togglePublish(exam: Exam) {
     if (!exam.is_published && (exam.question_count ?? 0) === 0) { toast.error(t("exams.add_questions_first")); return; }
     try {
-      await supabase.from("exams").update({ is_published: !exam.is_published }).eq("id", exam.id);
+      await api.put(`/api/exams/${exam.id}/publish`);
       toast.success(exam.is_published ? t("exams.unpublished") : t("exams.published"));
       load();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
-  }
-
-  async function createExam() {
-    if (!createForm.title.trim()) { toast.error(t("exams.title_required")); return; }
-    if (!createForm.course_id) { toast.error(t("exams.course_required")); return; }
-    const validQuestions = draftQuestions.filter(q => q.question.trim() && q.options.some(o => o.trim()));
-    setCreating(true);
-    try {
-      const { data: examRow, error } = await supabase.from("exams").insert({ title: createForm.title, description: createForm.description || null, duration_minutes: parseInt(createForm.duration_minutes) || 60, course_id: createForm.course_id, type: createForm.type, is_published: false }).select().single();
-      if (error || !examRow) throw error ?? new Error("Failed to create exam");
-      if (validQuestions.length) {
-        await supabase.from("exam_questions").insert(validQuestions.map((q, i) => ({ exam_id: (examRow as any).id, question: q.question, options: q.options, correct_index: q.correct_index, order_num: i })));
-      }
-      toast.success(t("exams.created"));
-      setShowCreate(false);
-      setCreateForm({ title: "", description: "", duration_minutes: "60", course_id: "", type: "examen" });
-      setDraftQuestions([{ question: "", options: ["", "", "", ""], correct_index: 0 }]);
-      load();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
-    finally { setCreating(false); }
-  }
-
-  async function generateWithAI() {
-    if (!createForm.course_id) { toast.error(lang === "fr" ? "Choisissez d'abord un cours" : "Choose a course first"); return; }
-    setGeneratingAI(true);
-    try {
-      const drafts: DraftQuestion[] = await api.post("/api/exams/questions/generate", {
-        course_id: createForm.course_id, num_questions: 5,
-      });
-      const isBlankStart = draftQuestions.length === 1 && !draftQuestions[0].question.trim();
-      setDraftQuestions(qs => isBlankStart ? drafts : [...qs, ...drafts]);
-      toast.success(lang === "fr" ? `${drafts.length} questions générées — relisez avant d'enregistrer` : `${drafts.length} questions generated — review before saving`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : (lang === "fr" ? "Échec de la génération" : "Generation failed"));
-    } finally {
-      setGeneratingAI(false);
-    }
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Error"); }
   }
 
   const fmtTime = (secs: number) => `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
@@ -241,15 +191,7 @@ function ExamsPage() {
         <div className="space-y-4">
           {questions.map((q, qi) => (
             <Card key={q.id} className="border-0 p-5 shadow-card">
-              <p className="font-medium"><span className="mr-2 text-muted-foreground">{qi + 1}.</span>{q.question}</p>
-              <div className="mt-3 space-y-2">
-                {q.options.map((opt, oi) => (
-                  <button key={oi} type="button" onClick={() => setAnswers(a => ({ ...a, [q.id]: oi }))}
-                    className={`w-full rounded-xl border px-4 py-2.5 text-left text-sm transition-all ${answers[q.id] === oi ? "border-primary bg-primary/10 font-medium text-primary" : "border-border hover:border-primary/40 hover:bg-muted/60"}`}>
-                    <span className="mr-2 font-mono text-xs text-muted-foreground">{String.fromCharCode(65 + oi)}.</span>{opt}
-                  </button>
-                ))}
-              </div>
+              <QuestionView q={q} index={qi} selectedOption={answers[q.id]} onSelect={oi => setAnswers(a => ({ ...a, [q.id]: oi }))} />
             </Card>
           ))}
         </div>
@@ -297,9 +239,14 @@ function ExamsPage() {
       <div className="mt-1 flex flex-wrap gap-2">
         {!canCreate && <button type="button" className="btn-c btn-c-green btn-c-sm" onClick={() => openExam(exam)}>{t("exams.take")}</button>}
         {canCreate && (
-          <button type="button" className="btn-c btn-c-ghost btn-c-sm" onClick={() => togglePublish(exam)}>
-            {exam.is_published ? <><EyeOff size={13} strokeWidth={1.7} />{t("exams.unpublish")}</> : <><Eye size={13} strokeWidth={1.7} />{t("exams.publish")}</>}
-          </button>
+          <>
+            <Link to="/dashboard/exams/$examId/editor" params={{ examId: exam.id }} className="btn-c btn-c-ghost btn-c-sm">
+              <Pencil size={13} strokeWidth={1.7} />{lang === "fr" ? "Modifier" : lang === "ar" ? "تعديل" : "Edit"}
+            </Link>
+            <button type="button" className="btn-c btn-c-ghost btn-c-sm" onClick={() => togglePublish(exam)}>
+              {exam.is_published ? <><EyeOff size={13} strokeWidth={1.7} />{t("exams.unpublish")}</> : <><Eye size={13} strokeWidth={1.7} />{t("exams.publish")}</>}
+            </button>
+          </>
         )}
       </div>
     </article>
@@ -312,9 +259,9 @@ function ExamsPage() {
         title={t("dash.exams")}
         sub={t("exams.subtitle")}
         actions={canCreate ? (
-          <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-primary">
+          <Link to="/dashboard/exams/new" className="btn-c btn-c-primary">
             <Plus size={15} strokeWidth={1.7} />{t("exams.create")}
-          </button>
+          </Link>
         ) : undefined}
       />
 
@@ -367,80 +314,6 @@ function ExamsPage() {
         </div>
       )}
 
-      {/* Create */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-h-[90vh] sm:max-w-2xl overflow-y-auto">
-          <DialogHeader><DialogTitle className="font-display">{t("exams.create")}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">{t("exams.form.course")} *</label>
-              <Select value={createForm.course_id} onValueChange={v => setCreateForm(f => ({ ...f, course_id: v }))}>
-                <SelectTrigger className="mt-1.5"><SelectValue placeholder={lang === "fr" ? "Choisir un cours" : "Choose a course"} /></SelectTrigger>
-                <SelectContent>{myCourses.map(c => <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-sm font-medium">{t("exams.form.title")} *</label><Input className="mt-1.5" value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} /></div>
-              <div><label className="text-sm font-medium">{t("exams.form.duration")}</label><Input className="mt-1.5" type="number" min="5" value={createForm.duration_minutes} onChange={e => setCreateForm(f => ({ ...f, duration_minutes: e.target.value }))} /></div>
-            </div>
-            <div>
-              <label className="text-sm font-medium">{lang === "fr" ? "Type" : "Type"}</label>
-              <Select value={createForm.type} onValueChange={v => setCreateForm(f => ({ ...f, type: v as "examen" | "quiz" }))}>
-                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="examen">{lang === "fr" ? "Examen" : "Exam"}</SelectItem>
-                  <SelectItem value="quiz">Quiz</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div><label className="text-sm font-medium">{t("exams.form.description")}</label><Textarea className="mt-1.5" rows={2} value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} /></div>
-            <div className="border-t border-border pt-4">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="font-display font-semibold">{lang === "fr" ? "Questions QCM" : "MCQ Questions"}</h4>
-                <Button type="button" variant="outline" size="sm" className="text-xs" disabled={generatingAI} onClick={generateWithAI}>
-                  {generatingAI ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  {lang === "fr" ? "Générer avec l'IA" : "Generate with AI"}
-                </Button>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {lang === "fr"
-                  ? "Génère des questions basées sur le style réel des examens IPAIS — à relire avant d'enregistrer."
-                  : "Generates questions grounded in real IPAIS exam style — review before saving."}
-              </p>
-              <div className="mt-3 space-y-4">
-                {draftQuestions.map((q, qi) => (
-                  <div key={qi} className="rounded-xl border border-border p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-muted-foreground">Question {qi + 1}</span>
-                      {draftQuestions.length > 1 && <button type="button" onClick={() => setDraftQuestions(qs => qs.filter((_, i) => i !== qi))} className="text-destructive hover:opacity-70"><Trash2 className="h-3.5 w-3.5" /></button>}
-                    </div>
-                    <Input className="mt-2" placeholder={lang === "fr" ? "Énoncé de la question..." : "Question text..."} value={q.question} onChange={e => setDraftQuestions(qs => qs.map((dq, i) => i === qi ? { ...dq, question: e.target.value } : dq))} />
-                    <div className="mt-3 space-y-2">
-                      {q.options.map((opt, oi) => (
-                        <div key={oi} className="flex items-center gap-2">
-                          <button type="button" onClick={() => setDraftQuestions(qs => qs.map((dq, i) => i === qi ? { ...dq, correct_index: oi } : dq))}
-                            className={`h-5 w-5 shrink-0 rounded-full border-2 transition-colors ${q.correct_index === oi ? "border-primary bg-primary" : "border-muted-foreground/30"}`} />
-                          <Input className="h-8 text-sm" placeholder={`Option ${String.fromCharCode(65 + oi)}`} value={opt} onChange={e => setDraftQuestions(qs => qs.map((dq, i) => i === qi ? { ...dq, options: dq.options.map((o, j) => j === oi ? e.target.value : o) } : dq))} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                <Button type="button" variant="outline" size="sm" className="w-full text-xs" onClick={() => setDraftQuestions(qs => [...qs, { question: "", options: ["", "", "", ""], correct_index: 0 }])}>
-                  <Plus className="h-3.5 w-3.5" />{t("exams.form.add_question")}
-                </Button>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>{lang === "fr" ? "Annuler" : "Cancel"}</Button>
-            <Button className="border-0 bg-gradient-brand text-white" disabled={creating} onClick={createExam}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : t("exams.create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Results */}
       <Dialog open={!!resultsExam} onOpenChange={o => !o && setResultsExam(null)}>
         <DialogContent className="max-h-[90vh] sm:max-w-2xl overflow-y-auto">
@@ -459,18 +332,11 @@ function ExamsPage() {
               </div>
               {resultsExam.questions.map((q, qi) => {
                 const chosen  = (resultsExam.response.answers as Record<string, number>)[q.id];
-                const correct = q.correct_index;
+                const correct = q.correct_index ?? -1;
                 const isRight = chosen === correct;
                 return (
                   <div key={q.id} className={`rounded-xl border p-4 ${isRight ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}>
-                    <p className="text-sm font-medium">{qi + 1}. {q.question}</p>
-                    <div className="mt-2 space-y-1">
-                      {q.options.map((opt, oi) => (
-                        <div key={oi} className={`rounded-lg px-3 py-1.5 text-xs ${oi === correct ? "bg-green-200 font-medium text-green-800" : oi === chosen && !isRight ? "bg-red-200 text-red-800 line-through" : "text-muted-foreground"}`}>
-                          {String.fromCharCode(65 + oi)}. {opt}
-                        </div>
-                      ))}
-                    </div>
+                    <QuestionView q={q} index={qi} selectedOption={chosen} disabled revealCorrect correctIndex={correct} />
                   </div>
                 );
               })}

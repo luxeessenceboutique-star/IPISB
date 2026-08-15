@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
@@ -45,6 +48,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "docx-preview": "^0.3.6",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.38.0",
     "input-otp": "^1.4.2",
@@ -68,6 +72,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@playwright/test": "1.60.0",
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/router-plugin": "^1.167.32",
     "@types/node": "^22.15.18",

@@ -85,7 +85,7 @@ const sans = '"Manrope", system-ui, sans-serif';
 
 type DocType = "attestation_scolarite" | "certificat" | "convocation" | "releve_notes";
 const TYPE_LABEL: Record<DocType, string> = {
-  attestation_scolarite: "Attestation de scolarité",
+  attestation_scolarite: "Certificat de scolarité",
   certificat: "Certificat",
   convocation: "Convocation",
   releve_notes: "Relevé de notes",

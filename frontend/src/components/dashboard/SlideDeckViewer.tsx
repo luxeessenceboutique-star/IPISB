@@ -1,66 +1,47 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { SlideStatic, type ViewerSlide } from "./SlideCanvas";
 
-/* ─── Read-only slide renderer — students see this, never the editor.
-   Deliberately reuses the exact same coordinate model as the authoring
-   canvas (frontend/src/routes/dashboard.courses_.$courseId_.editor.$moduleId.tsx:
-   an 800×450 design space) so what the teacher built is what the student
-   sees, pixel-for-pixel, just responsively scaled via container query
-   units instead of a fixed-size canvas — this needs to work on phones and
-   tablets, which a Konva <Stage> wouldn't (spec §29). No drag/select/edit
-   affordances anywhere in this file — that's the whole point of it being
-   a separate, learner-only component (spec §19). ────────────────────── */
-type ElementBase = { id: string; x: number; y: number; width: number; height: number; rotation: number };
-type TextEl = ElementBase & {
-  type: "text"; content: string; fontSize: number; fontFamily: string;
-  bold: boolean; italic: boolean; align: "left" | "center" | "right"; color: string; backgroundColor: string | null;
-};
-type ImageEl = ElementBase & { type: "image"; src: string };
-type SlideElement = TextEl | ImageEl;
-export type ViewerSlide = { id: string; title: string; elements: SlideElement[] };
+/* ─── Read-only slide deck — students see this, never the editor.
+   The per-element rendering lives in SlideCanvas, which is deliberately the
+   SAME component the editor's slide rail and gabarit picker use: whatever
+   the teacher arranged on the authoring canvas reaches the student
+   unchanged, including M101's rounded cards, motifs and rotated tabs. This
+   file owns only navigation. No drag/select/edit affordances anywhere —
+   that's the whole point of it being a separate, learner-only component
+   (spec §19), and it stays DOM rather than Konva so it works on phones and
+   tablets (spec §29). ─────────────────────────────────────────────────── */
+export type { ViewerSlide };
 
-const STAGE_W = 800;
-const STAGE_H = 450;
-const pct = (v: number, of: number) => `${(v / of) * 100}%`;
-const cqw = (v: number) => `${(v / STAGE_W) * 100}cqw`;
+export function SlideDeckViewer({
+  slides,
+  initialIndex = 0,
+  onIndexChange,
+}: {
+  slides: ViewerSlide[];
+  /** Slide to open on (e.g. resuming a teaching session at its last known position). */
+  initialIndex?: number;
+  /** Reports the currently-displayed slide — e.g. so a teaching session can
+      track "where the professor is" without a second, duplicate nav state. */
+  onIndexChange?: (index: number, slide: ViewerSlide) => void;
+}) {
+  const [active, setActive] = useState(initialIndex);
 
-export function SlideDeckViewer({ slides }: { slides: ViewerSlide[] }) {
-  const [active, setActive] = useState(0);
+  // Reports the active slide whenever it changes (including on mount) — lets
+  // a parent session wrapper persist position without owning navigation.
+  useEffect(() => {
+    if (!slides.length) return;
+    const idx = Math.min(active, slides.length - 1);
+    onIndexChange?.(idx, slides[idx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, slides]);
+
   if (!slides.length) return null;
   const slide = slides[Math.min(active, slides.length - 1)];
 
   return (
     <div className="space-y-3">
-      <div
-        className="relative w-full rounded-xl border border-border bg-white shadow-sm overflow-hidden"
-        style={{ aspectRatio: "16/9", containerType: "inline-size" } as React.CSSProperties}
-      >
-        {slide.elements.map(el => {
-          const common: React.CSSProperties = {
-            position: "absolute",
-            left: pct(el.x, STAGE_W), top: pct(el.y, STAGE_H),
-            width: pct(el.width, STAGE_W), height: pct(el.height, STAGE_H),
-            transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
-          };
-          if (el.type === "image") {
-            return <img key={el.id} src={el.src} alt="" style={{ ...common, objectFit: "fill" }} />;
-          }
-          return (
-            <div
-              key={el.id}
-              style={{
-                ...common,
-                fontSize: cqw(el.fontSize), fontFamily: el.fontFamily,
-                fontWeight: el.bold ? 700 : 400, fontStyle: el.italic ? "italic" : "normal",
-                textAlign: el.align, color: el.color, background: el.backgroundColor || "transparent",
-                lineHeight: 1.25, whiteSpace: "pre-wrap", overflow: "hidden", padding: 2,
-              }}
-            >
-              {el.content}
-            </div>
-          );
-        })}
-      </div>
+      <SlideStatic slide={slide} className="w-full rounded-xl border border-border shadow-sm" />
 
       {slides.length > 1 && (
         <div className="flex items-center justify-between">
@@ -68,6 +49,7 @@ export function SlideDeckViewer({ slides }: { slides: ViewerSlide[] }) {
             className="btn-c btn-c-ghost btn-c-sm"
             disabled={active <= 0}
             onClick={() => setActive(a => Math.max(0, a - 1))}
+            data-testid="slide-prev"
           >
             <ChevronLeft size={14} strokeWidth={1.7} />Précédent
           </button>
@@ -86,6 +68,7 @@ export function SlideDeckViewer({ slides }: { slides: ViewerSlide[] }) {
             className="btn-c btn-c-ghost btn-c-sm"
             disabled={active >= slides.length - 1}
             onClick={() => setActive(a => Math.min(slides.length - 1, a + 1))}
+            data-testid="slide-next"
           >
             Suivant<ChevronRight size={14} strokeWidth={1.7} />
           </button>

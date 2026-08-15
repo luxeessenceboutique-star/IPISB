@@ -11,10 +11,15 @@ from supabase import Client
 from deps import CurrentUser, get_current_user, get_db
 from utils import docspace
 from utils.audit import log_audit
-from utils.course_generation import gather_grounding_text, generate_lesson_content, generate_module_outline
+from utils.course_generation import (
+    edit_text_with_ai, gather_grounding_text, generate_lesson_content,
+    generate_module_outline, regenerate_slide_with_ai,
+)
 from utils.course_pdf import render_course_pdf
 from utils.course_pptx import build_deck_payload, render_course_pptx
+from utils.course_slides import generate_slide_deck
 from utils.safe_filename import safe_filename
+from utils.slide_template_m101 import catalogue as slide_layout_catalogue
 
 # Same prefix as courses.py/resources.py — distinct sub-paths, same convention
 # already used to split one resource's endpoints across router files.
@@ -128,6 +133,99 @@ async def list_modules(
         raise HTTPException(403, "Vous n'avez pas accès à ce cours")
     # students/other staff: published only — admin/owning prof see drafts too
     return _modules_with_lessons(db, course_id, published_only=not is_owner)
+
+
+class ModuleCreate(BaseModel):
+    title: Optional[str] = None
+    objectives: Optional[str] = None
+    hours_theory: Optional[float] = None
+    hours_practice: Optional[float] = None
+
+
+@router.post("/{course_id}/modules")
+async def create_module(
+    course_id: str,
+    body: ModuleCreate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Manual chapter creation. "Générer le plan" (AI outline) is the normal
+    path, but a prof adding one extra hand-written chapter — or extending a
+    course past what the AI proposed — needs a plain add button too, the same
+    way delete already exists per-chapter without needing regeneration."""
+    course = _get_course_or_404(db, course_id)
+    _require_owner(user, course)
+
+    existing = (
+        db.from_("course_modules").select("order_num").eq("course_id", course_id)
+        .order("order_num", desc=True).limit(1).execute().data
+    )
+    next_order = (existing[0]["order_num"] + 1) if existing else 1
+
+    res = db.from_("course_modules").insert({
+        "course_id": course_id,
+        "order_num": next_order,
+        "title": (body.title or "").strip() or "Nouveau chapitre",
+        "objectives": body.objectives or "",
+        "hours_theory": body.hours_theory or 0,
+        "hours_practice": body.hours_practice or 0,
+        "status": "draft",
+    }).execute()
+    module = res.data[0]
+    log_audit(db, user.id, "course.module_create", "course_module", module["id"])
+    return module
+
+
+@router.get("/{course_id}/progress")
+async def get_progress(
+    course_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Powers both the 'X/Y chapitres terminés' indicator and 'resume where
+    I left off' — last_module_id is just the most recently visited chapter."""
+    course = _get_course_or_404(db, course_id)
+    is_owner = user.is_admin() or course.get("professor_id") == user.id
+    if not is_owner and not _student_can_view(db, user.id, course_id):
+        raise HTTPException(403, "Vous n'avez pas accès à ce cours")
+
+    rows = (
+        db.from_("course_progress").select("module_id, completed_at")
+        .eq("student_id", user.id).eq("course_id", course_id)
+        .order("completed_at", desc=True).execute().data or []
+    )
+    total = len(_modules_with_lessons(db, course_id, published_only=not is_owner))
+    completed_ids = [r["module_id"] for r in rows]
+    return {
+        "completed_module_ids": completed_ids,
+        "last_module_id": rows[0]["module_id"] if rows else None,
+        "total_chapters": total,
+        "percent": round(len(completed_ids) / total * 100) if total else 0,
+    }
+
+
+@router.post("/{course_id}/modules/{module_id}/progress")
+async def mark_progress(
+    course_id: str,
+    module_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Called by the reader every time a student opens a chapter. Professors
+    previewing their own course ('Aperçu élève') don't get progress rows —
+    that's not a real student's progress, it'd just be noise."""
+    course = _get_course_or_404(db, course_id)
+    is_owner = user.is_admin() or course.get("professor_id") == user.id
+    if is_owner:
+        return {"tracked": False}
+    if not _student_can_view(db, user.id, course_id):
+        raise HTTPException(403, "Vous n'avez pas accès à ce cours")
+
+    db.from_("course_progress").upsert(
+        {"student_id": user.id, "course_id": course_id, "module_id": module_id, "completed_at": "now()"},
+        on_conflict="student_id,module_id",
+    ).execute()
+    return {"tracked": True}
 
 
 @router.post("/{course_id}/generate-pdf")
@@ -308,7 +406,13 @@ async def generate_outline(
     _require_owner(user, course)
 
     specialty_id = _resolve_specialty_id(db, course_id)
-    grounding = gather_grounding_text(db, specialty_id, ["cdc", "programmes", "fiches_examens"])
+    # Course title + description prioritize which reference documents (and
+    # which passages within them) actually get used, instead of "whatever's
+    # tagged to this filière, in upload order" — see gather_grounding_text.
+    relevance_hint = " ".join(filter(None, [course.get("title"), course.get("description")]))
+    grounding = gather_grounding_text(
+        db, specialty_id, ["cdc", "programmes", "fiches_examens"], relevance_hint=relevance_hint,
+    )
     if not grounding:
         raise HTTPException(
             400,
@@ -331,6 +435,7 @@ async def generate_outline(
         modules = generate_module_outline(
             course["title"], course.get("semester") or "—", grounding,
             already_published=[p["title"] for p in published] or None,
+            description=course.get("description"),
         )
     except ValueError as e:
         raise HTTPException(502, str(e))
@@ -375,9 +480,14 @@ async def generate_lesson(
     module = modules[0]
 
     specialty_id = module.get("source_specialty_id") or _resolve_specialty_id(db, course_id)
+    # Chapter title + objectives are a sharper relevance signal than the
+    # course-level one — same reasoning as generate_outline above.
+    relevance_hint = " ".join(filter(None, [module.get("title"), module.get("objectives"), course.get("description")]))
     # Wider net + bigger budget than the outline stage — depth here needs more
     # source material than a chapter list does.
-    grounding = gather_grounding_text(db, specialty_id, ["cdc", "programmes", "fiches_examens"], char_budget=20000)
+    grounding = gather_grounding_text(
+        db, specialty_id, ["cdc", "programmes", "fiches_examens"], char_budget=20000, relevance_hint=relevance_hint,
+    )
 
     try:
         content = generate_lesson_content(course["title"], module["title"], module.get("objectives") or "", grounding)
@@ -397,6 +507,140 @@ async def generate_lesson(
 
     log_audit(db, user.id, "course.generate_lesson", "course_module", module_id)
     return res.data[0]
+
+
+@router.get("/slide-layouts")
+async def list_slide_layouts(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+):
+    """The M101 layout catalogue for the editor's « Ajouter une diapositive »
+    picker.
+
+    Served rather than duplicated in TypeScript so the gabarits a teacher
+    inserts by hand are byte-for-byte the ones generation produces — the
+    alternative was maintaining ~15 layouts' worth of coordinates in two
+    languages and watching them drift. Every layout comes back as plain
+    elements, so an inserted gabarit is as editable as anything else on the
+    canvas.
+
+    Safe to sit on a single path segment: no `GET /courses/{course_id}`
+    exists in any router, so this can't be swallowed by a wildcard.
+    """
+    if not user.can_create():
+        raise HTTPException(403, "Professor or admin only")
+    return slide_layout_catalogue()
+
+
+@router.post("/{course_id}/modules/{module_id}/generate-slides")
+async def generate_slides(
+    course_id: str,
+    module_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    force: bool = False,
+):
+    """Seeds the visual editor's deck from the chapter's already-generated
+    text (see utils/course_slides.py) — this is what turns a blank canvas
+    into a starting point once a teacher opens the editor for a chapter
+    that already has AI content. Never overwrites a deck that already has
+    slides unless force=true, so a teacher's own hand-built work can't be
+    silently clobbered by clicking this again."""
+    course = _get_course_or_404(db, course_id)
+    _require_owner(user, course)
+
+    modules = db.from_("course_modules").select("*").eq("id", module_id).eq("course_id", course_id).execute().data
+    if not modules:
+        raise HTTPException(404, "Chapitre introuvable")
+    module = modules[0]
+
+    lessons = db.from_("course_lessons").select("*").eq("module_id", module_id).order("order_num").execute().data
+    if not lessons:
+        raise HTTPException(400, "Générez d'abord le contenu du chapitre avant de créer les diapositives.")
+    lesson = lessons[0]
+    if not (lesson.get("content") or "").strip():
+        raise HTTPException(400, "Générez d'abord le contenu du chapitre avant de créer les diapositives.")
+    if lesson.get("slides") and not force:
+        raise HTTPException(409, "Ce chapitre a déjà des diapositives — relancez avec force=true pour les remplacer.")
+
+    images = (
+        db.from_("course_lesson_images").select("file_path").eq("lesson_id", lesson["id"])
+        .order("order_num").execute().data or []
+    )
+    image_urls = [_public_materials_url(img["file_path"]) for img in images]
+
+    slides = generate_slide_deck(
+        module["title"], module.get("objectives"), lesson["content"], image_urls,
+        # The chapter's position and volume horaire drive the template's own
+        # chrome (the "CHAPITRE n" tab, the kicker line, the hours badge), so
+        # they have to travel with the content rather than be re-typed.
+        chapter_number=module.get("order_num") or 1,
+        hours=(module.get("hours_theory") or 0) + (module.get("hours_practice") or 0),
+    )
+
+    db.from_("course_lessons").update({"slides": slides, "updated_at": "now()"}).eq("id", lesson["id"]).execute()
+    log_audit(db, user.id, "course.generate_slides", "course_module", module_id)
+    return {"slides": slides}
+
+
+class AIEditTextBody(BaseModel):
+    text: str
+    instruction: str
+
+
+@router.post("/{course_id}/ai-edit-text")
+async def ai_edit_text(
+    course_id: str,
+    body: AIEditTextBody,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Phase 7 (spec §17) — select a text element in the slide editor, ask
+    AI to modify it ('simplify this', 'add a Morocco example', ...).
+    Deliberately stateless: this only rewrites text and hands it back —
+    the editor applies the result to its own local state (through the same
+    undo-tracked commit() as any manual edit) and the teacher saves
+    normally. Nothing is persisted here, so a bad AI result costs nothing
+    but an Undo."""
+    course = _get_course_or_404(db, course_id)
+    _require_owner(user, course)
+    if not body.instruction.strip():
+        raise HTTPException(400, "Instruction manquante")
+    try:
+        new_text = edit_text_with_ai(body.text, body.instruction)
+    except ValueError as e:
+        raise HTTPException(502, str(e))
+    log_audit(db, user.id, "course.ai_edit_text", "course", course_id)
+    return {"text": new_text}
+
+
+class AIRegenerateSlideBody(BaseModel):
+    texts: list[str]
+    instruction: str
+
+
+@router.post("/{course_id}/ai-regenerate-slide")
+async def ai_regenerate_slide(
+    course_id: str,
+    body: AIRegenerateSlideBody,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Whole-slide AI editing — extends ai_edit_text from 'rewrite this one
+    text box' to 'restructure everything on this slide' (add/remove/reshape
+    text blocks, not just reword what's already there). Stateless like
+    ai_edit_text: returns role+content pairs, the editor lays them out and
+    the teacher saves normally — images/shapes on the slide are never sent
+    here and never touched by this endpoint."""
+    course = _get_course_or_404(db, course_id)
+    _require_owner(user, course)
+    if not body.instruction.strip():
+        raise HTTPException(400, "Instruction manquante")
+    try:
+        items = regenerate_slide_with_ai(body.texts, body.instruction)
+    except ValueError as e:
+        raise HTTPException(502, str(e))
+    log_audit(db, user.id, "course.ai_regenerate_slide", "course", course_id)
+    return {"items": items}
 
 
 class ModuleUpdate(BaseModel):

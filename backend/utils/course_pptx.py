@@ -56,7 +56,7 @@ def _chunk_text(text: str, max_chars: int = SLIDE_TEXT_BUDGET) -> list[str]:
     return chunks
 
 
-def _split_sections(content: str) -> list[dict]:
+def split_sections(content: str) -> list[dict]:
     """Splits lesson markdown on ### headings into {heading, text} sections
     for one-section-per-slide layout, then chunks any section too long for
     one slide into several ("Heading", "Heading (suite)", ...). Slide count
@@ -89,7 +89,7 @@ def build_deck_payload(course: dict, modules: list[dict], chapter_images: dict[s
         lessons = m.get("lessons") or []
         lesson = lessons[0] if lessons else None
         content = (lesson or {}).get("content") or ""
-        sections = _split_sections(content) if content else []
+        sections = split_sections(content) if content else []
 
         # First chunk of each DISTINCT heading only — a long section chunked
         # into "X" / "X (suite)" / "X (suite)" shouldn't count as 3 separate

@@ -24,6 +24,7 @@ from routers import accounting_cash_notes
 from routers import accounting_mission_notes
 from routers import accounting_cheques
 from routers import approvals
+from routers import teaching_sessions, session_feedback
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -120,6 +121,8 @@ app.include_router(accounting_cash_notes.router, prefix="/api")
 app.include_router(accounting_mission_notes.router, prefix="/api")
 app.include_router(accounting_cheques.router, prefix="/api")
 app.include_router(approvals.router, prefix="/api")
+app.include_router(teaching_sessions.router, prefix="/api")
+app.include_router(session_feedback.router, prefix="/api")
 
 
 @app.get("/health")

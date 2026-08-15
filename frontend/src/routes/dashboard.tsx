@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
   Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet, ShoppingCart,
-  UserCog, CalendarRange, Library,
+  UserCog, CalendarRange, Library, Presentation,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -111,6 +111,7 @@ function DashboardLayout() {
   const allItems: NavItem[] = isFinanceStaff ? financeItems : [
     ...SIDE_ITEMS,
     ...((isAdmin || isProf) ? [
+      { key: "dash.teachingSessions", to: "/dashboard/teaching-sessions", icon: Presentation },
       { key: "dash.classes",    to: "/dashboard/classes",    icon: Layers },
       { key: "dash.users",      to: "/dashboard/users",      icon: Users  },
       { key: "dash.timetables", to: "/dashboard/timetables", icon: CalendarRange },
