@@ -999,6 +999,8 @@ class CandidateCreate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     position: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
     notes: Optional[str] = None
 
 

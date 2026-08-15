@@ -50,6 +50,8 @@ CV_EXTRACTION_PROMPT = (
     '  "languages": "langues parlées/écrites séparées par des virgules (avec niveau si mentionné)",\n'
     '  "education_details": [{"degree": "…", "institution": "…", "year": "…"}],\n'
     '  "experience_details": [{"title": "…", "company": "…", "period": "…", "description": "…"}],\n'
+    '  "city": "ville de résidence du/de la candidat(e), si mentionnée, sinon null",\n'
+    '  "address": "adresse complète du/de la candidat(e), si mentionnée, sinon null",\n'
     '  "detected_name": "… ou null", "detected_email": "… ou null", "detected_phone": "… ou null"\n'
     "}\n\nMets null (jamais une chaîne vide) pour tout champ absent.\n\nJSON :"
 )
@@ -94,5 +96,7 @@ def parse_cv_extraction_response(raw: str) -> dict:
         "skills": _as_text(data.get("skills")),
         "languages": _as_text(data.get("languages")),
         "years_experience": _as_number(data.get("years_experience")),
+        "city": _as_text(data.get("city")),
+        "address": _as_text(data.get("address")),
         "raw": data,
     }

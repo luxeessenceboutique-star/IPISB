@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages } from "lucide-react";
+import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages, MapPin, Home } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { parseAdContent, renderInline } from "@/lib/adContent";
 
@@ -357,7 +357,7 @@ type Candidate = {
   id: string; full_name: string; email: string | null; phone: string | null; position: string | null; notes: string | null;
   source?: string | null; applied_ad_id?: string | null; cv_path?: string | null; cv_filename?: string | null;
   education?: string | null; experience_summary?: string | null; skills?: string | null; created_at?: string;
-  years_experience?: number | null; languages?: string | null;
+  years_experience?: number | null; languages?: string | null; city?: string | null; address?: string | null;
 };
 
 type TimeFilter = "24h" | "7d" | "1m" | "all";
@@ -394,7 +394,7 @@ function CandidatesPanel() {
   const [addOpen, setAddOpen] = useState(false);
   const [promoting, setPromoting] = useState<Candidate | null>(null);
   const [detail, setDetail] = useState<Candidate | null>(null);
-  const [form, setForm] = useState({ full_name: "", email: "", phone: "", position: "", notes: "" });
+  const [form, setForm] = useState({ full_name: "", email: "", phone: "", position: "", city: "", address: "", notes: "" });
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
@@ -443,10 +443,11 @@ function CandidatesPanel() {
     try {
       await api.post("/api/rh/recruitment/candidates", {
         full_name: form.full_name, email: form.email || null, phone: form.phone || null,
-        position: form.position || null, notes: form.notes || null,
+        position: form.position || null, city: form.city || null, address: form.address || null,
+        notes: form.notes || null,
       });
       toast.success("Candidat ajouté.");
-      setForm({ full_name: "", email: "", phone: "", position: "", notes: "" });
+      setForm({ full_name: "", email: "", phone: "", position: "", city: "", address: "", notes: "" });
       setAddOpen(false);
       load();
     } catch (err: any) {
@@ -469,7 +470,7 @@ function CandidatesPanel() {
   const cutoff = timeCutoff(timeFilter);
   const timeFiltered = cutoff ? candidates.filter(c => !c.created_at || new Date(c.created_at) >= cutoff) : candidates;
   const filtered = search.trim()
-    ? timeFiltered.filter(c => [c.full_name, c.email, c.phone, c.position, c.notes, c.education, c.experience_summary, c.skills]
+    ? timeFiltered.filter(c => [c.full_name, c.email, c.phone, c.position, c.notes, c.education, c.experience_summary, c.skills, c.city, c.address]
         .some(v => (v ?? "").toLowerCase().includes(search.toLowerCase())))
     : timeFiltered;
 
@@ -492,6 +493,10 @@ function CandidatesPanel() {
           </div>
           <label style={labelStyle}>Poste visé</label>
           <input type="text" value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} style={fieldStyle} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div><label style={labelStyle}>Ville</label><input type="text" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} style={fieldStyle} /></div>
+            <div><label style={labelStyle}>Adresse</label><input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} style={fieldStyle} /></div>
+          </div>
           <label style={labelStyle}>Notes</label>
           <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 20 }} />
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -546,11 +551,16 @@ function CandidatesPanel() {
         <div className="dash-card"><EmptyHint icon={<UserRound size={26} strokeWidth={1.7} />} text={candidates.length === 0 ? "Aucun candidat." : "Aucun résultat pour ces filtres."} /></div>
       ) : (
         <div className="dash-card overflow-hidden" style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: sans, fontSize: 13, minWidth: 720 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: sans, fontSize: 13, minWidth: 1440 }}>
             <thead>
               <tr style={{ background: "var(--pal-cream)", borderBottom: `1px solid ${PAL.line}` }}>
                 <Th>#</Th>
                 <Th icon={<UserRound size={11} strokeWidth={2} />}>Candidat</Th>
+                <Th icon={<Clock3 size={11} strokeWidth={2} />}>Expérience</Th>
+                <Th icon={<Award size={11} strokeWidth={2} />}>Compétences</Th>
+                <Th icon={<GraduationCap size={11} strokeWidth={2} />}>École</Th>
+                <Th icon={<MapPin size={11} strokeWidth={2} />}>Ville</Th>
+                <Th icon={<Home size={11} strokeWidth={2} />}>Adresse</Th>
                 <Th icon={<Mail size={11} strokeWidth={2} />}>Email</Th>
                 <Th icon={<Phone size={11} strokeWidth={2} />}>Téléphone</Th>
                 <Th icon={<Briefcase size={11} strokeWidth={2} />}>Poste visé</Th>
@@ -581,20 +591,18 @@ function CandidatesPanel() {
                         </span>
                       )}
                     </div>
-                    {(c.years_experience != null || c.skills) && (
-                      <div
-                        title={c.skills ?? undefined}
-                        style={{ fontSize: 11, color: PAL.muted, marginTop: 3, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}
-                      >
-                        {c.years_experience != null && (
-                          <span style={{ fontWeight: 700, color: "var(--pal-primary-deep)" }}>
-                            {c.years_experience} an{c.years_experience >= 2 ? "s" : ""}{c.skills ? " · " : ""}
-                          </span>
-                        )}
-                        {c.skills}
-                      </div>
-                    )}
                   </td>
+                  <td style={{ ...tdStyle, color: c.years_experience != null || c.experience_summary ? PAL.ink : PAL.muted }} title={c.experience_summary ?? undefined}>
+                    {c.years_experience != null && (
+                      <span style={{ fontWeight: 700, color: "var(--pal-primary-deep)" }}>{c.years_experience} an{c.years_experience >= 2 ? "s" : ""}</span>
+                    )}
+                    {c.years_experience != null && c.experience_summary ? " · " : ""}
+                    {c.experience_summary ? truncate(c.experience_summary, 40) : (c.years_experience == null ? "—" : "")}
+                  </td>
+                  <td style={{ ...tdStyle, color: c.skills ? PAL.ink : PAL.muted, maxWidth: 220 }} title={c.skills ?? undefined}>{c.skills ? truncate(c.skills, 44) : "—"}</td>
+                  <td style={{ ...tdStyle, color: c.education ? PAL.ink : PAL.muted, maxWidth: 200 }} title={c.education ?? undefined}>{c.education ? truncate(c.education, 40) : "—"}</td>
+                  <td style={{ ...tdStyle, color: c.city ? PAL.ink : PAL.muted }}>{c.city || "—"}</td>
+                  <td style={{ ...tdStyle, color: c.address ? PAL.ink : PAL.muted, maxWidth: 200 }} title={c.address ?? undefined}>{c.address ? truncate(c.address, 40) : "—"}</td>
                   <td style={{ ...tdStyle, color: c.email ? PAL.ink : PAL.muted }}>{c.email || "—"}</td>
                   <td style={{ ...tdStyle, color: c.phone ? PAL.ink : PAL.muted }}>{c.phone || "—"}</td>
                   <td style={{ ...tdStyle, color: c.position ? PAL.ink : PAL.muted }} title={c.position ?? undefined}>{c.position ? truncate(c.position) : "—"}</td>
@@ -731,6 +739,17 @@ function CandidateDetailModal({ candidate: c, onClose, onDownloadCv, onUploadCv,
               {c.created_at ? new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "—"}
             </DetailField>
           </div>
+
+          {(!empty(c.city) || !empty(c.address)) && (
+            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {!empty(c.city) && (
+                <DetailField icon={<MapPin size={12} strokeWidth={1.8} />} label="Ville" color="var(--pal-good)">{c.city}</DetailField>
+              )}
+              {!empty(c.address) && (
+                <DetailField icon={<Home size={12} strokeWidth={1.8} />} label="Adresse" color="var(--pal-good)">{c.address}</DetailField>
+              )}
+            </div>
+          )}
 
           {(c.years_experience != null || !empty(c.languages)) && (
             <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

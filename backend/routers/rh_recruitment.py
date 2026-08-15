@@ -139,8 +139,9 @@ async def get_public_ad(
 async def _process_cv(db: Client, cv: UploadFile, storage_prefix: str) -> tuple[dict, str]:
     """Validates, extracts, and stores a CV. Returns (extracted_fields, file_path).
     extracted_fields keys: education, experience_summary, skills, languages,
-    years_experience, raw. Raises HTTPException on validation/storage failure;
-    the LLM extraction step itself is best-effort and never raises."""
+    years_experience, city, address, raw. Raises HTTPException on
+    validation/storage failure; the LLM extraction step itself is
+    best-effort and never raises."""
     content_type = cv.content_type or ""
     ext = ALLOWED_CV_TYPES.get(content_type)
     if not ext:
@@ -215,6 +216,8 @@ async def apply_to_ad(
         "skills": extracted.get("skills"),
         "languages": extracted.get("languages"),
         "years_experience": extracted.get("years_experience"),
+        "city": extracted.get("city"),
+        "address": extracted.get("address"),
         "ai_extracted": extracted.get("raw"),
         "notes": message.strip() if message else None,
     }
@@ -423,6 +426,8 @@ async def upload_candidate_cv(
         "skills": extracted.get("skills"),
         "languages": extracted.get("languages"),
         "years_experience": extracted.get("years_experience"),
+        "city": extracted.get("city"),
+        "address": extracted.get("address"),
         "ai_extracted": extracted.get("raw"),
     }
     try:
