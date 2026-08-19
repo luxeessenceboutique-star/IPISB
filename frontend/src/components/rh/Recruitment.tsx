@@ -972,7 +972,8 @@ function PromoteModal({ candidate, onClose, onSaved }: { candidate: Candidate; o
 
 // ── Interviews ───────────────────────────────────────────────────────────
 
-type Interview = { id: string; candidate_id: string; candidate_name: string | null; date: string; start_time: string; end_time: string; type: string; status: string };
+type Interviewer = { id: string; full_name: string };
+type Interview = { id: string; candidate_id: string; candidate_name: string | null; recruiter_id: string | null; recruiter_name: string | null; date: string; start_time: string; end_time: string; type: string; status: string };
 type Slot = { id: string; date: string; start_time: string; end_time: string; status: string };
 const INTERVIEW_TYPES = [{ value: "rh", label: "RH" }, { value: "technical", label: "Technique" }, { value: "final", label: "Final" }];
 const INTERVIEW_STATUS: Record<string, string> = { pending: "En attente", confirmed: "Confirmé", completed: "Terminé", cancelled: "Annulé" };

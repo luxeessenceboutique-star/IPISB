@@ -1035,6 +1035,7 @@ class InterviewUpdate(BaseModel):
     type: Optional[str] = None
     meet_link: Optional[str] = None
     notes: Optional[str] = None
+    recruiter_id: Optional[str] = None
 
 
 class SlotCreate(BaseModel):

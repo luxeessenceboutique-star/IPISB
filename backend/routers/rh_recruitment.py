@@ -535,6 +535,21 @@ async def delete_candidate(
 
 # ── Interviews ─────────────────────────────────────────────────────────────
 
+@router.get("/interviewers")
+async def list_interviewers(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """RH staff interviews can be assigned to — RH and Assistant RH."""
+    _require_admin(user)
+    role_rows = db.from_("user_roles").select("user_id").in_("role", ["rh", "assistant_rh"]).execute().data or []
+    ids = list({r["user_id"] for r in role_rows if r.get("user_id")})
+    if not ids:
+        return []
+    profs = db.from_("profiles").select("id, full_name, email").in_("id", ids).execute().data or []
+    return [{"id": p["id"], "full_name": p.get("full_name") or p.get("email") or "—"} for p in profs]
+
+
 @router.get("/interviews")
 async def list_interviews(
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -547,10 +562,16 @@ async def list_interviews(
         query = query.eq("candidate_id", candidate_id)
 
     res = query.order("date").order("start_time").execute()
+    rows = res.data or []
+    names = _profile_names(db, [r.get("recruiter_id") for r in rows])
     items = []
-    for row in res.data or []:
+    for row in rows:
         emp = row.get("employees") or {}
-        items.append({**{k: v for k, v in row.items() if k != "employees"}, "candidate_name": emp.get("full_name")})
+        items.append({
+            **{k: v for k, v in row.items() if k != "employees"},
+            "candidate_name": emp.get("full_name"),
+            "recruiter_name": names.get(row.get("recruiter_id")),
+        })
     return items
 
 
