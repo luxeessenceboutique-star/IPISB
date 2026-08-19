@@ -22,8 +22,8 @@ ALLOWED_DOC_TYPES = {
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
-        raise HTTPException(403, "Admin only")
+    if not user.can_access_rh_payroll():
+        raise HTTPException(403, "RH (full) access only")
 
 
 @router.get("")

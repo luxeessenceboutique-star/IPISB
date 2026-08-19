@@ -27,8 +27,8 @@ FILE_TYPES = {"cin", "diplome", "photo", "cv", "contrat", "autre"}
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
-        raise HTTPException(403, "Admin only")
+    if not user.can_access_rh():
+        raise HTTPException(403, "RH access only")
 
 
 def _check_employee(db: Client, employee_id: str) -> None:

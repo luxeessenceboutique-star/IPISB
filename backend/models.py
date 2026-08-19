@@ -152,6 +152,7 @@ class CreateUserRequest(BaseModel):
     email: str
     full_name: str
     password: str  # Temporary password set by creator
+    role: Optional[str] = None  # must be one of the caller's assignable_roles(); professor callers may omit it (always "student")
 
 
 class ClassCreate(BaseModel):

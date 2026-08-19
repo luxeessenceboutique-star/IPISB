@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Users, CalendarClock, Wallet, TrendingUp, Briefcase, UserPlus, GraduationCap, Target, Network, Boxes, Settings } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 import { RhEmployees } from "@/components/rh/Employees";
@@ -23,7 +24,7 @@ export const Route = createFileRoute("/dashboard/rh")({
       .from("user_roles")
       .select("role")
       .eq("user_id", sess.session.user.id)
-      .eq("role", "admin");
+      .in("role", ["admin", "rh", "assistant_rh"]);
     if (!data?.length) throw redirect({ to: "/dashboard" });
   },
   component: RhPage,
@@ -49,6 +50,9 @@ const TABS: { key: Tab; label: string; icon: typeof Users }[] = [
 
 function RhPage() {
   const [tab, setTab] = useState<Tab>("employees");
+  const { roles } = useAuth();
+  const canSeePayroll = roles.includes("admin") || roles.includes("rh");
+  const visibleTabs = canSeePayroll ? TABS : TABS.filter(t => t.key !== "payroll");
 
   return (
     <div style={{ fontFamily: sans }}>
@@ -59,7 +63,7 @@ function RhPage() {
       />
 
       <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid var(--pal-line)", flexWrap: "wrap" }}>
-        {TABS.map(t => {
+        {visibleTabs.map(t => {
           const active = tab === t.key;
           const Icon = t.icon;
           return (

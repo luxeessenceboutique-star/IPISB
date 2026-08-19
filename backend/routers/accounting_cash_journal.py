@@ -99,7 +99,7 @@ def _admin_ids(db: Client) -> list[str]:
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
 
 
@@ -109,7 +109,7 @@ def _require_read(user: CurrentUser, channel: str = CASH) -> None:
     (ni admin ni comptable) n'y a pas accès."""
     if not user.can_read_accounting():
         raise HTTPException(403, "Accès comptabilité requis")
-    if channel == BANK and not (user.is_admin() or user.is_accountant()):
+    if channel == BANK and not (user.can_access_accounting_full() or user.is_accountant()):
         raise HTTPException(403, "Journal des comptes réservé à l'administration et à la comptabilité")
 
 
@@ -125,7 +125,7 @@ def _write_mode(user: CurrentUser, channel: str) -> str | None:
       - 'pending' : caissier (caisse) ou comptable (banque) — validation N+1
       - None      : interdit
     """
-    if user.is_admin():
+    if user.can_access_accounting_full():
         return "direct"
     if channel == BANK:
         return "pending" if user.is_accountant() else None
@@ -434,7 +434,7 @@ async def list_entries(
     # Visibilité par rôle : le comptable (ni admin ni caissier) ne voit QUE les
     # lignes déclarées ('comptable'). Filtrer AVANT le calcul des soldes pour que
     # son « Solde Caisse » reflète uniquement la caisse déclarée.
-    if user.is_accountant() and not user.is_admin() and not user.is_cashier():
+    if user.is_accountant() and not user.can_access_accounting_full() and not user.is_cashier():
         rows = [r for r in rows if r.get("nc") == "comptable"]
 
     # Solde cumulé calculé chronologiquement (entrée = +, sortie = −).
@@ -814,7 +814,7 @@ async def delete_entry(
 
 def _is_comptable_only(user: CurrentUser) -> bool:
     """Comptable « pur » : ni admin ni caissier — n'a accès qu'aux lignes déclarées."""
-    return user.is_accountant() and not user.is_admin() and not user.is_cashier()
+    return user.is_accountant() and not user.can_access_accounting_full() and not user.is_cashier()
 
 
 def _lines_for_piece(db: Client, entity_type: str, entity_id: str) -> list[dict]:
@@ -847,7 +847,7 @@ async def upload_attachment(
     """Joint une pièce justificative directement à une ligne de caisse.
     Autorisé (accès direct) : admin, caissier, comptable. Le comptable ne peut
     joindre qu'aux lignes déclarées ('comptable') qu'il voit."""
-    if not (user.is_admin() or user.is_cashier() or user.is_accountant()):
+    if not (user.can_access_accounting_full() or user.is_cashier() or user.is_accountant()):
         raise HTTPException(403, "Accès comptabilité requis")
     if kind not in ATTACHMENT_KINDS:
         raise HTTPException(400, f"Type de pièce invalide. Valeurs : {', '.join(ATTACHMENT_KINDS)}")
@@ -857,7 +857,7 @@ async def upload_attachment(
         raise HTTPException(404, "Entrée introuvable")
     if _is_comptable_only(user) and entry[0].get("nc") != "comptable":
         raise HTTPException(403, "Ligne non accessible")
-    if (entry[0].get("channel") or CASH) == BANK and not (user.is_admin() or user.is_accountant()):
+    if (entry[0].get("channel") or CASH) == BANK and not (user.can_access_accounting_full() or user.is_accountant()):
         raise HTTPException(403, "Journal des comptes réservé à l'administration et à la comptabilité")
 
     data, ext = await validate_and_read(file)
@@ -901,7 +901,7 @@ async def download_attachment(
     if _is_comptable_only(user) and not _line_visible_to_comptable(db, att["entity_type"], att["entity_id"]):
         raise HTTPException(403, "Pièce non accessible")
     # Pièce d'une ligne bancaire : réservée à l'administration et à la comptabilité.
-    if not (user.is_admin() or user.is_accountant()):
+    if not (user.can_access_accounting_full() or user.is_accountant()):
         lines = _lines_for_piece(db, att["entity_type"], att["entity_id"])
         if any((r.get("channel") or CASH) == BANK for r in lines):
             raise HTTPException(403, "Pièce non accessible")
@@ -920,7 +920,7 @@ async def delete_attachment(
 ):
     """Supprime une pièce jointe DIRECTEMENT à une ligne de caisse
     (entity_type='cash_journal'). Réservé à l'admin et au caissier."""
-    if not (user.is_admin() or user.is_cashier()):
+    if not (user.can_access_accounting_full() or user.is_cashier()):
         raise HTTPException(403, "Suppression non autorisée")
     rows = (
         db.from_("accounting_attachments").select("*")
@@ -957,7 +957,7 @@ async def update_entry(
     if not rows:
         raise HTTPException(404, "Entrée introuvable")
     entry = rows[0]
-    if (entry.get("channel") or CASH) == BANK and not (user.is_admin() or user.is_accountant()):
+    if (entry.get("channel") or CASH) == BANK and not (user.can_access_accounting_full() or user.is_accountant()):
         raise HTTPException(403, "Journal des comptes réservé à l'administration et à la comptabilité")
 
     # Champs fournis (non-None) uniquement.
@@ -969,7 +969,7 @@ async def update_entry(
     if "channel" in updates:
         _check_channel(updates["channel"])
         # Reventiler une ligne d'un journal à l'autre est un arbitrage comptable.
-        if not user.is_admin() and updates["channel"] != (entry.get("channel") or CASH):
+        if not user.can_access_accounting_full() and updates["channel"] != (entry.get("channel") or CASH):
             raise HTTPException(403, "Changement de journal réservé à l'administration")
     if "amount" in updates:
         if updates["amount"] < 0:
@@ -994,7 +994,7 @@ async def update_entry(
     elif target_mode in BANK_MODES:
         raise HTTPException(400, "Mode bancaire : la ligne relève du journal des comptes")
 
-    if user.is_admin():
+    if user.can_access_accounting_full():
         if not updates:
             return entry
         res = db.from_("cash_journal").update(updates).eq("id", entry_id).execute()

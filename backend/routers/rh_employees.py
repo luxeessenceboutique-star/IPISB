@@ -16,8 +16,15 @@ router = APIRouter(prefix="/rh/employees", tags=["rh"])
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
-        raise HTTPException(403, "Admin only")
+    if not user.can_access_rh():
+        raise HTTPException(403, "RH access only")
+
+
+def _redact_salary(row: dict, user: CurrentUser) -> dict:
+    """assistant_rh has full RH access except payroll/salary data."""
+    if user.can_access_rh_payroll() or "salary" not in row:
+        return row
+    return {k: v for k, v in row.items() if k != "salary"}
 
 
 @router.get("")
@@ -47,7 +54,7 @@ async def list_employees(
     res = query.order("full_name").range(start, start + page_size - 1).execute()
 
     return {
-        "items": res.data or [],
+        "items": [_redact_salary(r, user) for r in (res.data or [])],
         "total": res.count or 0,
         "page": page,
         "page_size": page_size,
@@ -64,7 +71,7 @@ async def get_employee(
     rows = db.from_("employees").select("*").eq("id", employee_id).execute().data
     if not rows:
         raise HTTPException(404, "Not found")
-    return rows[0]
+    return _redact_salary(rows[0], user)
 
 
 @router.post("")
@@ -78,12 +85,14 @@ async def create_employee(
         raise HTTPException(400, "full_name is required")
 
     data = body.model_dump(exclude_none=True)
+    if not user.can_access_rh_payroll():
+        data.pop("salary", None)
     data["created_by"] = user.id
 
     res = db.from_("employees").insert(data).execute()
     new_employee = res.data[0]
     log_audit(db, user.id, "employee.create", "employee", new_employee["id"], {"full_name": body.full_name})
-    return new_employee
+    return _redact_salary(new_employee, user)
 
 
 @router.patch("/{employee_id}")
@@ -95,6 +104,8 @@ async def update_employee(
 ):
     _require_admin(user)
     updates = body.model_dump(exclude_unset=True)
+    if not user.can_access_rh_payroll():
+        updates.pop("salary", None)
     if not updates:
         raise HTTPException(400, "No fields to update")
 
@@ -102,7 +113,7 @@ async def update_employee(
     if not res.data:
         raise HTTPException(404, "Not found")
     log_audit(db, user.id, "employee.update", "employee", employee_id, updates)
-    return res.data[0]
+    return _redact_salary(res.data[0], user)
 
 
 @router.delete("/{employee_id}")

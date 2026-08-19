@@ -153,12 +153,12 @@ def _now() -> str:
 
 def _require_read(user: CurrentUser) -> None:
     """Le registre des chèques relève de la trésorerie : admin + comptable."""
-    if not (user.is_admin() or user.is_accountant()):
+    if not (user.can_access_accounting_full() or user.is_accountant()):
         raise HTTPException(403, "Registre des chèques réservé à l'administration et à la comptabilité.")
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
 
 

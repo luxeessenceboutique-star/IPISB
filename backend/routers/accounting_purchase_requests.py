@@ -27,7 +27,7 @@ INSTALLMENT_EDIT_ALLOWED = {"devis_valide", "commande_emise"}
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
 
 
@@ -40,7 +40,7 @@ def _get_or_404(db: Client, pr_id: str) -> dict:
 
 def _require_owner_or_admin(user: CurrentUser, pr: dict) -> None:
     """L'admin voit/gère tout ; sinon l'utilisateur ne touche que ses propres DA."""
-    if not user.is_admin() and pr.get("created_by") != user.id:
+    if not user.can_access_accounting_full() and pr.get("created_by") != user.id:
         raise HTTPException(403, "Accès réservé à l'auteur de la demande ou à l'administration.")
 
 
@@ -64,7 +64,7 @@ async def list_requests(
     page_size = max(1, min(100, page_size))
 
     query = db.from_("purchase_requests").select("*", count="exact")
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         query = query.eq("created_by", user.id)
     if q:
         query = query.or_(f"request_number.ilike.%{q}%,justification.ilike.%{q}%")
@@ -140,7 +140,7 @@ async def create_request(
               {"request_number": pr["request_number"],
                "reference": pr.get("reference") or pr.get("request_number")})
     # Non-admin → prévenir l'administration qu'une DA attend une décision.
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         try:
             from utils.notify import notify_users
             admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []

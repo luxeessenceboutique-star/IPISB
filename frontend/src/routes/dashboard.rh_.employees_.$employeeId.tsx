@@ -23,7 +23,7 @@ export const Route = createFileRoute("/dashboard/rh_/employees_/$employeeId")({
       .from("user_roles")
       .select("role")
       .eq("user_id", sess.session.user.id)
-      .eq("role", "admin");
+      .in("role", ["admin", "rh", "assistant_rh"]);
     if (!data?.length) throw redirect({ to: "/dashboard" });
   },
   component: EmployeeDetailPage,

@@ -15,7 +15,7 @@ ITEM_STATUSES = {"actif", "hors_service", "vendu", "perdu"}
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
 
 

@@ -190,6 +190,9 @@ const translations = {
     "dash.role.student":  "Étudiant",
     "dash.role.cashier":  "Caissier",
     "dash.role.accountant":"Comptable",
+    "dash.role.rh":       "RH",
+    "dash.role.assistant_rh":"Assistant RH",
+    "dash.role.comptabilite":"Comptabilité",
     "dash.logout":        "Déconnexion",
     "dash.profile":       "Mon profil",
     // Profile page
@@ -828,6 +831,9 @@ const translations = {
     "dash.role.student":  "Student",
     "dash.role.cashier":  "Cashier",
     "dash.role.accountant":"Accountant",
+    "dash.role.rh":       "HR",
+    "dash.role.assistant_rh":"HR Assistant",
+    "dash.role.comptabilite":"Accounting",
     "dash.logout":        "Logout",
     "dash.profile":       "My profile",
     // Profile page
@@ -1466,6 +1472,9 @@ const translations = {
     "dash.role.student":  "طالب",
     "dash.role.cashier":  "أمين الصندوق",
     "dash.role.accountant":"محاسب",
+    "dash.role.rh":       "الموارد البشرية",
+    "dash.role.assistant_rh":"مساعد الموارد البشرية",
+    "dash.role.comptabilite":"المحاسبة",
     "dash.logout":        "تسجيل الخروج",
     "dash.profile":       "ملفي الشخصي",
     // Profile page

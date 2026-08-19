@@ -28,12 +28,12 @@ export const Route = createFileRoute("/dashboard/accounting")({
   beforeLoad: async () => {
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) throw redirect({ to: "/auth" });
-    // Admin (plein accès), comptable (lecture seule) et caissier (saisie → validation).
+    // Admin/comptabilité (plein accès), comptable (lecture seule) et caissier (saisie → validation).
     const { data } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", sess.session.user.id)
-      .in("role", ["admin", "accountant", "cashier"]);
+      .in("role", ["admin", "comptabilite", "accountant", "cashier"]);
     if (!data?.length) throw redirect({ to: "/dashboard" });
   },
   component: AccountingPage,

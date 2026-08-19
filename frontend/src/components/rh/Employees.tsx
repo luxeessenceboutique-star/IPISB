@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Plus, Search, Users, Trash2, ChevronLeft, ChevronRight, Pencil, Eye, FileText } from "lucide-react";
 import { SectionLabel, EmptyHint, DashAvatar } from "@/components/dashboard/ui";
@@ -92,6 +93,8 @@ export function FormModal({ editing, departments, contractTypes, onClose, onSave
   editing: Employee | null; departments: LookupItem[]; contractTypes: LookupItem[];
   onClose: () => void; onSaved: () => void;
 }) {
+  const { roles } = useAuth();
+  const canSeeSalary = roles.includes("admin") || roles.includes("rh");
   const [form, setForm] = useState({
     full_name: editing?.full_name ?? "",
     cin: editing?.cin ?? "",
@@ -239,7 +242,9 @@ export function FormModal({ editing, departments, contractTypes, onClose, onSave
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Field label="Salaire de base (MAD)"><input type="number" min="0" step="any" value={form.salary} onChange={e => set("salary", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          {canSeeSalary && (
+            <Field label="Salaire de base (MAD)"><input type="number" min="0" step="any" value={form.salary} onChange={e => set("salary", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+          )}
           <Field label="Manager"><input type="text" value={form.manager} onChange={e => set("manager", e.target.value)} className="u-input" style={fieldStyle} /></Field>
         </div>
 

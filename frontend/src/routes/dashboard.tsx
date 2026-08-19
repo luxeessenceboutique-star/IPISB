@@ -86,11 +86,19 @@ function DashboardLayout() {
   const isProf  = roles.includes("professor");
   const isCashier = roles.includes("cashier");
   const isAccountant = roles.includes("accountant");
-  // Personnel financier (caissier / comptable) SANS être admin ni prof :
-  // accès limité à la Comptabilité + Notifications (pas de cours / classes).
-  const isFinanceStaff = (isCashier || isAccountant) && !isAdmin && !isProf;
+  const isComptabilite = roles.includes("comptabilite");
+  const isRh = roles.includes("rh");
+  const isAssistantRh = roles.includes("assistant_rh");
+  const hasFinanceRole = isCashier || isAccountant || isComptabilite;
+  const hasHrRole = isRh || isAssistantRh;
+  // Personnel non-académique (finance et/ou RH) SANS être admin ni prof :
+  // accès limité aux seules sections dont il dispose (pas de cours / classes).
+  const isRestrictedStaff = (hasFinanceRole || hasHrRole) && !isAdmin && !isProf;
   const roleLabel = isAdmin ? t("dash.role.admin")
     : isProf ? t("dash.role.professor")
+    : isRh ? t("dash.role.rh")
+    : isAssistantRh ? t("dash.role.assistant_rh")
+    : isComptabilite ? t("dash.role.comptabilite")
     : isCashier ? t("dash.role.cashier")
     : isAccountant ? t("dash.role.accountant")
     : t("dash.role.student");
@@ -99,16 +107,18 @@ function DashboardLayout() {
     ? `Espace ${roleLabel.toLowerCase()}`
     : lang === "ar" ? `فضاء ${roleLabel}` : `${roleLabel} space`;
 
-  // Personnel financier : Comptabilité + Notifications.
-  // Le caissier gère aussi les classes (création + inscription/transfert → validation N+1).
-  const financeItems: NavItem[] = [
+  // Personnel non-académique : Comptabilité et/ou RH + Notifications, selon
+  // les rôles réellement détenus. Le caissier gère aussi les classes
+  // (création + inscription/transfert → validation N+1).
+  const restrictedItems: NavItem[] = [
     { key: "dash.overview",      to: "/dashboard",               icon: Home, exact: true },
-    { key: "dash.accounting",    to: "/dashboard/accounting",    icon: Wallet            },
+    ...(hasFinanceRole ? [{ key: "dash.accounting", to: "/dashboard/accounting", icon: Wallet }] : []),
+    ...(hasHrRole ? [{ key: "dash.rh", to: "/dashboard/rh", icon: UserCog }] : []),
     ...(isCashier ? [{ key: "dash.classes", to: "/dashboard/classes", icon: Layers }] : []),
     { key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true },
   ];
 
-  const allItems: NavItem[] = isFinanceStaff ? financeItems : [
+  const allItems: NavItem[] = isRestrictedStaff ? restrictedItems : [
     ...SIDE_ITEMS,
     ...((isAdmin || isProf) ? [
       { key: "dash.teachingSessions", to: "/dashboard/teaching-sessions", icon: Presentation },

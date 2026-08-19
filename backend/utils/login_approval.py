@@ -18,7 +18,7 @@ from utils.email import send_email
 
 log = logging.getLogger(__name__)
 
-GATED_ROLES = {"admin", "professor"}
+GATED_ROLES = {"admin", "professor", "rh", "assistant_rh", "comptabilite"}
 INACTIVITY_DAYS = 30
 TOKEN_TTL_HOURS = 24 * 7  # 7 days to click the email link
 LAST_LOGIN_WRITE_THROTTLE_MINUTES = 10  # avoid a write on every single request
@@ -26,7 +26,10 @@ LAST_LOGIN_WRITE_THROTTLE_MINUTES = 10  # avoid a write on every single request
 APPROVER_EMAIL = os.environ.get("LOGIN_APPROVER_EMAIL", "")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5178")
 
-ROLE_LABELS = {"admin": "Administrateur", "professor": "Professeur"}
+ROLE_LABELS = {
+    "admin": "Administrateur", "professor": "Professeur",
+    "rh": "RH", "assistant_rh": "Assistant RH", "comptabilite": "Comptabilité",
+}
 
 
 def _now() -> datetime:

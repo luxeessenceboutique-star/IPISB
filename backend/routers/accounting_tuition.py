@@ -24,7 +24,7 @@ _EPS = 0.5  # tolérance d'arrondi (MAD) : ignore les résidus < ½ MAD (mensual
 
 
 def _require_admin(user: CurrentUser) -> None:
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
 
 
@@ -574,7 +574,7 @@ async def create_payment(
     - Caissier : la saisie part en file d'attente `pending_operations` et doit être
       validée par un admin (validation N+1). Renvoie {"pending": true}.
     """
-    if not (user.is_admin() or user.is_cashier()):
+    if not (user.can_access_accounting_full() or user.is_cashier()):
         raise HTTPException(403, "Admin ou caissier uniquement")
     pm = _parse_month(body.period_month)
     if pm is None:
@@ -601,7 +601,7 @@ async def create_payment(
     }
 
     # ── Caissier : validation N+1 ──────────────────────────────────────────
-    if user.is_cashier() and not user.is_admin():
+    if user.is_cashier() and not user.can_access_accounting_full():
         op = db.from_("pending_operations").insert({
             "op_type": "tuition_payment",
             "payload": data,
@@ -826,7 +826,7 @@ async def delete_payment(
       immédiatement — l'opération est enregistrée « approuvée » pour l'historique.
     - **Caissier** : la demande reste en attente et un admin l'exécute.
     """
-    if not (user.is_admin() or user.is_cashier()):
+    if not (user.can_access_accounting_full() or user.is_cashier()):
         raise HTTPException(403, "Admin ou caissier uniquement")
     existing = (
         db.from_("tuition_payments")
@@ -865,7 +865,7 @@ async def delete_payment(
     # ── Admin : il EST le N+1, sa demande est validée d'office ─────────────
     # La ligne d'opération est quand même écrite, déjà approuvée : la
     # suppression d'une recette doit rester lisible dans l'historique.
-    if user.is_admin():
+    if user.can_access_accounting_full():
         now = datetime.now(timezone.utc).isoformat()
         db.from_("pending_operations").insert({
             **row, "status": "approved", "reviewed_by": user.id, "reviewed_at": now,

@@ -6,7 +6,7 @@ import { api, ApiError } from "@/lib/api";
 const PENDING_APPROVAL_MESSAGE =
   "Votre compte est en attente de validation. Un email a été envoyé pour autoriser cette connexion — réessayez une fois celle-ci validée.";
 
-export type AppRole = "admin" | "professor" | "student" | "cashier" | "accountant";
+export type AppRole = "admin" | "professor" | "student" | "cashier" | "accountant" | "rh" | "assistant_rh" | "comptabilite";
 
 type AuthCtx = {
   user: User | null;

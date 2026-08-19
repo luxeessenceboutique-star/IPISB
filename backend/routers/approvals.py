@@ -97,7 +97,7 @@ async def list_pending(
     db: Annotated[Client, Depends(get_db)],
 ):
     """File d'attente des saisies caissier à valider (admin uniquement)."""
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
     ops = (
         db.from_("pending_operations").select("*")
@@ -134,7 +134,7 @@ async def approvals_inbox(
     suppressions de versement), avances de caisse, avances de frais de mission
     et demandes d'achat en attente de décision.
     """
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
 
     items: list[dict] = []
@@ -244,7 +244,7 @@ async def list_mine(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Mes saisies (caissier) — avec leur statut et le motif de rejet éventuel."""
-    if not (user.is_cashier() or user.is_admin()):
+    if not (user.is_cashier() or user.can_access_accounting_full()):
         raise HTTPException(403, "Caissier ou admin uniquement")
     ops = (
         db.from_("pending_operations").select("*")
@@ -271,7 +271,7 @@ async def approve_operation(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Valide une saisie caissier : exécute l'insertion réelle puis notifie le caissier."""
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
     op = _load_pending(db, op_id)
     payload = op.get("payload") or {}
@@ -438,7 +438,7 @@ async def reject_operation(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Rejette une saisie caissier avec un motif obligatoire ; notifie le caissier."""
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
     comment = (body.comment or "").strip()
     if not comment:

@@ -72,9 +72,12 @@ async def create_user(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    assigned_role = user.can_create_role()
-    if assigned_role is None:
+    allowed = user.assignable_roles()
+    if not allowed:
         raise HTTPException(403, "Students cannot create accounts")
+    assigned_role = body.role or allowed[0]
+    if assigned_role not in allowed:
+        raise HTTPException(400, f"Role must be one of: {', '.join(allowed)}")
 
     # Create the auth user via admin API
     try:

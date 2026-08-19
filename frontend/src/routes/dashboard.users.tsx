@@ -35,7 +35,7 @@ type Row = {
   roles: AppRole[];
 };
 
-const ALL_ROLES: AppRole[] = ["admin", "professor", "student"];
+const ALL_ROLES: AppRole[] = ["admin", "professor", "student", "rh", "assistant_rh", "comptabilite"];
 
 const PAL = {
   ink:     "oklch(22% 0.025 175)",
@@ -53,26 +53,33 @@ const sans = '"Manrope", system-ui, sans-serif';
 // ── Create Account Modal ──────────────────────────────────────────────────────
 
 type ModalProps = {
-  assignedRole: "professor" | "student";
+  creatableRoles: AppRole[];
   onClose: () => void;
   onCreated: () => void;
 };
 
-function CreateAccountModal({ assignedRole, onClose, onCreated }: ModalProps) {
+const ROLE_CREATE_LABELS: Partial<Record<AppRole, string>> = {
+  professor: "Professeur", student: "Étudiant",
+  rh: "RH", assistant_rh: "Assistant RH", comptabilite: "Comptabilité",
+};
+
+function CreateAccountModal({ creatableRoles, onClose, onCreated }: ModalProps) {
   const { t } = useI18n();
   const [fullName, setFullName] = useState("");
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole]         = useState<AppRole>(creatableRoles[0]);
   const [busy, setBusy]         = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  const label = assignedRole === "professor" ? "Professeur" : "Étudiant";
+  const label = ROLE_CREATE_LABELS[role] ?? role;
+  const showPicker = creatableRoles.length > 1;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await api.post("/api/users/create", { email, full_name: fullName, password });
+      const res = await api.post("/api/users/create", { email, full_name: fullName, password, role });
       toast.success(`Compte ${label} créé : ${res.email}`);
       onCreated();
       onClose();
@@ -127,6 +134,25 @@ function CreateAccountModal({ assignedRole, onClose, onCreated }: ModalProps) {
         </p>
 
         <form onSubmit={handleSubmit}>
+          {showPicker && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                Rôle
+              </label>
+              <select
+                value={role}
+                onChange={e => setRole(e.target.value as AppRole)}
+                style={{
+                  width: "100%", padding: "10px 14px",
+                  background: PAL.cream, border: `1px solid ${PAL.line}`,
+                  borderRadius: 10, fontFamily: sans, fontSize: 14,
+                  color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
+                }}
+              >
+                {creatableRoles.map(r => <option key={r} value={r}>{ROLE_CREATE_LABELS[r] ?? r}</option>)}
+              </select>
+            </div>
+          )}
           <ModalField label="Nom complet" type="text" value={fullName} onChange={setFullName} placeholder="Amina El Khattabi" />
           <ModalField label="Adresse e-mail" type="email" value={email} onChange={setEmail} placeholder="prenom.nom@ipisb.ma" />
           <ModalField label="Mot de passe temporaire" type="password" value={password} onChange={setPassword} placeholder="Min. 8 caractères" />
@@ -202,11 +228,11 @@ function UsersPage() {
   const isAdmin = roles.includes("admin");
   const isProf  = roles.includes("professor");
 
-  const canCreateRole: "professor" | "student" | null = isAdmin
-    ? "professor"
+  const creatableRoles: AppRole[] = isAdmin
+    ? ["professor", "rh", "assistant_rh", "comptabilite"]
     : isProf
-    ? "student"
-    : null;
+    ? ["student"]
+    : [];
 
   async function load() {
     setLoading(true);
@@ -283,17 +309,17 @@ function UsersPage() {
     ? t("users.subtitle")
     : "Les étudiants que vous avez créés";
 
-  const btnLabel = canCreateRole === "professor"
-    ? "Créer un compte Professeur"
-    : canCreateRole === "student"
-    ? "Créer un compte Étudiant"
-    : null;
+  const btnLabel = creatableRoles.length === 0
+    ? null
+    : isAdmin
+    ? "Nouveau compte"
+    : "Créer un compte Étudiant";
 
   return (
     <>
-      {showModal && canCreateRole && (
+      {showModal && creatableRoles.length > 0 && (
         <CreateAccountModal
-          assignedRole={canCreateRole}
+          creatableRoles={creatableRoles}
           onClose={() => setShowModal(false)}
           onCreated={load}
         />

@@ -31,7 +31,7 @@ def _require_read(user: CurrentUser) -> None:
 
 def _require_write(user: CurrentUser) -> None:
     """Saisie/modification : admin ou caissier (le comptable est en lecture seule)."""
-    if not (user.is_admin() or user.is_cashier()):
+    if not (user.can_access_accounting_full() or user.is_cashier()):
         raise HTTPException(403, "Saisie non autorisée")
 
 
@@ -304,7 +304,7 @@ async def delete_note(
     if not rows:
         raise HTTPException(404, "Note introuvable")
     status = rows[0].get("status") or "pending"
-    if status in ("approved", "paid") and not user.is_admin():
+    if status in ("approved", "paid") and not user.can_access_accounting_full():
         raise HTTPException(403, "Seul un administrateur peut supprimer une note approuvée ou payée.")
     db.from_("mission_notes").delete().eq("id", note_id).execute()
     _remove_cash_entry(db, note_id)
@@ -332,7 +332,7 @@ async def approve_note(
 ):
     """Approbation N+1 (admin) : la note passe « approuvée », prête à être payée
     dans l'onglet Paiements. Aucune comptabilisation encore (au paiement)."""
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Approbation réservée à l'administration (N+1).")
     note = _load_note(db, note_id)
     if (note.get("status") or "pending") != "pending":
@@ -365,7 +365,7 @@ async def reject_note(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Rejet N+1 (admin) avec motif obligatoire ; notifie l'initiateur."""
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "Rejet réservé à l'administration (N+1).")
     comment = (body.comment or "").strip()
     if not comment:
@@ -402,7 +402,7 @@ async def pay_note(
 ):
     """Exécution du paiement (admin) d'une avance APPROUVÉE : enregistre le
     décaissement et le COMPTABILISE (ligne 'sortie' au journal de caisse)."""
-    if not user.is_admin():
+    if not user.can_access_accounting_full():
         raise HTTPException(403, "L'exécution du paiement est réservée à l'administration.")
     if body.payment_method not in PAYMENT_METHODS:
         raise HTTPException(400, "Mode de règlement invalide.")

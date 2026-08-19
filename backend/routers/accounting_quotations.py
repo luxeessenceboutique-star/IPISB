@@ -25,7 +25,7 @@ def _get_pr_or_404(db: Client, pr_id: str) -> dict:
 
 def _require_pr_owner_or_admin(user: CurrentUser, pr: dict) -> None:
     """L'admin gère tout ; sinon seul l'auteur de la DA saisit ses devis."""
-    if not user.is_admin() and pr.get("created_by") != user.id:
+    if not user.can_access_accounting_full() and pr.get("created_by") != user.id:
         raise HTTPException(403, "Accès réservé à l'auteur de la demande ou à l'administration.")
 
 
@@ -45,7 +45,7 @@ def _shape(qt: dict) -> dict:
 
 def _notify_admins_new_quote(db: Client, user: CurrentUser, pr: dict) -> None:
     """Prévient l'administration qu'un demandeur a déposé un devis (décision attendue)."""
-    if user.is_admin():
+    if user.can_access_accounting_full():
         return
     try:
         from utils.notify import notify_users
@@ -71,7 +71,7 @@ async def list_quotations(
 ):
     if purchase_request_id:
         _require_pr_owner_or_admin(user, _get_pr_or_404(db, purchase_request_id))
-    elif not user.is_admin():
+    elif not user.can_access_accounting_full():
         raise HTTPException(403, "Précisez la demande d'achat.")
     query = db.from_("quotations").select("*, suppliers(company_name)")
     if purchase_request_id:
