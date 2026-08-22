@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
   Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet, ShoppingCart,
-  UserCog, CalendarRange, Library, Presentation,
+  UserCog, CalendarRange, Library, Presentation, ListChecks,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -115,6 +115,7 @@ function DashboardLayout() {
     ...(hasFinanceRole ? [{ key: "dash.accounting", to: "/dashboard/accounting", icon: Wallet }] : []),
     ...(hasHrRole ? [{ key: "dash.rh", to: "/dashboard/rh", icon: UserCog }] : []),
     ...(isCashier ? [{ key: "dash.classes", to: "/dashboard/classes", icon: Layers }] : []),
+    { key: "dash.tasks",         to: "/dashboard/tasks",         icon: ListChecks },
     { key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true },
   ];
 
@@ -126,6 +127,7 @@ function DashboardLayout() {
       { key: "dash.users",      to: "/dashboard/users",      icon: Users  },
       { key: "dash.timetables", to: "/dashboard/timetables", icon: CalendarRange },
       { key: "dash.library",    to: "/dashboard/library",    icon: Library },
+      { key: "dash.tasks",      to: "/dashboard/tasks",      icon: ListChecks },
     ] : []),
     // L2 Gestion Administrative — admin only
     ...(isAdmin ? [

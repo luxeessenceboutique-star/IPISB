@@ -8,6 +8,7 @@ import {
   CalendarClock, Pencil, Download,
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { usePermissions } from "@/lib/permissions";
 import { fmtMAD } from "./Overview";
 
 const PAL = {
@@ -385,11 +386,15 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
 }
 
 // ── Modal détail (décisions + devis + commande) ──────────────────────────────
-// canDecide : réservé à l'admin. Les autres utilisateurs voient leur DA en
-// lecture seule (consultation + PDF), sans boutons de décision.
-function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
-  prId: string; suppliers: Supplier[]; canDecide: boolean; onClose: () => void; onChanged: () => void;
+// canDecide : barème par montant (permissions.ts, "accounting.purchase_requests")
+// — ≤500 MAD comptabilite décide seule, 500–10 000 MAD admin décide en dernier
+// ressort, au-delà de 10 000 MAD admin exclusivement. Calculé ici (pas en prop)
+// car il dépend du budget_estimate de CETTE demande, connu seulement une fois
+// chargée.
+function DetailModal({ prId, suppliers, onClose, onChanged }: {
+  prId: string; suppliers: Supplier[]; onClose: () => void; onChanged: () => void;
 }) {
+  const { can } = usePermissions();
   const [pr, setPr] = useState<PRDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [quoteForm, setQuoteForm] = useState(false);
@@ -449,6 +454,7 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
   if (!pr) return <Backdrop width={720}><div style={{ padding: 20, color: PAL.muted }}>Chargement…</div></Backdrop>;
 
   const st = STATUS[pr.status];
+  const canDecide = can("accounting.purchase_requests", "validate_v2", pr.budget_estimate);
   const canDecideNeed = canDecide && (pr.status === "brouillon" || pr.status === "retournee");
   const inQuoteStage = pr.status === "besoin_valide" || pr.status === "en_consultation";
   // Saisie des devis : ouverte au demandeur (il ne voit que ses DA) ET à l'admin.
@@ -794,10 +800,10 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
 }
 
 // ── Écran principal ──────────────────────────────────────────────────────────
-// canDecide : l'admin peut décider (valider besoin/devis, émettre commande).
-// Les autres utilisateurs créent et suivent leurs propres demandes (lecture seule
-// sur les décisions).
-export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: boolean }) {
+// La décision (valider besoin/devis, émettre commande) suit le barème par
+// montant de "accounting.purchase_requests" (voir DetailModal) — plus un
+// simple booléen admin/non-admin passé en prop.
+export function AccountingPurchaseRequests() {
   const [items, setItems] = useState<PR[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -828,7 +834,7 @@ export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: b
   return (
     <div>
       {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onSaved={load} />}
-      {detailId && <DetailModal prId={detailId} suppliers={suppliers} canDecide={canDecide} onClose={() => setDetailId(null)} onChanged={load} />}
+      {detailId && <DetailModal prId={detailId} suppliers={suppliers} onClose={() => setDetailId(null)} onChanged={load} />}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 220px" }}>

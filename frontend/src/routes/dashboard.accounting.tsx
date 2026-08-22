@@ -133,7 +133,7 @@ function AccountingPage() {
       {tab === "revenues"          && <AccountingRevenues />}
       {tab === "expenses"          && <AccountingExpenses />}
       {tab === "invoices"          && <AccountingInvoices />}
-      {tab === "purchase_requests" && <AccountingPurchaseRequests canDecide={role === "admin"} />}
+      {tab === "purchase_requests" && <AccountingPurchaseRequests />}
       {tab === "purchases"         && <AccountingPurchases />}
       {tab === "payments"          && <AccountingPayments />}
       {tab === "inventory"         && <AccountingInventory />}

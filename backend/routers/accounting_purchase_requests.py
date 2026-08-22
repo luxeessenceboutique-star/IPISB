@@ -26,9 +26,22 @@ CASH_SOCIAL_MODES = {"caisse_sociale"}  # → caisse sociale ('noir')
 INSTALLMENT_EDIT_ALLOWED = {"devis_valide", "commande_emise"}
 
 
-def _require_admin(user: CurrentUser) -> None:
-    if not user.can_access_accounting_full():
-        raise HTTPException(403, "Admin only")
+# Barème par montant (permissions.py, entité "accounting.purchase_requests") :
+# ≤500 MAD comptabilite décide seule (canal 1) ; 500–10 000 MAD admin décide
+# en dernier ressort (canal 2, comptabilite ne peut plus valider elle-même) ;
+# au-delà de 10 000 MAD, admin exclusivement (canal 3). La SOUMISSION (créer/
+# voir/modifier/supprimer sa propre DA) reste ouverte à tout utilisateur quel
+# que soit le montant — seule l'autorité de DÉCISION est bornée ici.
+_ENTITY = "accounting.purchase_requests"
+
+
+def _require_decide(user: CurrentUser, amount: float) -> None:
+    if not user.can_act(_ENTITY, "validate_v2", amount=amount):
+        raise HTTPException(
+            403,
+            "Ce montant nécessite une décision administrateur "
+            "(comptabilité ne peut valider seule qu'en dessous de 500 MAD).",
+        )
 
 
 def _get_or_404(db: Client, pr_id: str) -> dict:
@@ -209,10 +222,10 @@ async def need_decision(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Décision sur l'expression de besoin : validation / retour / annulation."""
-    _require_admin(user)
     if body.decision not in DECISIONS:
         raise HTTPException(400, "Décision invalide")
     pr = _get_or_404(db, pr_id)
+    _require_decide(user, pr.get("budget_estimate") or 0)
     if pr["status"] not in ("brouillon", "retournee"):
         raise HTTPException(400, "La décision de besoin n'est possible qu'au stade brouillon.")
 
@@ -266,10 +279,10 @@ async def quote_decision(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Décision sur les devis : retient un devis (validation) ou retourne/annule la DA."""
-    _require_admin(user)
     if body.decision not in DECISIONS:
         raise HTTPException(400, "Décision invalide")
     pr = _get_or_404(db, pr_id)
+    _require_decide(user, pr.get("budget_estimate") or 0)
     if pr["status"] not in ("besoin_valide", "en_consultation"):
         raise HTTPException(400, "Le besoin doit être validé et en consultation avant de décider du devis.")
 
@@ -307,8 +320,8 @@ async def create_order(
 ):
     """Crée la commande (ligne purchases) à partir du devis retenu. Garde-fou :
     la DA doit être 'devis_valide' avec un devis retenu, et sans commande existante."""
-    _require_admin(user)
     pr = _get_or_404(db, pr_id)
+    _require_decide(user, pr.get("budget_estimate") or 0)
     if pr["status"] != "devis_valide":
         raise HTTPException(400, "La DA doit être au statut 'devis validé' pour émettre une commande.")
 
@@ -388,8 +401,8 @@ async def replace_installments(
     """Remplace intégralement l'échéancier (admin). Saisi une fois le devis retenu,
     avant/à l'émission de la commande. Total libre : la somme des échéances peut
     différer du montant retenu (ex. avance « en noir » hors facture)."""
-    _require_admin(user)
     pr = _get_or_404(db, pr_id)
+    _require_decide(user, pr.get("budget_estimate") or 0)
     if pr["status"] not in INSTALLMENT_EDIT_ALLOWED:
         raise HTTPException(400, "Le mode de paiement se définit une fois le devis retenu.")
 

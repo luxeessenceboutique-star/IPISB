@@ -1273,3 +1273,44 @@ class TeachingSessionEnd(BaseModel):
 class SessionFeedbackSubmit(BaseModel):
     answers: dict[str, int]  # {question_id: 1-5}
 
+
+# ── Gestion des tâches (Task Management) ────────────────────────────────────
+TASK_STATUSES = {"todo", "in_progress", "in_review", "done", "blocked", "cancelled"}
+TASK_PRIORITIES = {"low", "medium", "high", "urgent"}
+TASK_DOMAINS = {"rh", "comptabilite", "scolarite", "general"}
+
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    domain: Optional[str] = None
+    assignee_id: Optional[str] = None
+    due_date: Optional[str] = None
+    linked_entity_type: Optional[str] = None
+    linked_entity_id: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    """PATCH générique — ne touche jamais status ni assignee_id, forcés via
+    les endpoints dédiés /status et /assign (même garde-fou que rh_leaves.py)."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    domain: Optional[str] = None
+    due_date: Optional[str] = None
+    linked_entity_type: Optional[str] = None
+    linked_entity_id: Optional[str] = None
+
+
+class TaskStatusUpdate(BaseModel):
+    status: str
+
+
+class TaskAssign(BaseModel):
+    assignee_id: Optional[str] = None  # None = désassigner (retour au backlog)
+
+
+class TaskCommentCreate(BaseModel):
+    text: str
+
