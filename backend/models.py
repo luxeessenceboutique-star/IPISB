@@ -239,12 +239,17 @@ class ScheduleUpdate(BaseModel):
 
 
 # ── Specialties (filières) ──────────────────────────────────────────────────
+SPECIALTY_TYPES = {"formation_initiale", "formation_continue"}
+
+
 class SpecialtyCreate(BaseModel):
     name: str
+    type: str = "formation_initiale"
 
 
 class SpecialtyUpdate(BaseModel):
     name: Optional[str] = None
+    type: Optional[str] = None
 
 
 # ── Attendance ───────────────────────────────────────────────────────────────
