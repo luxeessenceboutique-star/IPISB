@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -12,6 +12,7 @@ from models import (
     JobAdCreate, JobAdUpdate,
     CandidateCreate, CandidateCommentCreate, CandidatePromote,
     InterviewCreate, InterviewUpdate,
+    InterviewEvaluationUpsert, INTERVIEW_DECISIONS, INTERVIEW_ENTRETIEN_TYPES,
     SlotCreate,
 )
 from utils.audit import log_audit
@@ -293,6 +294,23 @@ async def list_candidates(
     return res.data or []
 
 
+@router.get("/candidates/{candidate_id}")
+async def get_candidate(
+    candidate_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    rows = (
+        db.from_("employees").select("*")
+        .eq("id", candidate_id).eq("status", "candidate")
+        .execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Candidat introuvable")
+    return rows[0]
+
+
 @router.post("/candidates")
 async def create_candidate(
     body: CandidateCreate,
@@ -550,6 +568,32 @@ async def list_interviewers(
     return [{"id": p["id"], "full_name": p.get("full_name") or p.get("email") or "—"} for p in profs]
 
 
+MAX_INTERVIEWERS = 3
+
+
+def _interviewers_by_interview(db: Client, interview_ids: list[str]) -> dict[str, list[dict]]:
+    interview_ids = list({i for i in interview_ids if i})
+    if not interview_ids:
+        return {}
+    links = db.from_("interview_interviewers").select("interview_id, user_id").in_("interview_id", interview_ids).execute().data or []
+    names = _profile_names(db, [l["user_id"] for l in links])
+    by_interview: dict[str, list[dict]] = {}
+    for l in links:
+        by_interview.setdefault(l["interview_id"], []).append({"id": l["user_id"], "full_name": names.get(l["user_id"], "—")})
+    return by_interview
+
+
+def _set_interviewers(db: Client, interview_id: str, interviewer_ids: list[str]) -> None:
+    ids = list(dict.fromkeys(i for i in interviewer_ids if i))  # dédupe, garde l'ordre
+    if len(ids) > MAX_INTERVIEWERS:
+        raise HTTPException(400, f"{MAX_INTERVIEWERS} interviewers maximum par entretien")
+    db.from_("interview_interviewers").delete().eq("interview_id", interview_id).execute()
+    if ids:
+        db.from_("interview_interviewers").insert(
+            [{"interview_id": interview_id, "user_id": uid} for uid in ids]
+        ).execute()
+
+
 @router.get("/interviews")
 async def list_interviews(
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -563,14 +607,14 @@ async def list_interviews(
 
     res = query.order("date").order("start_time").execute()
     rows = res.data or []
-    names = _profile_names(db, [r.get("recruiter_id") for r in rows])
+    interviewers_by_interview = _interviewers_by_interview(db, [r["id"] for r in rows])
     items = []
     for row in rows:
         emp = row.get("employees") or {}
         items.append({
             **{k: v for k, v in row.items() if k != "employees"},
             "candidate_name": emp.get("full_name"),
-            "recruiter_name": names.get(row.get("recruiter_id")),
+            "interviewers": interviewers_by_interview.get(row["id"], []),
         })
     return items
 
@@ -582,6 +626,8 @@ async def schedule_interview(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    if len(set(body.interviewer_ids)) > MAX_INTERVIEWERS:
+        raise HTTPException(400, f"{MAX_INTERVIEWERS} interviewers maximum par entretien")
 
     if body.slot_id:
         slot = db.from_("hr_slots").select("id, status").eq("id", body.slot_id).execute().data
@@ -590,7 +636,7 @@ async def schedule_interview(
         if slot[0]["status"] == "reserved":
             raise HTTPException(409, "Ce créneau est déjà réservé")
 
-    data = body.model_dump(exclude={"slot_id"}, exclude_none=True)
+    data = body.model_dump(exclude={"slot_id", "interviewer_ids"}, exclude_none=True)
     data["status"] = "pending"
     data["created_by"] = user.id
 
@@ -599,10 +645,14 @@ async def schedule_interview(
         raise HTTPException(400, "Could not create interview")
     interview = res.data[0]
 
+    if body.interviewer_ids:
+        _set_interviewers(db, interview["id"], body.interviewer_ids)
+
     if body.slot_id:
         db.from_("hr_slots").update({"status": "reserved", "interview_id": interview["id"]}).eq("id", body.slot_id).execute()
 
     log_audit(db, user.id, "interview.create", "interview", interview["id"])
+    interview["interviewers"] = _interviewers_by_interview(db, [interview["id"]]).get(interview["id"], [])
     return interview
 
 
@@ -633,14 +683,28 @@ async def update_interview(
 ):
     _require_admin(user)
     updates = body.model_dump(exclude_unset=True)
-    if not updates:
+    interviewer_ids = updates.pop("interviewer_ids", None)
+    if not updates and interviewer_ids is None:
         raise HTTPException(400, "No fields to update")
 
-    res = db.from_("interviews").update(updates).eq("id", interview_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Not found")
+    if updates:
+        res = db.from_("interviews").update(updates).eq("id", interview_id).execute()
+        if not res.data:
+            raise HTTPException(404, "Not found")
+        interview = res.data[0]
+    else:
+        existing = db.from_("interviews").select("*").eq("id", interview_id).execute().data
+        if not existing:
+            raise HTTPException(404, "Not found")
+        interview = existing[0]
+
+    if interviewer_ids is not None:
+        _set_interviewers(db, interview_id, interviewer_ids)
+        updates["interviewer_ids"] = interviewer_ids
+
     log_audit(db, user.id, "interview.update", "interview", interview_id, updates)
-    return res.data[0]
+    interview["interviewers"] = _interviewers_by_interview(db, [interview_id]).get(interview_id, [])
+    return interview
 
 
 @router.delete("/interviews/{interview_id}")
@@ -658,6 +722,58 @@ async def delete_interview(
     db.from_("interviews").delete().eq("id", interview_id).execute()
     log_audit(db, user.id, "interview.delete", "interview", interview_id)
     return {"ok": True}
+
+
+# ── Interview evaluation (Grille + Fiche + Décision) ────────────────────────
+# Digitalise les 2 formulaires RH papier — une évaluation partagée par
+# entretien (pas par interviewer), voir models.py pour la structure.
+
+@router.get("/interviews/{interview_id}/evaluation")
+async def get_interview_evaluation(
+    interview_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    rows = db.from_("interview_evaluations").select("*").eq("interview_id", interview_id).execute().data
+    return rows[0] if rows else None
+
+
+@router.put("/interviews/{interview_id}/evaluation")
+async def save_interview_evaluation(
+    interview_id: str,
+    body: InterviewEvaluationUpsert,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    interview = db.from_("interviews").select("id, status").eq("id", interview_id).execute().data
+    if not interview:
+        raise HTTPException(404, "Entretien introuvable")
+
+    if body.decision is not None and body.decision not in INTERVIEW_DECISIONS:
+        raise HTTPException(400, f"decision invalide (valeurs possibles : {', '.join(sorted(INTERVIEW_DECISIONS))})")
+    if body.type_entretien is not None and body.type_entretien not in INTERVIEW_ENTRETIEN_TYPES:
+        raise HTTPException(400, f"type_entretien invalide (valeurs possibles : {', '.join(sorted(INTERVIEW_ENTRETIEN_TYPES))})")
+
+    data = body.model_dump(exclude_none=True, exclude={"grille", "fiche"})
+    if body.grille is not None:
+        data["grille"] = body.grille.model_dump()
+    if body.fiche is not None:
+        data["fiche"] = body.fiche.model_dump()
+    data["interview_id"] = interview_id
+    data["submitted_by"] = user.id
+    data["submitted_at"] = datetime.now(timezone.utc).isoformat()
+
+    res = db.from_("interview_evaluations").upsert(data, on_conflict="interview_id").execute()
+    if not res.data:
+        raise HTTPException(400, "Impossible d'enregistrer l'évaluation")
+
+    if body.decision and interview[0]["status"] in ("pending", "confirmed"):
+        db.from_("interviews").update({"status": "completed"}).eq("id", interview_id).execute()
+
+    log_audit(db, user.id, "interview.evaluation.save", "interview", interview_id)
+    return res.data[0]
 
 
 # ── Interview time slots ──────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -20,7 +21,7 @@ const fieldStyle = { marginTop: 8, marginBottom: 14, width: "100%", padding: "10
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 const iconBtnStyle = { background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 6, padding: "5px 7px", cursor: "pointer", display: "flex" as const };
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
@@ -353,7 +354,7 @@ function AdContentPreview({ contenu }: { contenu: string }) {
 
 // ── Candidates ───────────────────────────────────────────────────────────
 
-type Candidate = {
+export type Candidate = {
   id: string; full_name: string; email: string | null; phone: string | null; position: string | null; notes: string | null;
   source?: string | null; applied_ad_id?: string | null; cv_path?: string | null; cv_filename?: string | null;
   education?: string | null; experience_summary?: string | null; skills?: string | null; created_at?: string;
@@ -391,44 +392,19 @@ function Th({ icon, children, align }: { icon?: React.ReactNode; children: React
 }
 
 function CandidatesPanel() {
+  const navigate = useNavigate();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [promoting, setPromoting] = useState<Candidate | null>(null);
-  const [detail, setDetail] = useState<Candidate | null>(null);
   const [form, setForm] = useState({ full_name: "", email: "", phone: "", position: "", city: "", address: "", notes: "" });
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [page, setPage] = useState(0);
 
-  async function downloadCv(c: Candidate) {
-    try {
-      const res = await api.get(`/api/rh/recruitment/candidates/${c.id}/cv-url`);
-      if (res.signed_url) window.open(res.signed_url, "_blank", "noopener,noreferrer");
-    } catch (err: any) {
-      toast.error(err?.message ?? "CV introuvable.");
-    }
-  }
-
-  async function uploadCv(c: Candidate, file: File) {
-    const fd = new FormData();
-    fd.append("cv", file);
-    try {
-      const res = await fetch(`${API_BASE}/api/rh/recruitment/candidates/${c.id}/cv`, {
-        method: "POST", headers: await authHeader(), body: fd,
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        try { throw new Error(JSON.parse(text).detail || text); } catch (e: any) { throw new Error(e.message || text); }
-      }
-      const updated: Candidate = await res.json();
-      toast.success("CV importé et analysé.");
-      setDetail(updated);
-      load();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Erreur lors de l'import du CV.");
-    }
+  function openCandidate(c: Candidate) {
+    navigate({ to: "/dashboard/rh/candidates/$candidateId", params: { candidateId: c.id } });
   }
 
   async function load() {
@@ -464,7 +440,6 @@ function CandidatesPanel() {
     try {
       await api.delete(`/api/rh/recruitment/candidates/${c.id}`);
       toast.success("Candidat supprimé.");
-      if (detail?.id === c.id) setDetail(null);
       load();
     } catch (err: any) { toast.error(err?.message ?? "Erreur."); }
   }
@@ -508,16 +483,6 @@ function CandidatesPanel() {
         </Modal>
       )}
       {promoting && <PromoteModal candidate={promoting} onClose={() => setPromoting(null)} onSaved={load} />}
-      {detail && (
-        <CandidateDetailModal
-          candidate={detail}
-          onClose={() => setDetail(null)}
-          onDownloadCv={downloadCv}
-          onUploadCv={uploadCv}
-          onPromote={c => { setDetail(null); setPromoting(c); }}
-          onDelete={remove}
-        />
-      )}
 
       {/* Toolbar: search + time filter + new candidate */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" as const }}>
@@ -574,7 +539,7 @@ function CandidatesPanel() {
               {paged.map((c, i) => (
                 <tr
                   key={c.id}
-                  onClick={() => setDetail(c)}
+                  onClick={() => openCandidate(c)}
                   style={{ borderBottom: `1px solid ${PAL.line}`, cursor: "pointer", transition: "background .12s" }}
                   onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = "var(--pal-cream)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = ""; }}
@@ -611,7 +576,7 @@ function CandidatesPanel() {
                   <td style={tdStyle}>
                     {c.cv_path ? (
                       <button
-                        onClick={e => { e.stopPropagation(); setDetail(c); }}
+                        onClick={e => { e.stopPropagation(); openCandidate(c); }}
                         title="Voir le résumé extrait par l'IA"
                         style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: 0, cursor: "pointer", color: "var(--pal-primary)", fontFamily: sans, fontSize: 12.5, fontWeight: 600, padding: 0 }}
                       >
@@ -621,7 +586,7 @@ function CandidatesPanel() {
                   </td>
                   <td style={{ ...tdStyle, textAlign: "right" as const }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: "inline-flex", gap: 6 }}>
-                      <button onClick={() => setDetail(c)} title="Voir le détail" className="u-ghost" style={{ ...iconBtnStyle, color: PAL.muted }}><Eye size={13} strokeWidth={1.7} /></button>
+                      <button onClick={() => openCandidate(c)} title="Voir le détail" className="u-ghost" style={{ ...iconBtnStyle, color: PAL.muted }}><Eye size={13} strokeWidth={1.7} /></button>
                       <button onClick={() => setPromoting(c)} title="Promouvoir" className="u-ghost" style={{ ...iconBtnStyle, color: PAL.muted }}><ArrowUpRight size={13} strokeWidth={1.7} /></button>
                       <button onClick={() => remove(c)} title="Supprimer" className="u-ghost" style={{ ...iconBtnStyle, color: "var(--pal-danger)" }}><Trash2 size={13} strokeWidth={1.7} /></button>
                     </div>
@@ -663,7 +628,7 @@ function PageBtn({ onClick, disabled, children }: { onClick: () => void; disable
 const thStyle = { padding: "10px 14px", textAlign: "left" as const, fontFamily: sans, fontWeight: 700, fontSize: 10.5, color: PAL.muted, letterSpacing: ".06em", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const };
 const tdStyle = { padding: "10px 14px", fontFamily: sans, fontSize: 13 };
 
-function DetailField({ icon, label, color, children }: { icon: React.ReactNode; label: string; color: string; children: React.ReactNode }) {
+export function DetailField({ icon, label, color, children }: { icon: React.ReactNode; label: string; color: string; children: React.ReactNode }) {
   return (
     <div style={{ background: "var(--pal-cream)", borderRadius: 10, padding: "11px 13px", border: `1px solid ${PAL.line}`, borderLeft: `3px solid ${color}` }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
@@ -675,7 +640,7 @@ function DetailField({ icon, label, color, children }: { icon: React.ReactNode; 
   );
 }
 
-function CvUploadZone({ candidate, onUploadCv }: { candidate: Candidate; onUploadCv: (c: Candidate, file: File) => void | Promise<void> }) {
+export function CvUploadZone({ candidate, onUploadCv }: { candidate: Candidate; onUploadCv: (c: Candidate, file: File) => void | Promise<void> }) {
   const [busy, setBusy] = useState(false);
   return (
     <label
@@ -711,7 +676,7 @@ function CvUploadZone({ candidate, onUploadCv }: { candidate: Candidate; onUploa
   );
 }
 
-function CandidateComments({ candidateId }: { candidateId: string }) {
+export function CandidateComments({ candidateId }: { candidateId: string }) {
   const [comments, setComments] = useState<CandidateComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
@@ -804,99 +769,6 @@ function CandidateComments({ candidateId }: { candidateId: string }) {
   );
 }
 
-function CandidateDetailModal({ candidate: c, onClose, onDownloadCv, onUploadCv, onPromote, onDelete }: {
-  candidate: Candidate; onClose: () => void;
-  onDownloadCv: (c: Candidate) => void; onUploadCv: (c: Candidate, file: File) => void | Promise<void>;
-  onPromote: (c: Candidate) => void; onDelete: (c: Candidate) => void;
-}) {
-  const empty = (v?: string | null) => !v || !v.trim();
-  return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, width: "100%", maxWidth: 560, maxHeight: "86vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${PAL.line}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-          <div>
-            <div style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 500, color: PAL.ink }}>{c.full_name}</div>
-            {c.source === "public_application" && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, color: "var(--pal-primary-deep)", background: "var(--pal-pale)", marginTop: 4 }}>
-                <Globe size={11} strokeWidth={1.8} />Candidature via annonce
-              </span>
-            )}
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}><X size={18} strokeWidth={1.7} /></button>
-        </div>
-
-        <div style={{ overflowY: "auto", padding: 20 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <DetailField icon={<Mail size={12} strokeWidth={1.8} />} label="Email" color="var(--pal-primary)">{c.email || <em style={{ color: PAL.muted, fontStyle: "italic" }}>—</em>}</DetailField>
-            <DetailField icon={<Phone size={12} strokeWidth={1.8} />} label="Téléphone" color="var(--pal-good)">{c.phone || <em style={{ color: PAL.muted, fontStyle: "italic" }}>—</em>}</DetailField>
-            <DetailField icon={<Briefcase size={12} strokeWidth={1.8} />} label="Poste visé" color={PAL.muted}>{c.position || <em style={{ color: PAL.muted, fontStyle: "italic" }}>—</em>}</DetailField>
-            <DetailField icon={<Calendar size={12} strokeWidth={1.8} />} label="Reçue le" color="var(--pal-warn)">
-              {c.created_at ? new Date(c.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "—"}
-            </DetailField>
-          </div>
-
-          {(!empty(c.city) || !empty(c.address)) && (
-            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {!empty(c.city) && (
-                <DetailField icon={<MapPin size={12} strokeWidth={1.8} />} label="Ville" color="var(--pal-good)">{c.city}</DetailField>
-              )}
-              {!empty(c.address) && (
-                <DetailField icon={<Home size={12} strokeWidth={1.8} />} label="Adresse" color="var(--pal-good)">{c.address}</DetailField>
-              )}
-            </div>
-          )}
-
-          {(c.years_experience != null || !empty(c.languages)) && (
-            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {c.years_experience != null && (
-                <DetailField icon={<Clock3 size={12} strokeWidth={1.8} />} label="Années d'expérience" color="var(--pal-warn)">
-                  {c.years_experience} an{c.years_experience >= 2 ? "s" : ""}
-                </DetailField>
-              )}
-              {!empty(c.languages) && (
-                <DetailField icon={<Languages size={12} strokeWidth={1.8} />} label="Langues" color="var(--pal-good)">{c.languages}</DetailField>
-              )}
-            </div>
-          )}
-          {!empty(c.education) && (
-            <div style={{ marginTop: 10 }}>
-              <DetailField icon={<GraduationCap size={12} strokeWidth={1.8} />} label="Formation" color="var(--pal-primary)">{c.education}</DetailField>
-            </div>
-          )}
-          {!empty(c.experience_summary) && (
-            <div style={{ marginTop: 10 }}>
-              <DetailField icon={<Briefcase size={12} strokeWidth={1.8} />} label="Expérience" color="var(--pal-primary)">{c.experience_summary}</DetailField>
-            </div>
-          )}
-          {!empty(c.skills) && (
-            <div style={{ marginTop: 10 }}>
-              <DetailField icon={<Award size={12} strokeWidth={1.8} />} label="Compétences" color="var(--pal-primary)">{c.skills}</DetailField>
-            </div>
-          )}
-          {!empty(c.notes) && (
-            <div style={{ marginTop: 10 }}>
-              <DetailField icon={<FileText size={12} strokeWidth={1.8} />} label="Notes" color={PAL.muted}>{c.notes}</DetailField>
-            </div>
-          )}
-          {!c.cv_path && <CvUploadZone candidate={c} onUploadCv={onUploadCv} />}
-
-          <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${PAL.line}` }}>
-            <CandidateComments candidateId={c.id} />
-          </div>
-        </div>
-
-        <div style={{ padding: "14px 22px", borderTop: `1px solid ${PAL.line}`, display: "flex", gap: 8, justifyContent: "flex-end", flexShrink: 0 }}>
-          {c.cv_path && (
-            <button onClick={() => onDownloadCv(c)} className="btn-c btn-c-sm btn-c-ghost"><FileDown size={13} strokeWidth={1.7} />Télécharger le CV</button>
-          )}
-          <button onClick={() => onPromote(c)} className="btn-c btn-c-sm btn-c-ghost"><ArrowUpRight size={13} strokeWidth={1.7} />Promouvoir</button>
-          <button onClick={() => onDelete(c)} className="btn-c btn-c-sm" style={{ color: "var(--pal-danger)" }}><Trash2 size={13} strokeWidth={1.7} />Supprimer</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 const DEFAULT_REQUIRED_DOCUMENTS = [
   "Copie de la CIN (carte d'identité nationale)",
   "Copie(s) du/des diplôme(s)",
@@ -908,7 +780,7 @@ const DEFAULT_REQUIRED_DOCUMENTS = [
   "Attestation(s) de travail des postes précédents (le cas échéant)",
 ];
 
-function PromoteModal({ candidate, onClose, onSaved }: { candidate: Candidate; onClose: () => void; onSaved: () => void }) {
+export function PromoteModal({ candidate, onClose, onSaved }: { candidate: Candidate; onClose: () => void; onSaved: () => void }) {
   const [hireDate, setHireDate] = useState(new Date().toISOString().slice(0, 10));
   const [position, setPosition] = useState(candidate.position ?? "");
   const [probationDays, setProbationDays] = useState(30);
@@ -972,24 +844,62 @@ function PromoteModal({ candidate, onClose, onSaved }: { candidate: Candidate; o
 
 // ── Interviews ───────────────────────────────────────────────────────────
 
-type Interviewer = { id: string; full_name: string };
-type Interview = { id: string; candidate_id: string; candidate_name: string | null; recruiter_id: string | null; recruiter_name: string | null; date: string; start_time: string; end_time: string; type: string; status: string };
-type Slot = { id: string; date: string; start_time: string; end_time: string; status: string };
-const INTERVIEW_TYPES = [{ value: "rh", label: "RH" }, { value: "technical", label: "Technique" }, { value: "final", label: "Final" }];
-const INTERVIEW_STATUS: Record<string, string> = { pending: "En attente", confirmed: "Confirmé", completed: "Terminé", cancelled: "Annulé" };
+export type Interviewer = { id: string; full_name: string };
+export type Interview = { id: string; candidate_id: string; candidate_name: string | null; interviewers: Interviewer[]; date: string; start_time: string; end_time: string; type: string; status: string };
+export type Slot = { id: string; date: string; start_time: string; end_time: string; status: string };
+export const INTERVIEW_TYPES = [{ value: "rh", label: "RH" }, { value: "technical", label: "Technique" }, { value: "final", label: "Final" }];
+export const INTERVIEW_STATUS: Record<string, string> = { pending: "En attente", confirmed: "Confirmé", completed: "Terminé", cancelled: "Annulé" };
+export const MAX_INTERVIEWERS = 3;
 
-function slotLabel(s: Slot) {
+export function slotLabel(s: Slot) {
   return `${new Date(s.date).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })} · ${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)}`;
 }
 
+// Sélection de jusqu'à MAX_INTERVIEWERS interviewers (RH / Assistant RH).
+export function InterviewerPicker({ interviewers, selected, onChange }: {
+  interviewers: Interviewer[]; selected: string[]; onChange: (ids: string[]) => void;
+}) {
+  function toggle(id: string) {
+    if (selected.includes(id)) { onChange(selected.filter(x => x !== id)); return; }
+    if (selected.length >= MAX_INTERVIEWERS) { toast.error(`${MAX_INTERVIEWERS} interviewers maximum.`); return; }
+    onChange([...selected, id]);
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8, marginBottom: 14, maxHeight: 160, overflowY: "auto" }}>
+      {interviewers.length === 0 && (
+        <div style={{ fontSize: 12.5, color: PAL.muted }}>Aucun profil RH / Assistant RH disponible.</div>
+      )}
+      {interviewers.map(iv => {
+        const checked = selected.includes(iv.id);
+        return (
+          <label key={iv.id} style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8,
+            border: `1px solid ${checked ? "var(--pal-primary)" : PAL.line}`,
+            background: checked ? "var(--pal-pale)" : "transparent",
+            fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer",
+          }}>
+            <input type="checkbox" checked={checked} onChange={() => toggle(iv.id)} />
+            {iv.full_name}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 function InterviewsPanel() {
+  const navigate = useNavigate();
   const [interviews, setInterviews] = useState<Interview[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [interviewerPool, setInterviewerPool] = useState<Interviewer[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ candidate_id: "", slot_id: "", type: "rh", meet_link: "", notes: "" });
+  const [form, setForm] = useState({ candidate_id: "", slot_id: "", type: "rh", meet_link: "", notes: "", interviewer_ids: [] as string[] });
   const [busy, setBusy] = useState(false);
+  const [reassignFor, setReassignFor] = useState<Interview | null>(null);
+  const [reassignIds, setReassignIds] = useState<string[]>([]);
+  const [reassignBusy, setReassignBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -1002,6 +912,7 @@ function InterviewsPanel() {
   }
   useEffect(() => { load(); loadSlots(); }, []);
   useEffect(() => { api.get("/api/rh/recruitment/candidates").then(setCandidates).catch(() => {}); }, []);
+  useEffect(() => { api.get("/api/rh/recruitment/interviewers").then(setInterviewerPool).catch(() => {}); }, []);
 
   const availableSlots = slots.filter(s => s.status !== "reserved");
 
@@ -1015,10 +926,11 @@ function InterviewsPanel() {
         candidate_id: form.candidate_id, slot_id: slot.id,
         date: slot.date, start_time: slot.start_time, end_time: slot.end_time,
         type: form.type, meet_link: form.meet_link || null, notes: form.notes || null,
+        interviewer_ids: form.interviewer_ids,
       });
       toast.success("Entretien planifié.");
       setModalOpen(false);
-      setForm(f => ({ ...f, candidate_id: "", slot_id: "" }));
+      setForm(f => ({ ...f, candidate_id: "", slot_id: "", interviewer_ids: [] }));
       load();
       loadSlots();
     } catch (err: any) {
@@ -1037,6 +949,26 @@ function InterviewsPanel() {
     if (!window.confirm("Supprimer cet entretien ?")) return;
     try { await api.delete(`/api/rh/recruitment/interviews/${i.id}`); toast.success("Entretien supprimé."); load(); }
     catch (err: any) { toast.error(err?.message ?? "Erreur."); }
+  }
+
+  function openReassign(i: Interview) {
+    setReassignFor(i);
+    setReassignIds(i.interviewers.map(iv => iv.id));
+  }
+
+  async function saveReassign() {
+    if (!reassignFor) return;
+    setReassignBusy(true);
+    try {
+      await api.patch(`/api/rh/recruitment/interviews/${reassignFor.id}`, { interviewer_ids: reassignIds });
+      toast.success("Interviewers mis à jour.");
+      setReassignFor(null);
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    } finally {
+      setReassignBusy(false);
+    }
   }
 
   return (
@@ -1063,11 +995,27 @@ function InterviewsPanel() {
           <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={fieldStyle}>
             {INTERVIEW_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
+          <label style={labelStyle}>Interviewers ({form.interviewer_ids.length}/{MAX_INTERVIEWERS})</label>
+          <InterviewerPicker interviewers={interviewerPool} selected={form.interviewer_ids} onChange={ids => setForm(f => ({ ...f, interviewer_ids: ids }))} />
           <label style={labelStyle}>Lien visio</label>
           <input type="text" value={form.meet_link} onChange={e => setForm(f => ({ ...f, meet_link: e.target.value }))} style={{ ...fieldStyle, marginBottom: 20 }} />
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button onClick={() => setModalOpen(false)} style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer" }}>Annuler</button>
             <button onClick={submit} disabled={busy || availableSlots.length === 0} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "9px 20px", cursor: (busy || availableSlots.length === 0) ? "not-allowed" : "pointer", opacity: (busy || availableSlots.length === 0) ? .6 : 1 }}>{busy ? "…" : "Planifier"}</button>
+          </div>
+        </Modal>
+      )}
+      {reassignFor && (
+        <Modal title="Interviewers" onClose={() => setReassignFor(null)}>
+          <div style={{ fontSize: 13, color: PAL.ink, fontWeight: 600, marginBottom: 4 }}>{reassignFor.candidate_name || "—"}</div>
+          <div style={{ fontSize: 12, color: PAL.muted, marginBottom: 12 }}>
+            {new Date(reassignFor.date).toLocaleDateString("fr-FR")} {reassignFor.start_time}-{reassignFor.end_time}
+          </div>
+          <label style={labelStyle}>Interviewers ({reassignIds.length}/{MAX_INTERVIEWERS})</label>
+          <InterviewerPicker interviewers={interviewerPool} selected={reassignIds} onChange={setReassignIds} />
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button onClick={() => setReassignFor(null)} style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer" }}>Annuler</button>
+            <button onClick={saveReassign} disabled={reassignBusy} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "9px 20px", cursor: reassignBusy ? "not-allowed" : "pointer", opacity: reassignBusy ? .6 : 1 }}>{reassignBusy ? "…" : "Enregistrer"}</button>
           </div>
         </Modal>
       )}
@@ -1083,14 +1031,28 @@ function InterviewsPanel() {
           {interviews.map(i => (
             <div key={i.id} className="row-c flex-wrap">
               <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{i.candidate_name || "—"}</div>
+                <button
+                  type="button"
+                  onClick={() => navigate({ to: "/dashboard/rh/candidates/$candidateId", params: { candidateId: i.candidate_id } })}
+                  style={{ fontWeight: 700, fontSize: 14, color: "var(--pal-primary)", background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left" }}
+                >
+                  {i.candidate_name || "—"} →
+                </button>
                 <div style={{ fontSize: 12, color: PAL.muted }}>
                   {INTERVIEW_TYPES.find(t => t.value === i.type)?.label} · {new Date(i.date).toLocaleDateString("fr-FR")} {i.start_time}-{i.end_time}
+                </div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                  {i.interviewers.length === 0 ? (
+                    <span style={{ fontSize: 11, color: PAL.muted, fontStyle: "italic" }}>Aucun interviewer assigné</span>
+                  ) : i.interviewers.map(iv => (
+                    <span key={iv.id} className="chip-c chip-c-blue" style={{ fontSize: 11 }}>{iv.full_name}</span>
+                  ))}
                 </div>
               </div>
               <select value={i.status} onChange={e => setStatus(i, e.target.value)} className="u-input" style={{ padding: "6px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12, background: PAL.paper }}>
                 {Object.entries(INTERVIEW_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
+              <button onClick={() => openReassign(i)} title="Assigner des interviewers" className="u-ghost" style={iconBtnStyle}><UserRound size={14} strokeWidth={1.7} /></button>
               <button onClick={() => remove(i)} title="Supprimer" className="u-ghost" style={{ ...iconBtnStyle, color: "var(--pal-danger)" }}><Trash2 size={14} strokeWidth={1.7} /></button>
             </div>
           ))}

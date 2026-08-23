@@ -1023,7 +1023,7 @@ class CandidatePromote(BaseModel):
 
 class InterviewCreate(BaseModel):
     candidate_id: str
-    recruiter_id: Optional[str] = None
+    interviewer_ids: list[str] = []               # jusqu'à 3 — voir schedule_interview()
     date: str
     start_time: str
     end_time: str
@@ -1039,6 +1039,68 @@ class InterviewUpdate(BaseModel):
     end_time: Optional[str] = None
     type: Optional[str] = None
     meet_link: Optional[str] = None
+    notes: Optional[str] = None
+    interviewer_ids: Optional[list[str]] = None    # None = inchangé ; liste (même vide) = remplace
+
+
+# ── Interview evaluation — digitalise "Grille d'Entretien de Recrutement"
+# et "Fiche d'Entretien d'Embauche" (formulaires RH papier). ──────────────────
+class GrilleRow(BaseModel):
+    score: Optional[int] = None        # 1-5
+    remarque: Optional[str] = None
+
+
+class EvaluationGrille(BaseModel):
+    connaissance_domaine: GrilleRow = GrilleRow()
+    formations: GrilleRow = GrilleRow()
+    experiences_pro: GrilleRow = GrilleRow()
+    competences: GrilleRow = GrilleRow()
+    outils: GrilleRow = GrilleRow()
+    travail_equipe: GrilleRow = GrilleRow()
+    ponctualite_reactivite: GrilleRow = GrilleRow()
+    organisation_autonomie: GrilleRow = GrilleRow()
+    motivation: GrilleRow = GrilleRow()
+    mobilite: GrilleRow = GrilleRow()
+    disponibilite: GrilleRow = GrilleRow()
+    pretentions_salariales: GrilleRow = GrilleRow()
+    observations: Optional[str] = None
+
+
+class CompetenceRating(BaseModel):
+    commentaire: Optional[str] = None
+    niveau: Optional[str] = None       # inti|qualifie|experimente|master (agilites : low|medium|high)
+
+
+class EvaluationFiche(BaseModel):
+    ponctualite: Optional[str] = None
+    maitrise_de_soi: Optional[str] = None
+    facon_de_se_presenter: Optional[str] = None
+    comportement: Optional[str] = None
+    interet_poste: Optional[str] = None
+    competences_corps_metier: CompetenceRating = CompetenceRating()
+    competences_transverses: CompetenceRating = CompetenceRating()
+    agilites: CompetenceRating = CompetenceRating()
+    softskills: dict[str, bool] = {}   # clé = slug de l'affirmation
+    points_forts: Optional[str] = None
+    axes_amelioration: Optional[str] = None
+    appreciation_generale: Optional[str] = None
+
+
+INTERVIEW_DECISIONS = {"negative", "standby", "other_interview", "offer", "other_entity"}
+INTERVIEW_ENTRETIEN_TYPES = {"presentiel", "distance"}
+
+
+class InterviewEvaluationUpsert(BaseModel):
+    grille: Optional[EvaluationGrille] = None
+    fiche: Optional[EvaluationFiche] = None
+    decision: Optional[str] = None
+    decision_detail: Optional[str] = None
+    salary_current: Optional[str] = None
+    salary_expected: Optional[str] = None
+    interviewer_visa: Optional[str] = None
+    entite_affectation: Optional[str] = None
+    type_entretien: Optional[str] = None
+    duree_entretien: Optional[str] = None
     notes: Optional[str] = None
     recruiter_id: Optional[str] = None
 
