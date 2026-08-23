@@ -301,11 +301,10 @@ async def get_candidate(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    rows = (
-        db.from_("employees").select("*")
-        .eq("id", candidate_id).eq("status", "candidate")
-        .execute().data
-    )
+    # Pas de filtre status='candidate' ici : la fiche doit rester consultable
+    # après embauche (historique d'entretiens, CV, commentaires), contrairement
+    # à list_candidates (liste active) ou promote/delete (actions ponctuelles).
+    rows = db.from_("employees").select("*").eq("id", candidate_id).execute().data
     if not rows:
         raise HTTPException(404, "Candidat introuvable")
     return rows[0]
@@ -410,10 +409,7 @@ async def get_candidate_cv_url(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    rows = (
-        db.from_("employees").select("cv_path")
-        .eq("id", candidate_id).eq("status", "candidate").execute().data
-    )
+    rows = db.from_("employees").select("cv_path").eq("id", candidate_id).execute().data
     if not rows or not rows[0].get("cv_path"):
         raise HTTPException(404, "Aucun CV pour ce candidat")
     signed = db.storage.from_(BUCKET_CVS).create_signed_url(rows[0]["cv_path"], CV_SIGNED_URL_TTL)
@@ -431,7 +427,7 @@ async def upload_candidate_cv(
     (not through the public apply link). Runs the same AI extraction
     pipeline so HR gets the same at-a-glance summary either way."""
     _require_admin(user)
-    existing = db.from_("employees").select("id").eq("id", candidate_id).eq("status", "candidate").execute().data
+    existing = db.from_("employees").select("id").eq("id", candidate_id).execute().data
     if not existing:
         raise HTTPException(404, "Candidat introuvable")
 
@@ -501,7 +497,7 @@ async def add_candidate_comment(
     text = body.text.strip()
     if not text:
         raise HTTPException(400, "Le commentaire ne peut pas être vide")
-    existing = db.from_("employees").select("id").eq("id", candidate_id).eq("status", "candidate").execute().data
+    existing = db.from_("employees").select("id").eq("id", candidate_id).execute().data
     if not existing:
         raise HTTPException(404, "Candidat introuvable")
 
