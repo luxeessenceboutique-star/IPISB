@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LayoutGrid, Truck, Building2, Tags, TrendingUp, Receipt, FileText, PiggyBank, ClipboardList, History, CreditCard, Package, Wallet, ShieldCheck, Inbox, NotebookPen, Plane, Landmark, ScrollText } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
@@ -25,6 +25,10 @@ import { AccountingInventory } from "@/components/accounting/Inventory";
 import { AccountingTuitionTracking } from "@/components/accounting/TuitionTracking";
 
 export const Route = createFileRoute("/dashboard/accounting")({
+  validateSearch: (s: Record<string, unknown>) => ({
+    tab: typeof s.tab === "string" ? s.tab : undefined,
+    scope: s.scope === "formation_initiale" || s.scope === "formation_continue" ? (s.scope as "formation_initiale" | "formation_continue") : undefined,
+  }),
   beforeLoad: async () => {
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) throw redirect({ to: "/auth" });
@@ -80,12 +84,16 @@ const TABS_BY_ROLE: Record<"admin" | "accountant" | "cashier", Tab[]> = {
 
 function AccountingPage() {
   const { roles } = useAuth();
+  const { tab: searchTab, scope } = Route.useSearch();
   const role: "admin" | "accountant" | "cashier" =
     roles.includes("admin") ? "admin" : roles.includes("accountant") ? "accountant" : "cashier";
   const readOnly = role === "accountant";
   const visibleKeys = TABS_BY_ROLE[role];
   const visibleTabs = TABS.filter(t => visibleKeys.includes(t.key));
-  const [tab, setTab] = useState<Tab>(visibleTabs[0]?.key ?? "tuition");
+  const [tab, setTab] = useState<Tab>((searchTab as Tab) ?? visibleTabs[0]?.key ?? "tuition");
+  // Les sous-liens de la barre latérale (Comptabilité) pointent tous vers cette
+  // même route avec un ?tab= différent — sans remount, donc on resynchronise.
+  useEffect(() => { if (searchTab) setTab(searchTab as Tab); }, [searchTab]);
 
   const sub = role === "admin"
     ? "Demandes d'achat, livraisons, fournisseurs et suivi budgétaire — centralisés."
@@ -130,7 +138,7 @@ function AccountingPage() {
       {tab === "mine"              && <MySubmissions />}
       {tab === "overview"          && <AccountingOverview />}
       {tab === "tuition"           && <AccountingTuitionTracking readOnly={readOnly} />}
-      {tab === "revenues"          && <AccountingRevenues />}
+      {tab === "revenues"          && <AccountingRevenues key={scope ?? "all"} initialScope={scope} />}
       {tab === "expenses"          && <AccountingExpenses />}
       {tab === "invoices"          && <AccountingInvoices />}
       {tab === "purchase_requests" && <AccountingPurchaseRequests />}

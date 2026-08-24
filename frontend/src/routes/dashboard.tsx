@@ -1,9 +1,9 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
-  Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet, ShoppingCart,
-  UserCog, CalendarRange, Library, Presentation, ListChecks,
+  Home, ClipboardList, GraduationCap, Bell,
+  Layers, Users, LogOut, X, FileText, CalendarClock, Wallet,
+  UserCog, LayoutGrid, History, ScrollText,
   User, RefreshCw, Briefcase, Landmark, MessageCircle, Building2, TrendingUp,
   ChevronDown, Plus,
 } from "lucide-react";
@@ -41,9 +41,15 @@ type NavLeaf = {
   exact?: boolean; badge?: boolean; label?: string; search?: Record<string, string>;
 };
 type NavGroup = {
-  type: "group"; key: string; icon: typeof Home; homeTo?: string; exact?: boolean; children: NavLeaf[];
+  type: "group"; key: string; icon: typeof Home; homeTo?: string; exact?: boolean; label?: string; children: NavEntry[];
 };
 type NavEntry = NavLeaf | NavGroup;
+
+function entryMatchesPath(entry: NavEntry, pathname: string): boolean {
+  return entry.type === "leaf"
+    ? pathname.startsWith(entry.to)
+    : entry.children.some(c => entryMatchesPath(c, pathname));
+}
 
 function leaf(partial: Omit<NavLeaf, "type">): NavLeaf {
   return { type: "leaf", ...partial };
@@ -107,9 +113,6 @@ function DashboardLayout() {
   const isAssistantRh = roles.includes("assistant_rh");
   const hasFinanceRole = isCashier || isAccountant || isComptabilite;
   const hasHrRole = isRh || isAssistantRh;
-  // Personnel non-académique (finance et/ou RH) SANS être admin ni prof :
-  // accès limité aux seules sections dont il dispose (pas de cours / classes).
-  const isRestrictedStaff = (hasFinanceRole || hasHrRole) && !isAdmin && !isProf;
   const canManageClasses = isAdmin || isProf || isCashier;
 
   // Filières (specialties), pour peupler Formation initiale / Formation
@@ -134,18 +137,11 @@ function DashboardLayout() {
     ? `Espace ${roleLabel.toLowerCase()}`
     : lang === "ar" ? `فضاء ${roleLabel}` : `${roleLabel} space`;
 
-  // Visibilité par rubrique — un seul calcul, partagé par tous les rôles
-  // (remplace les deux tableaux dupliqués restrictedItems/allItems d'avant).
+  // Visibilité par rubrique — un seul calcul, partagé par tous les rôles.
   const showRh = isAdmin || hasHrRole;
   const showAccounting = isAdmin || hasFinanceRole;
-  const showTasks = isAdmin || isProf || hasFinanceRole || hasHrRole;
   const showDocuments = isAdmin;
   const showUsers = isAdmin || isProf;
-  const showAcademicExtras = isAdmin || isProf; // Séances, Emplois du temps, Bibliothèque
-  const showStudents = isAdmin;
-  const showSchedules = isAdmin;
-  const showAnnouncements = isAdmin;
-  const showPurchaseRequests = !isAdmin && !isRestrictedStaff; // professeur, étudiant
 
   function filiereChildren(filiereType: Specialty["type"], addLabel: string): NavLeaf[] {
     const items: NavLeaf[] = specialties
@@ -181,58 +177,41 @@ function DashboardLayout() {
       ],
     }),
 
-    // Tronc académique commun (élèves inclus) — inchangé par rapport à avant.
-    ...(!isRestrictedStaff ? [
-      leaf({ key: "dash.courses",     to: "/dashboard/courses",     icon: BookOpen }),
-      leaf({ key: "dash.assignments", to: "/dashboard/assignments", icon: ClipboardList }),
-      leaf({ key: "dash.exams",       to: "/dashboard/exams",       icon: GraduationCap }),
-      leaf({ key: "dash.agenda",      to: "/dashboard/agenda",      icon: CalendarDays }),
-      leaf({ key: "dash.meetings",    to: "/dashboard/meetings",    icon: Video }),
-    ] : []),
-
     // Formation initiale / continue — filières dynamiques (Classes → Filières).
     ...(canManageClasses ? [
       group({ key: "dash.formationInitiale", icon: User, children: filiereChildren("formation_initiale", t("dash.addFiliere")) }),
       group({ key: "dash.formationContinue", icon: RefreshCw, children: filiereChildren("formation_continue", t("dash.addFiliere")) }),
     ] : []),
 
-    // Académique (outils étendus admin/professeur) + Classes non filtrées.
-    group({
-      key: "dash.academique", icon: BookOpen,
-      children: [
-        ...(canManageClasses ? [leaf({ key: "dash.classes", to: "/dashboard/classes", icon: Layers })] : []),
-        ...(showAcademicExtras ? [
-          leaf({ key: "dash.teachingSessions", to: "/dashboard/teaching-sessions", icon: Presentation }),
-          leaf({ key: "dash.timetables", to: "/dashboard/timetables", icon: CalendarRange }),
-          leaf({ key: "dash.library", to: "/dashboard/library", icon: Library }),
-        ] : []),
-        ...(showStudents ? [leaf({ key: "dash.students", to: "/dashboard/students", icon: IdCard })] : []),
-        ...(showSchedules ? [leaf({ key: "dash.schedules", to: "/dashboard/schedules", icon: CalendarClock })] : []),
-        ...(showAnnouncements ? [leaf({ key: "dash.announcements", to: "/dashboard/announcements", icon: Megaphone })] : []),
-      ],
-    }),
-
-    // Gestion — RH, Tâches, Comptabilité, Communication, Réunions/instances,
-    // Documents, Utilisateurs.
+    // Gestion — RH, Comptabilité (sous-menu vers ses propres onglets),
+    // Communication, Réunions/instances, Documents.
     group({
       key: "dash.gestion", icon: Briefcase,
       children: [
         ...(showRh ? [leaf({ key: "dash.rh", to: "/dashboard/rh", icon: UserCog })] : []),
-        ...(showTasks ? [leaf({ key: "dash.tasks", to: "/dashboard/tasks", icon: ListChecks })] : []),
-        ...(showAccounting ? [leaf({ key: "dash.accounting", to: "/dashboard/accounting", icon: Wallet })] : []),
+        ...(showAccounting ? [
+          group({
+            key: "dash.accounting", icon: Wallet,
+            children: [
+              leaf({ key: "dash.accounting.overview", to: "/dashboard/accounting", icon: LayoutGrid, search: { tab: "overview" } }),
+              leaf({ key: "dash.accounting.purchaseRequests", to: "/dashboard/accounting", icon: ClipboardList, search: { tab: "purchase_requests" } }),
+              leaf({ key: "dash.accounting.revenuesEcole", to: "/dashboard/accounting", icon: GraduationCap, search: { tab: "revenues", scope: "formation_initiale" } }),
+              leaf({ key: "dash.accounting.revenuesFC", to: "/dashboard/accounting", icon: RefreshCw, search: { tab: "revenues", scope: "formation_continue" } }),
+              leaf({ key: "dash.accounting.journal", to: "/dashboard/accounting", icon: History, search: { tab: "journal" } }),
+              leaf({ key: "dash.accounting.cheques", to: "/dashboard/accounting", icon: ScrollText, search: { tab: "cheques" } }),
+            ],
+          }),
+        ] : []),
         ...(isAdmin ? [
           leaf({ key: "dash.communication", to: "/dashboard/communication", icon: MessageCircle }),
           leaf({ key: "dash.reunionsInstances", to: "/dashboard/reunions-instances", icon: Landmark }),
         ] : []),
         ...(showDocuments ? [leaf({ key: "dash.documents", to: "/dashboard/documents", icon: FileText })] : []),
-        ...(showUsers ? [leaf({ key: "dash.users", to: "/dashboard/users", icon: Users })] : []),
       ],
     }),
 
-    // Demandes d'achat : professeur/étudiant seulement (l'admin y accède via Comptabilité).
-    ...(showPurchaseRequests ? [
-      leaf({ key: "dash.purchase_requests", to: "/dashboard/purchase-requests", icon: ShoppingCart }),
-    ] : []),
+    // Utilisateurs — au même niveau que Gestion, pas dedans.
+    ...(showUsers ? [leaf({ key: "dash.users", to: "/dashboard/users", icon: Users })] : []),
   ];
 
   // Un groupe sans enfant disparaît ; un groupe avec un seul enfant ET une
@@ -250,6 +229,54 @@ function DashboardLayout() {
   async function handleLogout() {
     await signOut();
     navigate({ to: "/" });
+  }
+
+  // Rendu récursif : un groupe (ex. Comptabilité) peut lui-même contenir des
+  // groupes — chaque niveau d'imbrication ajoute son propre repli/dépli et
+  // un retrait supplémentaire.
+  function renderNavEntry(it: NavEntry, depth: number): React.ReactNode {
+    const nested = depth > 0 ? { paddingInlineStart: 34 + (depth - 1) * 18, fontSize: 13 } : {};
+    const iconSize = depth > 0 ? 15 : 17;
+
+    if (it.type === "leaf") {
+      const isActive = it.exact ? pathname === it.to : pathname.startsWith(it.to);
+      const I = it.icon;
+      return (
+        <Link key={it.key} to={it.to as "/dashboard"} search={it.search}
+          className={isActive ? "side-link is-active" : "side-link"}
+          style={{ textDecoration: "none", fontFamily: sans, ...nested }}>
+          <I size={iconSize} strokeWidth={1.7} />
+          {it.label ?? t(it.key)}
+          {it.badge && unread > 0 && (
+            <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 800, color: PAL.paper, background: PAL.danger, padding: "2px 7px", borderRadius: 999 }}>{unread}</span>
+          )}
+        </Link>
+      );
+    }
+
+    const GI = it.icon;
+    const isGroupActive = it.children.some(c => entryMatchesPath(c, pathname));
+    const isCollapsed = collapsedGroups.has(it.key);
+    return (
+      <div key={it.key}>
+        <button
+          type="button"
+          onClick={() => toggleGroup(it.key)}
+          className={isGroupActive ? "side-link is-active" : "side-link"}
+          style={{ textDecoration: "none", fontFamily: sans, width: "100%", border: 0, background: "transparent", cursor: "pointer", textAlign: "start", ...nested }}
+        >
+          <GI size={iconSize} strokeWidth={1.7} />
+          {it.label ?? t(it.key)}
+          <ChevronDown size={14} strokeWidth={2}
+            style={{ marginInlineStart: "auto", transition: "transform .15s ease", transform: isCollapsed ? "rotate(-90deg)" : "none", opacity: .6 }} />
+        </button>
+        {!isCollapsed && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+            {it.children.map(c => renderNavEntry(c, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   }
 
   const Sidebar = (
@@ -275,58 +302,7 @@ function DashboardLayout() {
 
       <nav className="scroll-y" style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0 }}>
         <span className="eyebrow" style={{ padding: "2px 12px 8px", fontSize: 9.5 }}>{spaceLabel}</span>
-        {visibleEntries.map((it) => {
-          if (it.type === "leaf") {
-            const isActive = it.exact ? pathname === it.to : pathname.startsWith(it.to);
-            const I = it.icon;
-            return (
-              <Link key={it.key} to={it.to as "/dashboard"} search={it.search}
-                className={isActive ? "side-link is-active" : "side-link"}
-                style={{ textDecoration: "none", fontFamily: sans }}>
-                <I size={17} strokeWidth={1.7} />
-                {it.label ?? t(it.key)}
-                {it.badge && unread > 0 && (
-                  <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 800, color: PAL.paper, background: PAL.danger, padding: "2px 7px", borderRadius: 999 }}>{unread}</span>
-                )}
-              </Link>
-            );
-          }
-
-          const GI = it.icon;
-          const isGroupActive = it.children.some(c => pathname.startsWith(c.to));
-          const isCollapsed = collapsedGroups.has(it.key);
-          return (
-            <div key={it.key}>
-              <button
-                type="button"
-                onClick={() => toggleGroup(it.key)}
-                className={isGroupActive ? "side-link is-active" : "side-link"}
-                style={{ textDecoration: "none", fontFamily: sans, width: "100%", border: 0, background: "transparent", cursor: "pointer", textAlign: "start" }}
-              >
-                <GI size={17} strokeWidth={1.7} />
-                {t(it.key)}
-                <ChevronDown size={14} strokeWidth={2}
-                  style={{ marginInlineStart: "auto", transition: "transform .15s ease", transform: isCollapsed ? "rotate(-90deg)" : "none", opacity: .6 }} />
-              </button>
-              {!isCollapsed && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
-                  {it.children.map(c => {
-                    const isActive = c.exact ? pathname === c.to : pathname.startsWith(c.to);
-                    const CI = c.icon;
-                    return (
-                      <Link key={c.key} to={c.to as "/dashboard"} search={c.search}
-                        className={isActive ? "side-link is-active" : "side-link"}
-                        style={{ textDecoration: "none", fontFamily: sans, paddingInlineStart: 34, fontSize: 13 }}>
-                        <CI size={15} strokeWidth={1.7} />
-                        {c.label ?? t(c.key)}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {visibleEntries.map((it) => renderNavEntry(it, 0))}
       </nav>
 
       <div style={{ height: 1, background: PAL.lineSoft }} />

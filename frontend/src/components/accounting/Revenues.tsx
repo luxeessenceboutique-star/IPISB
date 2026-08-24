@@ -379,7 +379,7 @@ function Row({ label, value }: { label: string; value: string | null | undefined
   );
 }
 
-export function AccountingRevenues() {
+export function AccountingRevenues({ initialScope }: { initialScope?: "formation_initiale" | "formation_continue" } = {}) {
   const [revenues, setRevenues] = useState<Revenue[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -394,6 +394,9 @@ export function AccountingRevenues() {
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [bankOnly, setBankOnly] = useState(false);
+  // École (formation initiale) vs formation continue — dérivé de la filière
+  // de la classe rattachée à chaque recette.
+  const [scopeFilter, setScopeFilter] = useState(initialScope ?? "");
 
   // Vue groupée par classe : une ligne repliable par promo, totalisant ses recettes.
   const [groupByClass, setGroupByClass] = useState(false);
@@ -409,6 +412,7 @@ export function AccountingRevenues() {
     if (statusFilter) p.set("status", statusFilter);
     if (typeFilter) p.set("revenue_type", typeFilter);
     if (bankOnly) p.set("bank", "true");
+    if (scopeFilter) p.set("specialty_type", scopeFilter);
     return p;
   }
 
@@ -464,7 +468,7 @@ export function AccountingRevenues() {
     const timer = setTimeout(() => { groupByClass ? loadGroups() : load(); }, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, statusFilter, typeFilter, bankOnly, page, groupByClass]);
+  }, [q, statusFilter, typeFilter, bankOnly, scopeFilter, page, groupByClass]);
 
   useEffect(() => {
     api.get("/api/accounting/categories").then(setCategories).catch(() => {});
@@ -507,6 +511,11 @@ export function AccountingRevenues() {
         <select value={statusFilter} onChange={e => { setPage(1); setStatusFilter(e.target.value); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
           <option value="">Tous statuts</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select value={scopeFilter} onChange={e => { setPage(1); setScopeFilter(e.target.value as typeof scopeFilter); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
+          <option value="">École et formation continue</option>
+          <option value="formation_initiale">École</option>
+          <option value="formation_continue">Formation continue</option>
         </select>
         <button
           type="button"
