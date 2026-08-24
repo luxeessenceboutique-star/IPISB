@@ -172,7 +172,13 @@ function DashboardLayout() {
         ...(isAdmin || isProf ? [
           leaf({ key: "dash.agendaFormateur", to: "/dashboard/agenda-formateur", icon: CalendarClock }),
           leaf({ key: "dash.architecture", to: "/dashboard/architecture", icon: Building2 }),
-          leaf({ key: "dash.performance", to: "/dashboard/performance", icon: TrendingUp }),
+          group({
+            key: "dash.kpis", icon: TrendingUp,
+            children: [
+              leaf({ key: "dash.kpis.production", to: "/dashboard/kpis-production", icon: Layers }),
+              leaf({ key: "dash.kpis.performance", to: "/dashboard/performance", icon: TrendingUp }),
+            ],
+          }),
         ] : []),
       ],
     }),
