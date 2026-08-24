@@ -95,6 +95,61 @@ async def list_timetables(
     ]
 
 
+@router.get("/rooms/usage")
+async def get_rooms_usage(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Occupation réelle des salles — dérivée de l'emploi du temps validé le
+    plus récent de chaque classe (il n'existe pas de table 'salles' dédiée :
+    `room` est un champ texte libre sur chaque créneau)."""
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+
+    timetables = (
+        db.from_("timetables").select("id, class_id, week_start, status, classes(name)")
+        .eq("status", "validated").order("week_start", desc=True)
+        .execute().data or []
+    )
+    latest_by_class: dict[str, dict] = {}
+    for t in timetables:
+        if t["class_id"] not in latest_by_class:
+            latest_by_class[t["class_id"]] = t
+    timetable_ids = [t["id"] for t in latest_by_class.values()]
+    if not timetable_ids:
+        return []
+
+    slots = (
+        db.from_("timetable_slots").select("*")
+        .in_("timetable_id", timetable_ids).not_.is_("room", "null")
+        .order("day_of_week").order("start_time")
+        .execute().data or []
+    )
+    tt_map = {t["id"]: t for t in latest_by_class.values()}
+    prof_ids = list({s["professor_id"] for s in slots if s.get("professor_id")})
+    prof_map = {p["id"]: p["full_name"] for p in (db.from_("profiles").select("id, full_name").in_("id", prof_ids).execute().data or [])} if prof_ids else {}
+
+    rooms: dict[str, list[dict]] = {}
+    for s in slots:
+        room = (s.get("room") or "").strip()
+        if not room:
+            continue
+        tt = tt_map.get(s["timetable_id"], {})
+        rooms.setdefault(room, []).append({
+            "day_of_week": s["day_of_week"],
+            "start_time": s["start_time"],
+            "end_time": s["end_time"],
+            "subject": s.get("subject"),
+            "class_name": (tt.get("classes") or {}).get("name"),
+            "professor_name": prof_map.get(s.get("professor_id")),
+        })
+
+    return [
+        {"room": room, "slot_count": len(occ), "slots": occ}
+        for room, occ in sorted(rooms.items(), key=lambda kv: kv[0])
+    ]
+
+
 @router.get("/{timetable_id}")
 async def get_timetable(
     timetable_id: str,
