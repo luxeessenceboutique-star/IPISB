@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { ArrowLeft, Upload, Download, Trash2, Users, Search } from "lucide-react";
+import { ArrowLeft, Upload, Download, Trash2, Users, Search, Plus, X } from "lucide-react";
 import { PageHead, EmptyHint } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/roster")({
@@ -55,6 +55,131 @@ const COLUMNS: { key: string; label: string }[] = [
 
 type RosterRow = { id: string; academic_year: string; [key: string]: unknown };
 
+const fieldStyle = { marginTop: 6, marginBottom: 14, width: "100%", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
+const labelStyle = { fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL.muted, letterSpacing: ".08em", textTransform: "uppercase" as const };
+const groupTitleStyle = { fontFamily: sans, fontSize: 11.5, fontWeight: 700, color: "var(--pal-primary-deep)", marginTop: 18, marginBottom: 6 };
+
+type FormState = Record<string, string> & { besoins_specifiques?: "true" | "false" };
+
+const EMPTY_FORM: FormState = {
+  academic_year: "2025-2026", departement: "", region: "", province: "", milieu: "",
+  etablissement: "", mode_formation: "", niveau_formation: "", secteur: "", filiere: "", annee_formation: "",
+  nom: "", prenom: "", genre: "", besoins_specifiques: "false", type_handicap: "",
+  cin: "", id_massar: "", date_naissance: "", nationalite: "", etranger_migrant_refugie: "",
+  pays_origine: "", niveau_scolaire: "", date_dernier_niveau: "",
+};
+
+function Field({ label, k, form, setForm, type = "text" }: { label: string; k: string; form: FormState; setForm: (f: FormState) => void; type?: string }) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <input
+        type={type} value={form[k] ?? ""} onChange={e => setForm({ ...form, [k]: e.target.value })}
+        style={fieldStyle} className="u-input"
+      />
+    </div>
+  );
+}
+
+function NewStudentModal({ year, onClose, onCreated }: { year: string; onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState<FormState>({ ...EMPTY_FORM, academic_year: year });
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!form.nom?.trim() || !form.prenom?.trim()) { toast.error("Nom et prénom sont obligatoires."); return; }
+    setBusy(true);
+    try {
+      const payload: Record<string, unknown> = { ...form, besoins_specifiques: form.besoins_specifiques === "true" };
+      for (const k of Object.keys(payload)) {
+        if (payload[k] === "") payload[k] = null;
+      }
+      await api.post("/api/roster", payload);
+      toast.success("Stagiaire ajouté.");
+      onCreated();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'ajout.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, width: "100%", maxWidth: 640, maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
+        <div style={{ padding: "18px 24px", borderBottom: `1px solid ${PAL.line}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 500, color: PAL.ink }}>Nouveau stagiaire</div>
+          <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}><X size={18} strokeWidth={1.7} /></button>
+        </div>
+
+        <div style={{ overflowY: "auto", padding: "4px 24px 20px" }}>
+          <div style={groupTitleStyle}>Identité</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Nom *" k="nom" form={form} setForm={setForm} />
+            <Field label="Prénom *" k="prenom" form={form} setForm={setForm} />
+            <div>
+              <label style={labelStyle}>Genre</label>
+              <select value={form.genre ?? ""} onChange={e => setForm({ ...form, genre: e.target.value })} style={fieldStyle} className="u-input">
+                <option value="">—</option>
+                <option value="M">M</option>
+                <option value="F">F</option>
+              </select>
+            </div>
+            <Field label="Date de naissance" k="date_naissance" form={form} setForm={setForm} type="date" />
+            <Field label="Nationalité" k="nationalite" form={form} setForm={setForm} />
+            <Field label="CIN" k="cin" form={form} setForm={setForm} />
+            <Field label="Id massar" k="id_massar" form={form} setForm={setForm} />
+          </div>
+
+          <div style={groupTitleStyle}>Formation</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Filière" k="filiere" form={form} setForm={setForm} />
+            <Field label="Niveau (S/Q/T/TS)" k="niveau_formation" form={form} setForm={setForm} />
+            <Field label="Année (1°A/2°A/3°A)" k="annee_formation" form={form} setForm={setForm} />
+            <Field label="Établissement" k="etablissement" form={form} setForm={setForm} />
+            <Field label="Mode de formation" k="mode_formation" form={form} setForm={setForm} />
+            <Field label="Secteur" k="secteur" form={form} setForm={setForm} />
+            <Field label="Année scolaire" k="academic_year" form={form} setForm={setForm} />
+          </div>
+
+          <div style={groupTitleStyle}>Localisation</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Département" k="departement" form={form} setForm={setForm} />
+            <Field label="Région" k="region" form={form} setForm={setForm} />
+            <Field label="Province / préfecture" k="province" form={form} setForm={setForm} />
+            <div>
+              <label style={labelStyle}>Urbain/Rural</label>
+              <select value={form.milieu ?? ""} onChange={e => setForm({ ...form, milieu: e.target.value })} style={fieldStyle} className="u-input">
+                <option value="">—</option>
+                <option value="Urbain">Urbain</option>
+                <option value="Rural">Rural</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={groupTitleStyle}>Situation particulière</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 12.5, color: PAL.ink, marginBottom: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={form.besoins_specifiques === "true"} onChange={e => setForm({ ...form, besoins_specifiques: e.target.checked ? "true" : "false" })} />
+            Personne à besoins spécifiques
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Type d'handicap" k="type_handicap" form={form} setForm={setForm} />
+            <Field label="Étranger/migrant/réfugié" k="etranger_migrant_refugie" form={form} setForm={setForm} />
+            <Field label="Pays d'origine" k="pays_origine" form={form} setForm={setForm} />
+            <Field label="Niveau scolaire" k="niveau_scolaire" form={form} setForm={setForm} />
+            <Field label="Dernier niveau scolaire (date)" k="date_dernier_niveau" form={form} setForm={setForm} type="date" />
+          </div>
+        </div>
+
+        <div style={{ padding: "14px 24px", borderTop: `1px solid ${PAL.line}`, display: "flex", gap: 10, justifyContent: "flex-end", flexShrink: 0 }}>
+          <button onClick={onClose} style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer" }}>Annuler</button>
+          <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "…" : "Ajouter"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RosterPage() {
   const [rows, setRows] = useState<RosterRow[]>([]);
   const [years, setYears] = useState<string[]>([]);
@@ -63,6 +188,7 @@ function RosterPage() {
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState("");
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -130,6 +256,8 @@ function RosterPage() {
 
   return (
     <div style={{ fontFamily: sans }}>
+      {showNew && <NewStudentModal year={year} onClose={() => setShowNew(false)} onCreated={load} />}
+
       <Link to="/dashboard/pedagogique" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: PAL.muted, textDecoration: "none", marginBottom: 16 }}>
         <ArrowLeft size={14} strokeWidth={1.7} />Pédagogique
       </Link>
@@ -150,6 +278,9 @@ function RosterPage() {
               <Upload size={14} strokeWidth={1.7} />{importing ? "Import…" : "Importer (.xlsx)"}
               <input ref={fileInputRef} type="file" accept=".xlsx" disabled={importing} onChange={handleImport} style={{ display: "none" }} />
             </label>
+            <button type="button" onClick={() => setShowNew(true)} className="btn-c btn-c-primary btn-c-sm">
+              <Plus size={14} strokeWidth={1.7} />Nouveau stagiaire
+            </button>
           </div>
         }
       />

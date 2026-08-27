@@ -3,7 +3,7 @@ ligne par stagiaire : département/région/établissement/filière/année,
 identité, CIN, Id massar…) comme une vraie table important/exportable,
 INDÉPENDANTE des comptes de connexion (pas de auth.users par ligne — voir
 sql/supabase_student_roster_migration.sql)."""
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
 from typing import Annotated, Optional
 
@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 from supabase import Client
 
 from deps import CurrentUser, get_current_user, get_db
+from models import RosterCreate, RosterUpdate
 from utils.audit import log_audit
 from utils.excel import make_xlsx
 
@@ -108,6 +109,43 @@ async def list_years(
     _require_admin(user)
     rows = db.from_("student_roster").select("academic_year").execute().data or []
     return sorted({r["academic_year"] for r in rows if r.get("academic_year")}, reverse=True)
+
+
+@router.post("")
+async def create_roster_row(
+    body: RosterCreate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Ajout manuel d'un stagiaire — même fiche qu'une ligne importée."""
+    _require_admin(user)
+    if not body.nom.strip() or not body.prenom.strip():
+        raise HTTPException(400, "Nom et prénom sont obligatoires")
+    row = body.model_dump()
+    row["created_by"] = user.id
+    res = db.from_("student_roster").insert(row).execute()
+    log_audit(db, user.id, "roster.create", "student_roster", res.data[0]["id"])
+    return res.data[0]
+
+
+@router.patch("/{roster_id}")
+async def update_roster_row(
+    roster_id: str,
+    body: RosterUpdate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    existing = db.from_("student_roster").select("id").eq("id", roster_id).execute().data
+    if not existing:
+        raise HTTPException(404, "Ligne introuvable")
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(400, "Aucun champ à mettre à jour")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    res = db.from_("student_roster").update(updates).eq("id", roster_id).execute()
+    log_audit(db, user.id, "roster.update", "student_roster", roster_id, updates)
+    return res.data[0]
 
 
 @router.post("/import")

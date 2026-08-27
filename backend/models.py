@@ -1381,3 +1381,36 @@ class TaskAssign(BaseModel):
 class TaskCommentCreate(BaseModel):
     text: str
 
+
+class RosterCreate(BaseModel):
+    academic_year: str = "2025-2026"
+    departement: Optional[str] = None
+    region: Optional[str] = None
+    province: Optional[str] = None
+    milieu: Optional[str] = None
+    etablissement: Optional[str] = None
+    mode_formation: Optional[str] = None
+    niveau_formation: Optional[str] = None
+    secteur: Optional[str] = None
+    filiere: Optional[str] = None
+    annee_formation: Optional[str] = None
+    nom: str
+    prenom: str
+    genre: Optional[str] = None
+    besoins_specifiques: bool = False
+    type_handicap: Optional[str] = None
+    cin: Optional[str] = None
+    id_massar: Optional[str] = None
+    date_naissance: Optional[str] = None
+    nationalite: Optional[str] = None
+    etranger_migrant_refugie: Optional[str] = None
+    pays_origine: Optional[str] = None
+    niveau_scolaire: Optional[str] = None
+    date_dernier_niveau: Optional[str] = None
+
+
+class RosterUpdate(RosterCreate):
+    nom: Optional[str] = None
+    prenom: Optional[str] = None
+    academic_year: Optional[str] = None
+
