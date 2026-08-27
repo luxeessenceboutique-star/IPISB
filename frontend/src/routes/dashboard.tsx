@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  Home, ClipboardList, GraduationCap, Bell,
+  Home, ClipboardList, GraduationCap, Bell, Compass,
   Layers, Users, LogOut, X, FileText, CalendarClock, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   User, RefreshCw, Briefcase, Landmark, MessageCircle, Building2, TrendingUp,
@@ -182,6 +182,11 @@ function DashboardLayout() {
         ] : []),
       ],
     }),
+
+    // Pédagogique — hub centralisant tout ce qui est devenu difficile à
+    // trouver depuis la réorganisation de la barre latérale (Cours, Élèves,
+    // Séances… + RH/Comptabilité en raccourci).
+    leaf({ key: "dash.pedagogique", to: "/dashboard/pedagogique", icon: Compass }),
 
     // Formation initiale / continue — filières dynamiques (Classes → Filières).
     ...(canManageClasses ? [

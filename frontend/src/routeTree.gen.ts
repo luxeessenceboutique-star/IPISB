@@ -32,6 +32,7 @@ import { Route as DashboardReunionsInstancesRouteImport } from './routes/dashboa
 import { Route as DashboardPurchaseRequestsRouteImport } from './routes/dashboard.purchase-requests'
 import { Route as DashboardProfileRouteImport } from './routes/dashboard.profile'
 import { Route as DashboardPerformanceRouteImport } from './routes/dashboard.performance'
+import { Route as DashboardPedagogiqueRouteImport } from './routes/dashboard.pedagogique'
 import { Route as DashboardNotificationsRouteImport } from './routes/dashboard.notifications'
 import { Route as DashboardMeetingsRouteImport } from './routes/dashboard.meetings'
 import { Route as DashboardLibraryRouteImport } from './routes/dashboard.library'
@@ -173,6 +174,11 @@ const DashboardProfileRoute = DashboardProfileRouteImport.update({
 const DashboardPerformanceRoute = DashboardPerformanceRouteImport.update({
   id: '/performance',
   path: '/performance',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPedagogiqueRoute = DashboardPedagogiqueRouteImport.update({
+  id: '/pedagogique',
+  path: '/pedagogique',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardNotificationsRoute = DashboardNotificationsRouteImport.update({
@@ -331,6 +337,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/library': typeof DashboardLibraryRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/pedagogique': typeof DashboardPedagogiqueRoute
   '/dashboard/performance': typeof DashboardPerformanceRoute
   '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
@@ -379,6 +386,7 @@ export interface FileRoutesByTo {
   '/dashboard/library': typeof DashboardLibraryRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/pedagogique': typeof DashboardPedagogiqueRoute
   '/dashboard/performance': typeof DashboardPerformanceRoute
   '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
@@ -429,6 +437,7 @@ export interface FileRoutesById {
   '/dashboard/library': typeof DashboardLibraryRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/pedagogique': typeof DashboardPedagogiqueRoute
   '/dashboard/performance': typeof DashboardPerformanceRoute
   '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
@@ -480,6 +489,7 @@ export interface FileRouteTypes {
     | '/dashboard/library'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/pedagogique'
     | '/dashboard/performance'
     | '/dashboard/profile'
     | '/dashboard/purchase-requests'
@@ -528,6 +538,7 @@ export interface FileRouteTypes {
     | '/dashboard/library'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/pedagogique'
     | '/dashboard/performance'
     | '/dashboard/profile'
     | '/dashboard/purchase-requests'
@@ -577,6 +588,7 @@ export interface FileRouteTypes {
     | '/dashboard/library'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/pedagogique'
     | '/dashboard/performance'
     | '/dashboard/profile'
     | '/dashboard/purchase-requests'
@@ -778,6 +790,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPerformanceRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pedagogique': {
+      id: '/dashboard/pedagogique'
+      path: '/pedagogique'
+      fullPath: '/dashboard/pedagogique'
+      preLoaderRoute: typeof DashboardPedagogiqueRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/notifications': {
       id: '/dashboard/notifications'
       path: '/notifications'
@@ -965,6 +984,7 @@ interface DashboardRouteChildren {
   DashboardLibraryRoute: typeof DashboardLibraryRoute
   DashboardMeetingsRoute: typeof DashboardMeetingsRoute
   DashboardNotificationsRoute: typeof DashboardNotificationsRoute
+  DashboardPedagogiqueRoute: typeof DashboardPedagogiqueRoute
   DashboardPerformanceRoute: typeof DashboardPerformanceRoute
   DashboardProfileRoute: typeof DashboardProfileRoute
   DashboardPurchaseRequestsRoute: typeof DashboardPurchaseRequestsRoute
@@ -1003,6 +1023,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardLibraryRoute: DashboardLibraryRoute,
   DashboardMeetingsRoute: DashboardMeetingsRoute,
   DashboardNotificationsRoute: DashboardNotificationsRoute,
+  DashboardPedagogiqueRoute: DashboardPedagogiqueRoute,
   DashboardPerformanceRoute: DashboardPerformanceRoute,
   DashboardProfileRoute: DashboardProfileRoute,
   DashboardPurchaseRequestsRoute: DashboardPurchaseRequestsRoute,
