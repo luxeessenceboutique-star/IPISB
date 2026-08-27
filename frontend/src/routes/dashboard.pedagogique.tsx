@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import {
   BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, IdCard,
   Presentation, CalendarRange, Library, Layers, UserCog, Wallet, ListChecks,
-  FileText, Megaphone, type LucideIcon,
+  FileText, Megaphone, Users, type LucideIcon,
 } from "lucide-react";
 import { PageHead, SectionLabel } from "@/components/dashboard/ui";
 
@@ -65,6 +65,7 @@ function PedagogiquePage() {
     { key: "exams", label: "Examens", sub: "Épreuves, questions et résultats.", to: "/dashboard/exams", icon: GraduationCap, show: !isRestrictedStaff },
     { key: "classes", label: "Classes", sub: "Filières, promotions et effectifs.", to: "/dashboard/classes", icon: Layers, show: canManageClasses },
     { key: "students", label: "Élèves", sub: "Fiches stagiaires et dossiers.", to: "/dashboard/students", icon: IdCard, show: isAdmin || isProf },
+    { key: "roster", label: "Effectifs des stagiaires", sub: "Import/export Excel — même format que le Canevas.", to: "/dashboard/roster", icon: Users, show: showRh || isAdmin },
     { key: "teaching-sessions", label: "Séances", sub: "Historique des séances et retours.", to: "/dashboard/teaching-sessions", icon: Presentation, show: isAdmin || isProf },
     { key: "timetables", label: "Emplois du temps", sub: "Grilles horaires par classe.", to: "/dashboard/timetables", icon: CalendarRange, show: isAdmin || isProf },
     { key: "library", label: "Bibliothèque", sub: "Documents et ressources par filière.", to: "/dashboard/library", icon: Library, show: isAdmin || isProf },
