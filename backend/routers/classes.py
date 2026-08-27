@@ -213,7 +213,7 @@ async def create_class(
             title="Nouvelle classe à valider 🏫",
             message=f"Une classe « {body.name} » saisie par la caisse attend votre validation.",
             type="info",
-            link="/dashboard/classes",
+            link="/dashboard/accounting?tab=validations",
         )
         return {"pending": True, "op_id": (op.data[0]["id"] if op.data else None)}
 
@@ -323,7 +323,7 @@ async def add_student(
             title="Nouvelle inscription à valider 🎓",
             message="Une inscription saisie par la caisse attend votre validation.",
             type="info",
-            link="/dashboard/accounting",
+            link="/dashboard/accounting?tab=validations",
         )
         return {"pending": True, "op_id": (op.data[0]["id"] if op.data else None)}
 
@@ -401,7 +401,7 @@ async def transfer_student(
             title="Transfert d'élève à valider 🔁",
             message=f"Un transfert vers « {by_id[to_class_id]['name']} » attend votre validation.",
             type="info",
-            link="/dashboard/classes",
+            link="/dashboard/accounting?tab=validations",
         )
         return {"pending": True, "op_id": (op.data[0]["id"] if op.data else None)}
 

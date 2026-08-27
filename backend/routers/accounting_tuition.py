@@ -616,7 +616,7 @@ async def create_payment(
             title="Nouvelle saisie à valider 🧾",
             message="Un paiement de scolarité saisi par la caisse attend votre validation.",
             type="info",
-            link="/dashboard/accounting",
+            link="/dashboard/accounting?tab=validations",
         )
         log_audit(db, user.id, "tuition_payment.pending", "pending_operation",
                   (op.data[0]["id"] if op.data else None),
@@ -881,7 +881,7 @@ async def delete_payment(
         title="Suppression de versement à valider ⚠️",
         message="Un paiement de scolarité est proposé à la suppression et attend une seconde validation.",
         type="warning",
-        link="/dashboard/accounting",
+        link="/dashboard/accounting?tab=validations",
     )
     log_audit(db, user.id, "tuition_payment.delete_pending", "pending_operation",
               (op.data[0]["id"] if op.data else None),

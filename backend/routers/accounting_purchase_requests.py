@@ -164,7 +164,7 @@ async def create_request(
                     title="Nouvelle demande d'achat 🛒",
                     message=f"{user.email} a soumis la demande {pr.get('request_number', '')}. Une décision est attendue.",
                     type="info",
-                    link="/dashboard/accounting",
+                    link="/dashboard/accounting?tab=purchase_requests",
                 )
         except Exception:
             pass

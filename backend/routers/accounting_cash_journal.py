@@ -163,7 +163,7 @@ def _queue_cash_op(
             title="Opération de caisse à valider 🧾",
             message=notify_message,
             type="info",
-            link="/dashboard/accounting",
+            link="/dashboard/accounting?tab=validations",
         )
     except Exception:
         pass

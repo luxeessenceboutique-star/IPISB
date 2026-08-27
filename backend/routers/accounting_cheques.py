@@ -381,7 +381,7 @@ def defer_bank_payment(
                  (". Validation requise avant émission." if mode == CHEQUE
                   else ". Validation requise avant exécution.")),
         type="warning",
-        link="/dashboard/accounting",
+        link="/dashboard/accounting?tab=validations",
     )
     log_audit(db, user.id, "cheque.submit", "cheque", (cheque or {}).get("id"),
               {"kind": kind, "mode": mode, "amount": amount, "counterparty": counterparty,
@@ -899,7 +899,7 @@ async def set_cheque_status(
                      f"({float(cheque.get('amount') or 0):,.2f} DH) a été rejeté par la banque."
                      ).replace(",", " "),
             type="error",
-            link="/dashboard/accounting",
+            link="/dashboard/accounting?tab=cheques",
         )
     return _shape(res.data[0] if res.data else _load(db, cheque_id))
 
