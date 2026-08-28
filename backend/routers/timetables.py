@@ -101,13 +101,14 @@ async def get_rooms_usage(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Occupation réelle des salles — dérivée de l'emploi du temps validé le
-    plus récent de chaque classe (il n'existe pas de table 'salles' dédiée :
-    `room` est un champ texte libre sur chaque créneau)."""
+    plus récent de chaque classe — enrichie de la fiche salle (capacité,
+    bâtiment, équipement) quand elle existe (table `rooms`, mise en
+    correspondance par nom) et des filières qui l'utilisent."""
     if not user.is_admin():
         raise HTTPException(403, "Admin only")
 
     timetables = (
-        db.from_("timetables").select("id, class_id, week_start, status, classes(name)")
+        db.from_("timetables").select("id, class_id, week_start, status, classes(name, specialty_id)")
         .eq("status", "validated").order("week_start", desc=True)
         .execute().data or []
     )
@@ -116,38 +117,74 @@ async def get_rooms_usage(
         if t["class_id"] not in latest_by_class:
             latest_by_class[t["class_id"]] = t
     timetable_ids = [t["id"] for t in latest_by_class.values()]
-    if not timetable_ids:
-        return []
 
-    slots = (
-        db.from_("timetable_slots").select("*")
-        .in_("timetable_id", timetable_ids).not_.is_("room", "null")
-        .order("day_of_week").order("start_time")
-        .execute().data or []
-    )
+    specialty_ids = list({
+        (t.get("classes") or {}).get("specialty_id")
+        for t in latest_by_class.values() if (t.get("classes") or {}).get("specialty_id")
+    })
+    specialty_map = {
+        s["id"]: s["name"]
+        for s in (db.from_("specialties").select("id, name").in_("id", specialty_ids).execute().data or [])
+    } if specialty_ids else {}
+
+    slots = []
+    if timetable_ids:
+        slots = (
+            db.from_("timetable_slots").select("*")
+            .in_("timetable_id", timetable_ids).not_.is_("room", "null")
+            .order("day_of_week").order("start_time")
+            .execute().data or []
+        )
     tt_map = {t["id"]: t for t in latest_by_class.values()}
     prof_ids = list({s["professor_id"] for s in slots if s.get("professor_id")})
     prof_map = {p["id"]: p["full_name"] for p in (db.from_("profiles").select("id, full_name").in_("id", prof_ids).execute().data or [])} if prof_ids else {}
 
-    rooms: dict[str, list[dict]] = {}
+    room_occ: dict[str, list[dict]] = {}
+    room_filieres: dict[str, set[str]] = {}
     for s in slots:
         room = (s.get("room") or "").strip()
         if not room:
             continue
         tt = tt_map.get(s["timetable_id"], {})
-        rooms.setdefault(room, []).append({
+        cls = tt.get("classes") or {}
+        filiere = specialty_map.get(cls.get("specialty_id"))
+        room_occ.setdefault(room, []).append({
             "day_of_week": s["day_of_week"],
             "start_time": s["start_time"],
             "end_time": s["end_time"],
             "subject": s.get("subject"),
-            "class_name": (tt.get("classes") or {}).get("name"),
+            "class_name": cls.get("name"),
+            "filiere": filiere,
             "professor_name": prof_map.get(s.get("professor_id")),
         })
+        if filiere:
+            room_filieres.setdefault(room, set()).add(filiere)
 
-    return [
-        {"room": room, "slot_count": len(occ), "slots": occ}
-        for room, occ in sorted(rooms.items(), key=lambda kv: kv[0])
-    ]
+    # Fiches salles (table `rooms`) — mise en correspondance par nom
+    # normalisé, pour rattacher capacité/bâtiment/équipement quand connus,
+    # et faire apparaître les salles enregistrées sans occupation actuelle.
+    room_records = db.from_("rooms").select("*").execute().data or []
+    record_by_norm = {(r["name"] or "").strip().casefold(): r for r in room_records}
+
+    all_names = set(room_occ.keys()) | {r["name"] for r in room_records}
+
+    out = []
+    for room in sorted(all_names, key=lambda n: n.casefold()):
+        record = record_by_norm.get(room.strip().casefold())
+        occ = room_occ.get(room, [])
+        out.append({
+            "room": room,
+            "room_id": record.get("id") if record else None,
+            "capacity": record.get("capacity") if record else None,
+            "building": record.get("building") if record else None,
+            "floor": record.get("floor") if record else None,
+            "equipment": record.get("equipment") if record else None,
+            "notes": record.get("notes") if record else None,
+            "filieres": sorted(room_filieres.get(room, set())),
+            "slot_count": len(occ),
+            "slots": occ,
+        })
+    return out
 
 
 @router.get("/{timetable_id}")

@@ -1414,3 +1414,21 @@ class RosterUpdate(RosterCreate):
     prenom: Optional[str] = None
     academic_year: Optional[str] = None
 
+
+class RoomCreate(BaseModel):
+    name: str
+    capacity: Optional[int] = None
+    building: Optional[str] = None
+    floor: Optional[str] = None
+    equipment: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    capacity: Optional[int] = None
+    building: Optional[str] = None
+    floor: Optional[str] = None
+    equipment: Optional[str] = None
+    notes: Optional[str] = None
+

@@ -28,6 +28,7 @@ from routers import teaching_sessions, session_feedback
 from routers import auth as auth_router
 from routers import tasks
 from routers import roster
+from routers import rooms
 
 app = FastAPI(title="IPISBE Connect API", version="1.0.0")
 
@@ -129,6 +130,7 @@ app.include_router(session_feedback.router, prefix="/api")
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(roster.router, prefix="/api")
+app.include_router(rooms.router, prefix="/api")
 
 
 @app.get("/health")
