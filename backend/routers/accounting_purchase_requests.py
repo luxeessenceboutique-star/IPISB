@@ -1,13 +1,18 @@
+import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import PurchaseRequestCreate, PurchaseRequestUpdate, DecisionInput, QuoteSelectInput, PurchaseInstallmentsReplace
 from utils.audit import log_audit
 from utils.pdf_generators import render_purchase_request_pdf
+from utils.uploads import validate_and_read
 
 router = APIRouter(prefix="/accounting/purchase-requests", tags=["accounting"])
+
+BUCKET = "accounting"
+SIGNED_URL_TTL = 60 * 60  # 1 heure — même bucket que les pièces jointes de devis
 
 REQUEST_TYPES = {"nouveau_besoin", "renouvellement"}
 ASSET_CATEGORIES = {"consommable", "equipement", "locaux", "service"}
@@ -422,6 +427,86 @@ async def replace_installments(
         .eq("purchase_request_id", pr_id).order("rank").execute().data
     ) or []
     return rows
+
+
+# ── Pièce jointe — cahier des charges (CDC) ───────────────────────────────────
+
+@router.post("/{pr_id}/cdc")
+async def upload_cdc_attachment(
+    pr_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    file: UploadFile,
+):
+    """Joint (ou remplace) le cahier des charges de la demande. Ouvert à
+    l'auteur de la DA et à l'administration."""
+    pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
+    if pr["status"] in LOCKED_STATUSES:
+        raise HTTPException(400, "Cette demande est verrouillée (commande émise ou annulée).")
+
+    data, ext = await validate_and_read(file)
+    file_path = f"purchase_request/{pr_id}/cdc/{uuid.uuid4().hex}.{ext}"
+    try:
+        db.storage.from_(BUCKET).upload(file_path, data, {"content-type": file.content_type})
+    except Exception as e:
+        raise HTTPException(500, f"Échec du stockage du fichier : {str(e)}")
+
+    # Remplace l'éventuel CDC précédent.
+    if pr.get("cdc_attachment_path"):
+        try:
+            db.storage.from_(BUCKET).remove([pr["cdc_attachment_path"]])
+        except Exception:
+            pass
+
+    res = db.from_("purchase_requests").update({
+        "cdc_attachment_path": file_path,
+        "cdc_attachment_name": file.filename or "cdc",
+    }).eq("id", pr_id).execute()
+    log_audit(db, user.id, "purchase_request.cdc.upload", "purchase_request", pr_id,
+              {"file_name": file.filename})
+    return res.data[0]
+
+
+@router.get("/{pr_id}/cdc")
+async def download_cdc_attachment(
+    pr_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
+    if not pr.get("cdc_attachment_path"):
+        raise HTTPException(404, "Aucun cahier des charges joint à cette demande.")
+    signed = db.storage.from_(BUCKET).create_signed_url(pr["cdc_attachment_path"], SIGNED_URL_TTL)
+    return {
+        "signed_url": signed.get("signedURL") or signed.get("signed_url"),
+        "file_name": pr.get("cdc_attachment_name") or "cdc",
+    }
+
+
+@router.delete("/{pr_id}/cdc")
+async def delete_cdc_attachment(
+    pr_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
+    if pr["status"] in LOCKED_STATUSES:
+        raise HTTPException(400, "Cette demande est verrouillée (commande émise ou annulée).")
+    if not pr.get("cdc_attachment_path"):
+        raise HTTPException(404, "Aucun cahier des charges joint à cette demande.")
+    try:
+        db.storage.from_(BUCKET).remove([pr["cdc_attachment_path"]])
+    except Exception:
+        pass
+    res = db.from_("purchase_requests").update({
+        "cdc_attachment_path": None,
+        "cdc_attachment_name": None,
+    }).eq("id", pr_id).execute()
+    log_audit(db, user.id, "purchase_request.cdc.delete", "purchase_request", pr_id)
+    return res.data[0]
 
 
 @router.get("/{pr_id}/pdf")

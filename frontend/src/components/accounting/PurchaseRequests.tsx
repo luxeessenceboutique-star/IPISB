@@ -70,6 +70,7 @@ type PR = {
   id: string; request_number: string; company: string | null; service: string | null;
   requester_name: string | null; project: string | null; activity: string | null; justification: string | null;
   request_type: string; asset_category: string; characteristics: string | null;
+  cdc_attachment_name: string | null; cdc_attachment_path: string | null;
   conformity_note: string | null; conformity_criteria: string[] | null;
   article_code: string | null; quantity: number; budget_estimate: number; duration: string | null;
   need_decision: string; need_decision_comment: string | null;
@@ -111,6 +112,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   const [criteria, setCriteria] = useState<string[]>([]);
   const toggleCriterion = (k: string) =>
     setCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
+  const [cdcFile, setCdcFile] = useState<File | null>(null);
 
   // Le demandeur est toujours le propriétaire du compte connecté.
   useEffect(() => { setForm(f => ({ ...f, requester_name: ownerName })); }, [ownerName]);
@@ -119,12 +121,18 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     if (!form.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
     setBusy(true);
     try {
-      await api.post("/api/accounting/purchase-requests", {
+      const pr = await api.post("/api/accounting/purchase-requests", {
         ...form,
         quantity: parseFloat(form.quantity) || 1,
         budget_estimate: parseFloat(form.budget_estimate) || 0,
         conformity_criteria: criteria,
       });
+      // Cahier des charges (optionnel) — envoyé une fois la DA créée.
+      if (cdcFile && pr?.id) {
+        const fd = new FormData();
+        fd.append("file", cdcFile);
+        await api.uploadFile(`/api/accounting/purchase-requests/${pr.id}/cdc`, fd);
+      }
       toast.success("Demande d'achat créée !");
       onSaved(); onClose();
     } catch (err: any) {
@@ -173,6 +181,9 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         </div>
         <label style={labelStyle}>Caractéristiques / CDC</label>
         <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
+        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}><Paperclip size={12} /> Cahier des charges (fichier, facultatif)</label>
+        <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={e => setCdcFile(e.target.files?.[0] ?? null)} style={{ ...fieldStyle, padding: "9px 10px" }} className="u-input" />
+        <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 14 }}>Formats acceptés : PDF, JPG ou PNG.{cdcFile ? ` Sélectionné : ${cdcFile.name}` : ""}</div>
       </div>
 
       <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
@@ -445,6 +456,23 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
       if (res?.signed_url) window.open(res.signed_url, "_blank", "noopener");
     } catch (err: any) { toast.error(err?.message ?? "Pièce jointe indisponible."); }
   }
+  async function openCdcAttachment() {
+    try {
+      const res = await api.get(`/api/accounting/purchase-requests/${prId}/cdc`);
+      if (res?.signed_url) window.open(res.signed_url, "_blank", "noopener");
+    } catch (err: any) { toast.error(err?.message ?? "Cahier des charges indisponible."); }
+  }
+  async function uploadCdc(file: File) {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.uploadFile(`/api/accounting/purchase-requests/${prId}/cdc`, fd);
+      toast.success("Cahier des charges joint.");
+      await load(); onChanged();
+    } catch (err: any) { toast.error(err?.message ?? "Erreur lors de l'envoi."); }
+    finally { setBusy(false); }
+  }
   function validateOrder() {
     if (!pr?.order) return;
     act(() => api.post(`/api/accounting/purchases/${pr.order!.id}/validate-order`, {}),
@@ -454,6 +482,8 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
   if (!pr) return <Backdrop width={720}><div style={{ padding: 20, color: PAL.muted }}>Chargement…</div></Backdrop>;
 
   const st = STATUS[pr.status];
+  // Miroir de LOCKED_STATUSES (backend) : la DA n'accepte plus d'écriture.
+  const cdcLocked = pr.status === "commande_emise" || pr.status === "annulee";
   const canDecide = can("accounting.purchase_requests", "validate_v2", pr.budget_estimate);
   const canDecideNeed = canDecide && (pr.status === "brouillon" || pr.status === "retournee");
   const inQuoteStage = pr.status === "besoin_valide" || pr.status === "en_consultation";
@@ -495,7 +525,28 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
         {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
       </div>
       {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
-      {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 14 }}>{pr.characteristics}</div>}
+      {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 8 }}>{pr.characteristics}</div>}
+      {(pr.cdc_attachment_name || !cdcLocked) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          {pr.cdc_attachment_name ? (
+            <button onClick={openCdcAttachment} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={pr.cdc_attachment_name}>
+              <FileText size={12} />Cahier des charges
+            </button>
+          ) : (
+            <span style={{ fontSize: 11.5, color: PAL.muted }}>Aucun cahier des charges joint.</span>
+          )}
+          {!cdcLocked && (
+            <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
+              <Paperclip size={12} />{pr.cdc_attachment_name ? "Remplacer" : "Joindre le CDC"}
+              <input
+                type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy}
+                onChange={e => { const f = e.target.files?.[0]; if (f) uploadCdc(f); e.target.value = ""; }}
+                style={{ display: "none" }}
+              />
+            </label>
+          )}
+        </div>
+      )}
 
       {(pr.conformity_note || (pr.conformity_criteria && pr.conformity_criteria.length > 0)) && (
         <div style={{ marginBottom: 14 }}>
