@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Building2, Layers, User, Clock3, Plus, X, Pencil, Trash2, GraduationCap, MapPin, Users as UsersIcon } from "lucide-react";
 import { PageHead, EmptyHint, SectionLabel } from "@/components/dashboard/ui";
 
-export const Route = createFileRoute("/dashboard/architecture")({
+export const Route = createFileRoute("/dashboard/agenda-formation")({
   beforeLoad: async () => {
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) throw redirect({ to: "/auth" });
@@ -17,7 +17,7 @@ export const Route = createFileRoute("/dashboard/architecture")({
       .eq("role", "admin");
     if (!data?.length) throw redirect({ to: "/dashboard" });
   },
-  component: ArchitecturePage,
+  component: AgendaFormationPage,
 });
 
 const PAL = {
@@ -271,7 +271,7 @@ function RoomCard({ r, onOpen }: { r: RoomUsage; onOpen: () => void }) {
   );
 }
 
-function ArchitecturePage() {
+function AgendaFormationPage() {
   const [rooms, setRooms] = useState<RoomUsage[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
@@ -325,7 +325,7 @@ function ArchitecturePage() {
 
       <PageHead
         eyebrow="Aperçu"
-        title="Architecture de l'institut"
+        title="Agenda formation"
         sub="Programmes de formation et occupation réelle des salles, d'après le dernier emploi du temps validé de chaque classe."
         actions={
           <button type="button" onClick={() => setShowNew(true)} className="btn-c btn-c-primary btn-c-sm">

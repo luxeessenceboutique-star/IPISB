@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { useEffect, useState } from "react";
 import {
   Home, ClipboardList, GraduationCap, Bell, Compass,
-  Layers, Users, LogOut, X, FileText, CalendarClock, Wallet,
+  Layers, Users, LogOut, X, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   User, RefreshCw, Briefcase, Landmark, MessageCircle, Building2, TrendingUp,
   ChevronDown, Plus,
@@ -170,8 +170,7 @@ function DashboardLayout() {
       children: [
         leaf({ key: "dash.overview", to: "/dashboard", icon: Home, exact: true }),
         ...(isAdmin || isProf ? [
-          leaf({ key: "dash.agendaFormateur", to: "/dashboard/agenda-formateur", icon: CalendarClock }),
-          leaf({ key: "dash.architecture", to: "/dashboard/architecture", icon: Building2 }),
+          leaf({ key: "dash.agendaFormation", to: "/dashboard/agenda-formation", icon: Building2 }),
           group({
             key: "dash.kpis", icon: TrendingUp,
             children: [
