@@ -143,6 +143,11 @@ function DashboardLayout() {
   const showDocuments = isAdmin;
   const showUsers = isAdmin || isProf;
 
+  // Comptable externe (le cabinet ne fait pas partie de l'équipe) : aucun
+  // autre rôle métier — sa barre latérale se réduit à son seul espace,
+  // sans Aperçu/Pédagogique/Gestion qui ne le concernent pas.
+  const isAccountantOnly = isAccountant && !isAdmin && !isProf && !isRh && !isAssistantRh && !isCashier && !isComptabilite;
+
   function filiereChildren(filiereType: Specialty["type"], addLabel: string): NavLeaf[] {
     const items: NavLeaf[] = specialties
       .filter(s => s.type === filiereType)
@@ -159,7 +164,11 @@ function DashboardLayout() {
     return items;
   }
 
-  const navEntries: NavEntry[] = [
+  const navEntries: NavEntry[] = isAccountantOnly ? [
+    // Espace comptable exclusif — comptable externe, aucune autre rubrique.
+    leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
+    leaf({ key: "dash.accountingSpace", to: "/dashboard/accounting", icon: Wallet, label: spaceLabel, search: { tab: "overview" } }),
+  ] : [
     // Notifications en tout premier, visible par tous.
     leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
 

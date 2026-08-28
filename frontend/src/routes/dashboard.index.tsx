@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BookOpen, FileText, GraduationCap, CalendarDays, Bell, ChevronDown, ChevronRight, ArrowRight, Users, Activity, Home, Building2, TrendingUp, ListChecks } from "lucide-react";
@@ -14,6 +14,20 @@ import { PerformancePage } from "./dashboard.performance";
 import { AgendaGestionPage } from "./dashboard.agenda-gestion";
 
 export const Route = createFileRoute("/dashboard/")({
+  beforeLoad: async () => {
+    // Comptable externe (aucun autre rôle métier) : l'Aperçu académique ne le
+    // concerne pas — direction immédiate vers son espace comptable exclusif.
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) return;
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", sess.session.user.id);
+    const roles = (data ?? []).map((r) => r.role);
+    if (roles.length > 0 && roles.every((r) => r === "accountant")) {
+      throw redirect({ to: "/dashboard/accounting", search: { tab: "overview", scope: undefined } });
+    }
+  },
   component: DashboardHome,
 });
 

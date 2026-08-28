@@ -104,7 +104,7 @@ function AccountingPage() {
   return (
     <div style={{ fontFamily: sans }}>
       <PageHead
-        eyebrow="Gestion administrative"
+        eyebrow={role === "accountant" ? "Espace comptable" : "Gestion administrative"}
         title="Comptabilité"
         sub={sub}
       />
