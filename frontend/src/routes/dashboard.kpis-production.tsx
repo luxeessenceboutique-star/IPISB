@@ -74,7 +74,7 @@ function ChartCard({ title, sub, children }: { title: string; sub?: string; chil
   );
 }
 
-function ProductionPage() {
+export function ProductionPage() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [loading, setLoading] = useState(true);

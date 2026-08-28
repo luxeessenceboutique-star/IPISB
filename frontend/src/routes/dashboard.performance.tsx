@@ -73,7 +73,7 @@ function ChartCard({ title, sub, children }: { title: string; sub?: string; chil
   );
 }
 
-function PerformancePage() {
+export function PerformancePage() {
   const { roles } = useAuth();
   const isAdmin = roles.includes("admin");
   const [courses, setCourses] = useState<CourseAnalytics[]>([]);

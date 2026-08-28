@@ -271,7 +271,7 @@ function RoomCard({ r, onOpen }: { r: RoomUsage; onOpen: () => void }) {
   );
 }
 
-function AgendaFormationPage() {
+export function AgendaFormationPage() {
   const [rooms, setRooms] = useState<RoomUsage[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);

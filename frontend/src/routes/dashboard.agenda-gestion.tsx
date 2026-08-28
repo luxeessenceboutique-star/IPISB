@@ -66,7 +66,7 @@ function ItemRow({ item, onOpen }: { item: AgendaItem; onOpen: () => void }) {
   );
 }
 
-function AgendaGestionPage() {
+export function AgendaGestionPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [loading, setLoading] = useState(true);

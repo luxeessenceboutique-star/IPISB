@@ -2,9 +2,9 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { useEffect, useState } from "react";
 import {
   Home, ClipboardList, GraduationCap, Bell, Compass,
-  Layers, Users, LogOut, X, FileText, Wallet, ListChecks,
+  Layers, Users, LogOut, X, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
-  User, RefreshCw, Briefcase, Landmark, MessageCircle, Building2, TrendingUp,
+  User, RefreshCw, Briefcase, Landmark, MessageCircle,
   ChevronDown, Plus,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
@@ -163,27 +163,10 @@ function DashboardLayout() {
     // Notifications en tout premier, visible par tous.
     leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
 
-    // Aperçu — Vue d'ensemble pour tous ; le reste réservé à l'encadrement
-    // académique (repli automatique en simple lien si aucun enfant en plus).
-    group({
-      key: "dash.overview", icon: Home, homeTo: "/dashboard", exact: true,
-      children: [
-        leaf({ key: "dash.overview", to: "/dashboard", icon: Home, exact: true }),
-        ...(isAdmin || isProf ? [
-          leaf({ key: "dash.agendaFormation", to: "/dashboard/agenda-formation", icon: Building2 }),
-          group({
-            key: "dash.kpis", icon: TrendingUp,
-            children: [
-              leaf({ key: "dash.kpis.production", to: "/dashboard/kpis-production", icon: Layers }),
-              leaf({ key: "dash.kpis.performance", to: "/dashboard/performance", icon: TrendingUp }),
-            ],
-          }),
-        ] : []),
-        ...(isAdmin || hasHrRole || isComptabilite ? [
-          leaf({ key: "dash.agendaGestion", to: "/dashboard/agenda-gestion", icon: ListChecks }),
-        ] : []),
-      ],
-    }),
+    // Aperçu — page unique : Vue d'ensemble, Agenda formation, KPIs et Agenda
+    // de gestion y sont tous réunis en onglets internes (dashboard.index.tsx)
+    // plutôt qu'en sous-liens de barre latérale séparés.
+    leaf({ key: "dash.overview", to: "/dashboard", icon: Home, exact: true }),
 
     // Pédagogique — hub centralisant tout ce qui est devenu difficile à
     // trouver depuis la réorganisation de la barre latérale (Cours, Élèves,

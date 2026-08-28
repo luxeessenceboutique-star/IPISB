@@ -1,13 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { BookOpen, FileText, GraduationCap, CalendarDays, Bell, ChevronDown, ChevronRight, ArrowRight, Users, Activity } from "lucide-react";
+import { BookOpen, FileText, GraduationCap, CalendarDays, Bell, ChevronDown, ChevronRight, ArrowRight, Users, Activity, Home, Building2, TrendingUp, ListChecks } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { CountUp } from "@/components/CountUp";
 import { StatCardsSkeleton, ListSkeleton } from "@/components/Skeletons";
 import { PageHead, SectionLabel } from "@/components/dashboard/ui";
+import { AgendaFormationPage } from "./dashboard.agenda-formation";
+import { ProductionPage } from "./dashboard.kpis-production";
+import { PerformancePage } from "./dashboard.performance";
+import { AgendaGestionPage } from "./dashboard.agenda-gestion";
 
 export const Route = createFileRoute("/dashboard/")({
   component: DashboardHome,
@@ -123,6 +127,17 @@ function DashboardHome() {
 
   const canCreate = isAdmin || isProf;
 
+  const hasHrRole = roles.includes("rh") || roles.includes("assistant_rh");
+  const isComptabilite = roles.includes("comptabilite");
+  const showAgendaFormation = isAdmin;
+  const showKpis = isAdmin || isProf;
+  const showAgendaGestion = isAdmin || hasHrRole || isComptabilite;
+  const extraTabsVisible = showAgendaFormation || showKpis || showAgendaGestion;
+
+  type OverviewTab = "apercu" | "agenda-formation" | "kpis" | "agenda-gestion";
+  const [tab, setTab] = useState<OverviewTab>("apercu");
+  const [kpiSub, setKpiSub] = useState<"production" | "performance">("production");
+
   const [stats,   setStats]   = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -205,6 +220,68 @@ function DashboardHome() {
         }
       />
 
+      {extraTabsVisible && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 4, borderBottom: "1px solid var(--pal-line)", flexWrap: "wrap" }}>
+          {([
+            { key: "apercu" as const, label: lang === "fr" ? "Aperçu" : lang === "ar" ? "نظرة عامة" : "Overview", icon: Home, show: true },
+            { key: "agenda-formation" as const, label: t("dash.agendaFormation"), icon: Building2, show: showAgendaFormation },
+            { key: "kpis" as const, label: t("dash.kpis"), icon: TrendingUp, show: showKpis },
+            { key: "agenda-gestion" as const, label: t("dash.agendaGestion"), icon: ListChecks, show: showAgendaGestion },
+          ]).filter(x => x.show).map(x => {
+            const active = tab === x.key;
+            const Icon = x.icon;
+            return (
+              <button
+                key={x.key}
+                type="button"
+                onClick={() => setTab(x.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7,
+                  padding: "10px 16px", marginBottom: -1,
+                  border: "none", borderBottom: active ? "2px solid var(--pal-primary)" : "2px solid transparent",
+                  background: "transparent", cursor: "pointer",
+                  fontFamily: '"Manrope", system-ui, sans-serif', fontSize: 13.5, fontWeight: active ? 700 : 600,
+                  color: active ? "var(--pal-ink)" : "var(--pal-muted)",
+                }}
+              >
+                <Icon size={15} strokeWidth={1.7} />
+                {x.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {tab === "agenda-formation" && showAgendaFormation && <AgendaFormationPage />}
+
+      {tab === "kpis" && showKpis && (
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setKpiSub("production")}
+              className={`chip-c ${kpiSub === "production" ? "chip-c-green" : ""}`}
+              style={{ cursor: "pointer", border: "none" }}
+            >
+              {t("dash.kpis.production")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setKpiSub("performance")}
+              className={`chip-c ${kpiSub === "performance" ? "chip-c-green" : ""}`}
+              style={{ cursor: "pointer", border: "none" }}
+            >
+              {t("dash.kpis.performance")}
+            </button>
+          </div>
+          {kpiSub === "production" ? <ProductionPage /> : <PerformancePage />}
+        </div>
+      )}
+
+      {tab === "agenda-gestion" && showAgendaGestion && <AgendaGestionPage />}
+
+      {tab === "apercu" && (
+      <>
       {loading ? (
         <StatCardsSkeleton />
       ) : (
@@ -496,6 +573,8 @@ function DashboardHome() {
             </div>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );
