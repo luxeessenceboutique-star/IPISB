@@ -45,6 +45,7 @@ import { Route as DashboardCommunicationRouteImport } from './routes/dashboard.c
 import { Route as DashboardClassesRouteImport } from './routes/dashboard.classes'
 import { Route as DashboardAssignmentsRouteImport } from './routes/dashboard.assignments'
 import { Route as DashboardAnnouncementsRouteImport } from './routes/dashboard.announcements'
+import { Route as DashboardAgendaGestionRouteImport } from './routes/dashboard.agenda-gestion'
 import { Route as DashboardAgendaFormationRouteImport } from './routes/dashboard.agenda-formation'
 import { Route as DashboardAgendaRouteImport } from './routes/dashboard.agenda'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
@@ -241,6 +242,11 @@ const DashboardAnnouncementsRoute = DashboardAnnouncementsRouteImport.update({
   path: '/announcements',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAgendaGestionRoute = DashboardAgendaGestionRouteImport.update({
+  id: '/agenda-gestion',
+  path: '/agenda-gestion',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAgendaFormationRoute =
   DashboardAgendaFormationRouteImport.update({
     id: '/agenda-formation',
@@ -325,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/agenda-formation': typeof DashboardAgendaFormationRoute
+  '/dashboard/agenda-gestion': typeof DashboardAgendaGestionRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
   '/dashboard/classes': typeof DashboardClassesRoute
@@ -374,6 +381,7 @@ export interface FileRoutesByTo {
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/agenda-formation': typeof DashboardAgendaFormationRoute
+  '/dashboard/agenda-gestion': typeof DashboardAgendaGestionRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
   '/dashboard/classes': typeof DashboardClassesRoute
@@ -425,6 +433,7 @@ export interface FileRoutesById {
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
   '/dashboard/agenda-formation': typeof DashboardAgendaFormationRoute
+  '/dashboard/agenda-gestion': typeof DashboardAgendaGestionRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
   '/dashboard/classes': typeof DashboardClassesRoute
@@ -477,6 +486,7 @@ export interface FileRouteTypes {
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/agenda-formation'
+    | '/dashboard/agenda-gestion'
     | '/dashboard/announcements'
     | '/dashboard/assignments'
     | '/dashboard/classes'
@@ -526,6 +536,7 @@ export interface FileRouteTypes {
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/agenda-formation'
+    | '/dashboard/agenda-gestion'
     | '/dashboard/announcements'
     | '/dashboard/assignments'
     | '/dashboard/classes'
@@ -576,6 +587,7 @@ export interface FileRouteTypes {
     | '/dashboard/accounting'
     | '/dashboard/agenda'
     | '/dashboard/agenda-formation'
+    | '/dashboard/agenda-gestion'
     | '/dashboard/announcements'
     | '/dashboard/assignments'
     | '/dashboard/classes'
@@ -881,6 +893,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAnnouncementsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/agenda-gestion': {
+      id: '/dashboard/agenda-gestion'
+      path: '/agenda-gestion'
+      fullPath: '/dashboard/agenda-gestion'
+      preLoaderRoute: typeof DashboardAgendaGestionRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/agenda-formation': {
       id: '/dashboard/agenda-formation'
       path: '/agenda-formation'
@@ -972,6 +991,7 @@ interface DashboardRouteChildren {
   DashboardAccountingRoute: typeof DashboardAccountingRoute
   DashboardAgendaRoute: typeof DashboardAgendaRoute
   DashboardAgendaFormationRoute: typeof DashboardAgendaFormationRoute
+  DashboardAgendaGestionRoute: typeof DashboardAgendaGestionRoute
   DashboardAnnouncementsRoute: typeof DashboardAnnouncementsRoute
   DashboardAssignmentsRoute: typeof DashboardAssignmentsRoute
   DashboardClassesRoute: typeof DashboardClassesRoute
@@ -1011,6 +1031,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAccountingRoute: DashboardAccountingRoute,
   DashboardAgendaRoute: DashboardAgendaRoute,
   DashboardAgendaFormationRoute: DashboardAgendaFormationRoute,
+  DashboardAgendaGestionRoute: DashboardAgendaGestionRoute,
   DashboardAnnouncementsRoute: DashboardAnnouncementsRoute,
   DashboardAssignmentsRoute: DashboardAssignmentsRoute,
   DashboardClassesRoute: DashboardClassesRoute,

@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { useEffect, useState } from "react";
 import {
   Home, ClipboardList, GraduationCap, Bell, Compass,
-  Layers, Users, LogOut, X, FileText, Wallet,
+  Layers, Users, LogOut, X, FileText, Wallet, ListChecks,
   UserCog, LayoutGrid, History, ScrollText,
   User, RefreshCw, Briefcase, Landmark, MessageCircle, Building2, TrendingUp,
   ChevronDown, Plus,
@@ -178,6 +178,9 @@ function DashboardLayout() {
               leaf({ key: "dash.kpis.performance", to: "/dashboard/performance", icon: TrendingUp }),
             ],
           }),
+        ] : []),
+        ...(isAdmin || hasHrRole || isComptabilite ? [
+          leaf({ key: "dash.agendaGestion", to: "/dashboard/agenda-gestion", icon: ListChecks }),
         ] : []),
       ],
     }),

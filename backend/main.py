@@ -1,9 +1,12 @@
+import asyncio
 import logging
 import re
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from deps import FRONTEND_URL
+from deps import FRONTEND_URL, get_db
+from utils.reminders import scan_and_notify
 from routers import courses, assignments, exams, meetings, agenda, notifications, users, dashboard
 from routers import chatbot, resources, classes
 from routers import students, documents, schedules, announcements, timetables
@@ -29,8 +32,38 @@ from routers import auth as auth_router
 from routers import tasks
 from routers import roster
 from routers import rooms
+from routers import agenda_gestion
 
-app = FastAPI(title="IPISBE Connect API", version="1.0.0")
+log = logging.getLogger(__name__)
+
+REMINDER_SCAN_INTERVAL_SECONDS = 6 * 3600  # toutes les 6h
+REMINDER_SCAN_INITIAL_DELAY_SECONDS = 30    # laisse l'app démarrer avant le 1er passage
+
+
+async def _reminder_loop() -> None:
+    """Boucle en tâche de fond : relance périodiquement les échéances
+    RH/Comptabilité/Tâches (utils/reminders.py). Pas de dépendance externe
+    (pas d'APScheduler) — une simple boucle asyncio dans le process."""
+    await asyncio.sleep(REMINDER_SCAN_INITIAL_DELAY_SECONDS)
+    while True:
+        try:
+            result = await scan_and_notify(get_db())
+            log.info("Agenda de gestion — passage automatique : %s", result)
+        except Exception:
+            log.exception("Agenda de gestion — échec du passage automatique")
+        await asyncio.sleep(REMINDER_SCAN_INTERVAL_SECONDS)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_reminder_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(title="IPISBE Connect API", version="1.0.0", lifespan=lifespan)
 
 ALLOWED_ORIGINS = [
     FRONTEND_URL,
@@ -131,6 +164,7 @@ app.include_router(auth_router.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(roster.router, prefix="/api")
 app.include_router(rooms.router, prefix="/api")
+app.include_router(agenda_gestion.router, prefix="/api")
 
 
 @app.get("/health")
