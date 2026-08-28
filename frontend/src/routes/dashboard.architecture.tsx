@@ -285,8 +285,10 @@ function ArchitecturePage() {
         api.get("/api/timetables/rooms/usage") as Promise<RoomUsage[]>,
         api.get("/api/specialties") as Promise<Specialty[]>,
       ]);
-      setRooms(roomData);
-      setSpecialties(specData);
+      // Tolère une réponse d'un backend pas encore redéployé (avant l'ajout
+      // de `filieres`/`capacity`/…) — évite un crash sur un champ manquant.
+      setRooms((roomData ?? []).map(r => ({ ...r, filieres: r.filieres ?? [], slots: r.slots ?? [] })));
+      setSpecialties(specData ?? []);
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors du chargement.");
     } finally {
