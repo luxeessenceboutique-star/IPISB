@@ -11,6 +11,7 @@ import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { usePermissions } from "@/lib/permissions";
 import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
+import { SupplierFormModal } from "./Suppliers";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -222,7 +223,11 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [newSupplierName, setNewSupplierName] = useState("");
+  // Création d'un fournisseur à la volée : ouvre le vrai formulaire Fournisseur
+  // (SupplierFormModal, réutilisé depuis Suppliers.tsx) par-dessus ce modal,
+  // au lieu d'un simple champ nom — puis le sélectionne une fois créé.
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [extraSupplier, setExtraSupplier] = useState<Supplier | null>(null);
   // Livraison : « none » (non concernée), « free » (gratuite), « paid » (payante).
   const [deliveryMode, setDeliveryMode] = useState<"none" | "free" | "paid">("none");
   const [deliveryIncluded, setDeliveryIncluded] = useState(false);  // livraison comprise dans le total du devis ?
@@ -234,18 +239,11 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
 
   async function submit() {
     if (!form.quote_number.trim()) { toast.error("Le numéro de devis est requis."); return; }
-    if (form.supplier_id === "__new__" && !newSupplierName.trim()) { toast.error("Nom du fournisseur requis."); return; }
     setBusy(true);
     try {
-      // Création à la volée du fournisseur → enregistré dans la base fournisseurs.
-      let supplierId: string | null = form.supplier_id || null;
-      if (form.supplier_id === "__new__") {
-        const sup = await api.post("/api/accounting/suppliers", { company_name: newSupplierName.trim() });
-        supplierId = sup?.id ?? null;
-      }
       const quote = await api.post("/api/accounting/quotations", {
         purchase_request_id: prId,
-        supplier_id: supplierId,
+        supplier_id: form.supplier_id || null,
         quote_number: form.quote_number,
         quote_date: form.quote_date || null,
         expiration_date: form.expiration_date || null,
@@ -295,15 +293,31 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
         {/* Fournisseur (pleine largeur) */}
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={labelStyle}>Fournisseur</label>
-          <select className="u-input" style={cellInput} value={form.supplier_id} onChange={e => set("supplier_id", e.target.value)}>
+          <select
+            className="u-input" style={cellInput} value={form.supplier_id}
+            onChange={e => {
+              if (e.target.value === "__new__") { setShowSupplierForm(true); return; }
+              set("supplier_id", e.target.value);
+            }}
+          >
             <option value="">— Aucun —</option>
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
+            {extraSupplier && !suppliers.some(s => s.id === extraSupplier.id) && (
+              <option value={extraSupplier.id}>{extraSupplier.company_name}</option>
+            )}
             <option value="__new__">➕ Créer un fournisseur…</option>
           </select>
-          {form.supplier_id === "__new__" && (
-            <input className="u-input" style={{ ...cellInput, marginTop: 8 }} placeholder="Nom du nouveau fournisseur *" value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)} />
-          )}
         </div>
+        {showSupplierForm && (
+          <SupplierFormModal
+            zIndex={400}
+            onClose={() => setShowSupplierForm(false)}
+            onSaved={sup => {
+              if (sup) { setExtraSupplier(sup); set("supplier_id", sup.id); }
+              setShowSupplierForm(false);
+            }}
+          />
+        )}
 
         {/* N° devis | Montant */}
         <div><label style={labelStyle}>N° devis{req}</label><input className="u-input" style={cellInput} placeholder="ex. DV-2026-014" value={form.quote_number} onChange={e => set("quote_number", e.target.value)} /></div>
