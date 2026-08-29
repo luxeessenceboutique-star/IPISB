@@ -146,7 +146,7 @@ async def create_task(
             title="Nouvelle tâche assignée 📋",
             message=f"« {task['title']} » vous a été assignée.",
             type="info",
-            link="/dashboard/tasks",
+            link=f"/dashboard/tasks?focus={task['id']}",
         )
     return task
 
@@ -199,7 +199,7 @@ async def update_task_status(
             title="Statut de tâche modifié",
             message=f"« {task['title']} » est passée à « {body.status} ».",
             type="info",
-            link="/dashboard/tasks",
+            link=f"/dashboard/tasks?focus={task_id}",
         )
     return res.data[0]
 
@@ -225,7 +225,7 @@ async def assign_task(
             title="Tâche assignée 📋",
             message=f"« {task['title']} » vous a été assignée.",
             type="info",
-            link="/dashboard/tasks",
+            link=f"/dashboard/tasks?focus={task_id}",
         )
     return res.data[0]
 

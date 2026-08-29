@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Plus, CalendarClock, Trash2, ChevronLeft, ChevronRight, Check, X, CalendarDays, List, FileText, Paperclip, Ban } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { usePermissions } from "@/lib/permissions";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import type { Employee } from "./Employees";
 
 const PAL = {
@@ -299,6 +300,7 @@ export function RhLeaves() {
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<Leave | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   async function load() {
     setLoading(true);
@@ -447,7 +449,7 @@ export function RhLeaves() {
           <div style={{ flex: "1 1 360px", minWidth: 0 }}>
             <div className="dash-card overflow-hidden">
               {leaves.map(l => (
-                <div key={l.id} className="row-c flex-wrap" onClick={() => setSelected(l)} style={{ cursor: "pointer", background: selected?.id === l.id ? "var(--pal-pale)" : undefined }}>
+                <div key={l.id} ref={l.id === focusId ? attachFocus : undefined} className="row-c flex-wrap" onClick={() => setSelected(l)} style={{ cursor: "pointer", background: selected?.id === l.id ? "var(--pal-pale)" : undefined }}>
                   <span title={displayInfo(l).label} style={{
                     flexShrink: 0, width: 26, height: 26, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center",
                     background: displayInfo(l).color, color: displayInfo(l).text, fontSize: 10, fontWeight: 800, fontFamily: sans,

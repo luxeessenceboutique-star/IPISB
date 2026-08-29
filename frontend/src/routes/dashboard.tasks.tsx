@@ -10,6 +10,7 @@ import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { TaskList } from "@/components/tasks/TaskList";
 import { TaskCreateModal } from "@/components/tasks/TaskCreateModal";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
+import { useDeepLinkModal } from "@/lib/deep-link";
 import type { Task, AssignableUser } from "@/components/tasks/types";
 
 export const Route = createFileRoute("/dashboard/tasks")({
@@ -54,6 +55,9 @@ function TasksPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Deep-link depuis une notification (?focus=<taskId>) → ouvre la tâche.
+  useDeepLinkModal(tasks.map(t => t.id), setOpenTaskId);
 
   return (
     <div style={{ fontFamily: sans }}>

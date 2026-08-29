@@ -217,7 +217,7 @@ async def create_note(
         title="Avance de caisse à approuver 🧾",
         message=f"{note.get('reference') or 'Note'} — {row['beneficiary_name']} · {amount_str} en attente de validation N+1.",
         type="info",
-        link="/dashboard/accounting?tab=cash_notes",
+        link=f"/dashboard/accounting?tab=cash_notes&focus={note.get('id')}",
     )
     log_audit(db, user.id, "cash_note.create", "cash_note", note.get("id"),
               {"reference": note.get("reference"), "total": total, "nc": body.nc, "status": "pending"})
@@ -335,7 +335,7 @@ async def approve_note(
             title="Avance de caisse approuvée ✅",
             message=f"{note.get('reference') or 'Votre note de caisse'} a été validée. Elle peut être réglée.",
             type="success",
-            link="/dashboard/accounting?tab=cash_notes",
+            link=f"/dashboard/accounting?tab=cash_notes&focus={note_id}",
         )
     log_audit(db, user.id, "cash_note.approve", "cash_note", note_id, {"reference": note.get("reference")})
     return res.data[0] if res.data else {"id": note_id, **updates}
@@ -371,7 +371,7 @@ async def reject_note(
             title="Avance de caisse rejetée ⛔",
             message=f"{note.get('reference') or 'Votre note de caisse'} a été rejetée. Motif : {comment}",
             type="error",
-            link="/dashboard/accounting?tab=cash_notes",
+            link=f"/dashboard/accounting?tab=cash_notes&focus={note_id}",
         )
     log_audit(db, user.id, "cash_note.reject", "cash_note", note_id, {"comment": comment})
     return res.data[0] if res.data else {"id": note_id, **updates}
@@ -445,7 +445,7 @@ def commit_note_payment(db: Client, note_id: str, updates: dict, user_id: str) -
             title="Avance de caisse payée 💸",
             message=f"{note.get('reference') or 'Votre note de caisse'} a été réglée et comptabilisée.",
             type="success",
-            link="/dashboard/accounting?tab=cash_notes",
+            link=f"/dashboard/accounting?tab=cash_notes&focus={note_id}",
         )
     log_audit(db, user_id, "cash_note.pay", "cash_note", note_id,
               {"reference": note.get("reference"), "method": updates.get("payment_method"),

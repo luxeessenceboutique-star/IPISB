@@ -208,14 +208,15 @@ async def create_class(
             "payload": class_data,
             "created_by": user.id,
         }).execute()
+        op_id = op.data[0]["id"] if op.data else None
         notify_users(
             db, _admin_ids(db),
             title="Nouvelle classe à valider 🏫",
             message=f"Une classe « {body.name} » saisie par la caisse attend votre validation.",
             type="info",
-            link="/dashboard/accounting?tab=validations",
+            link=f"/dashboard/accounting?tab=validations&focus={op_id}",
         )
-        return {"pending": True, "op_id": (op.data[0]["id"] if op.data else None)}
+        return {"pending": True, "op_id": op_id}
 
     res = db.from_("classes").insert(class_data).execute()
     return _with_specialty(res.data, db)[0]
@@ -318,14 +319,15 @@ async def add_student(
             "student_id": body.student_id,
             "created_by": user.id,
         }).execute()
+        op_id = op.data[0]["id"] if op.data else None
         notify_users(
             db, _admin_ids(db),
             title="Nouvelle inscription à valider 🎓",
             message="Une inscription saisie par la caisse attend votre validation.",
             type="info",
-            link="/dashboard/accounting?tab=validations",
+            link=f"/dashboard/accounting?tab=validations&focus={op_id}",
         )
-        return {"pending": True, "op_id": (op.data[0]["id"] if op.data else None)}
+        return {"pending": True, "op_id": op_id}
 
     if not user.is_admin() and cls[0]["created_by"] != user.id:
         raise HTTPException(403, "Non autorisé")
@@ -396,14 +398,15 @@ async def transfer_student(
             "student_id": student_id,
             "created_by": user.id,
         }).execute()
+        op_id = op.data[0]["id"] if op.data else None
         notify_users(
             db, _admin_ids(db),
             title="Transfert d'élève à valider 🔁",
             message=f"Un transfert vers « {by_id[to_class_id]['name']} » attend votre validation.",
             type="info",
-            link="/dashboard/accounting?tab=validations",
+            link=f"/dashboard/accounting?tab=validations&focus={op_id}",
         )
-        return {"pending": True, "op_id": (op.data[0]["id"] if op.data else None)}
+        return {"pending": True, "op_id": op_id}
 
     upd = (
         db.from_("class_students").update({"class_id": to_class_id})

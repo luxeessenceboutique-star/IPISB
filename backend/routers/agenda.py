@@ -62,7 +62,7 @@ async def create_event(
             f"Nouvel événement : {body.title}",
             None,
             "info",
-            "/dashboard/agenda",
+            f"/dashboard/agenda?focus={new_event['id']}",
         )
     except Exception:
         pass  # notification failure must never break the main operation

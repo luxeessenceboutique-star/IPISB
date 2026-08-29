@@ -49,7 +49,11 @@ const TABS: { key: Tab; label: string; icon: typeof Users }[] = [
 ];
 
 function RhPage() {
-  const [tab, setTab] = useState<Tab>("employees");
+  // Onglet initial : ?tab= (deep-link depuis une notification/rappel), sinon Employés.
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+    return TABS.some(x => x.key === t) ? (t as Tab) : "employees";
+  });
   const { roles } = useAuth();
   const canSeePayroll = roles.includes("admin") || roles.includes("rh");
   const visibleTabs = canSeePayroll ? TABS : TABS.filter(t => t.key !== "payroll");

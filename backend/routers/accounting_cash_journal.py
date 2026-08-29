@@ -157,18 +157,18 @@ def _queue_cash_op(
         "amount": amount,
         "created_by": user.id,
     }).execute()
+    op_id = op.data[0]["id"] if op.data else None
     try:
         notify_users(
             db, _admin_ids(db),
             title="Opération de caisse à valider 🧾",
             message=notify_message,
             type="info",
-            link="/dashboard/accounting?tab=validations",
+            link=f"/dashboard/accounting?tab=validations&focus={op_id}",
         )
     except Exception:
         pass
-    log_audit(db, user.id, f"{op_type}.pending", "pending_operation",
-              (op.data[0]["id"] if op.data else None), payload)
+    log_audit(db, user.id, f"{op_type}.pending", "pending_operation", op_id, payload)
     return {"pending": True}
 
 

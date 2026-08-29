@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { ShieldCheck, Check, X, Clock, Inbox, RefreshCw, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 
 const sans = '"Manrope", system-ui, sans-serif';
 
@@ -83,6 +84,7 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
   const [busy, setBusy] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [comment, setComment] = useState("");
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -172,8 +174,9 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
                 {group.rows.map(it => {
                   const k = key(it);
                   const blocked = !!me && it.created_by === me && it.four_eyes;
+                  const hit = it.id === focusId;
                   return (
-                    <div key={k} className="dash-card" style={{ padding: "16px 20px" }}>
+                    <div key={k} ref={hit ? attachFocus : undefined} className="dash-card" style={{ padding: "16px 20px" }}>
                       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--pal-ink)" }}>{it.label}</span>
@@ -241,6 +244,7 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
 export function MySubmissions() {
   const [items, setItems] = useState<PendingOp[]>([]);
   const [loading, setLoading] = useState(true);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -278,7 +282,7 @@ export function MySubmissions() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {items.map(op => (
-            <div key={op.id} className="dash-card" style={{ padding: "16px 20px" }}>
+            <div key={op.id} ref={op.id === focusId ? attachFocus : undefined} className="dash-card" style={{ padding: "16px 20px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                 <OpSummary op={op} />
                 <StatusChip status={op.status} />

@@ -81,7 +81,7 @@ def compute_agenda_items(db: Client) -> list[dict]:
             "category": "task", "domain": t.get("domain") or "general",
             "title": t["title"], "due_date": t["due_date"], "severity": severity_for(delta),
             "responsible": [t["assignee_id"]] if t.get("assignee_id") else [],
-            "link": "/dashboard/tasks",
+            "link": f"/dashboard/tasks?focus={t['id']}",
         })
 
     # ── RH : congés en attente de décision ──────────────────────────────────
@@ -99,7 +99,7 @@ def compute_agenda_items(db: Client) -> list[dict]:
         items.append({
             "category": "hr_leave", "domain": "rh",
             "title": f"Congé en attente — {name}", "due_date": lv.get("start_date"), "severity": "overdue",
-            "responsible": hr_ids, "link": "/dashboard/rh",
+            "responsible": hr_ids, "link": f"/dashboard/rh?tab=leaves&focus={lv['id']}",
         })
 
     # ── RH : fins de contrat proches ────────────────────────────────────────
@@ -116,7 +116,8 @@ def compute_agenda_items(db: Client) -> list[dict]:
         items.append({
             "category": "hr_contract", "domain": "rh",
             "title": f"Fin de contrat — {e.get('full_name') or '—'}", "due_date": e["contract_end"],
-            "severity": severity_for(delta), "responsible": hr_ids, "link": "/dashboard/rh",
+            "severity": severity_for(delta), "responsible": hr_ids,
+            "link": f"/dashboard/rh?tab=employees&focus={e['id']}",
         })
 
     # ── RH : fins de période d'essai proches ────────────────────────────────
@@ -133,7 +134,8 @@ def compute_agenda_items(db: Client) -> list[dict]:
         items.append({
             "category": "hr_probation", "domain": "rh",
             "title": f"Fin de période d'essai — {e.get('full_name') or '—'}", "due_date": e["probation_end_date"],
-            "severity": severity_for(delta), "responsible": hr_ids, "link": "/dashboard/rh",
+            "severity": severity_for(delta), "responsible": hr_ids,
+            "link": f"/dashboard/rh?tab=employees&focus={e['id']}",
         })
 
     # ── Comptabilité : opérations en attente depuis trop longtemps ─────────
@@ -149,7 +151,8 @@ def compute_agenda_items(db: Client) -> list[dict]:
             items.append({
                 "category": "accounting_approval", "domain": "comptabilite",
                 "title": f"{label} en attente depuis {(today - created).days} j", "due_date": r.get("created_at"),
-                "severity": "overdue", "responsible": accounting_ids, "link": "/dashboard/accounting?tab=validations",
+                "severity": "overdue", "responsible": accounting_ids,
+                "link": f"/dashboard/accounting?tab=validations&focus={r[id_field]}",
             })
 
     _aged_pending("pending_operations", "Opération de caisse/comptes")

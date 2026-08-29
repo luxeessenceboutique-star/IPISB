@@ -634,7 +634,7 @@ async def toggle_publish(
                 f"Examen disponible : {exam_title}",
                 "Un nouvel examen est maintenant disponible.",
                 "success",
-                "/dashboard/exams",
+                f"/dashboard/exams?focus={exam_id}",
             )
             # Email enrolled students about the newly published exam
             try:

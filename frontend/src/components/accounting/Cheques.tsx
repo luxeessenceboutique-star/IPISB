@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ScrollText, Plus, Trash2, X, Pencil, Search, AlertTriangle, Banknote, Ban, Send } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
 import { ExportMenu, type ExportPeriod } from "./ExportMenu";
 
@@ -318,6 +319,7 @@ export function AccountingCheques() {
   const [modal, setModal] = useState<{ cheque: Cheque | null } | null>(null);
   const [transition, setTransition] = useState<{ cheque: Cheque; target: Status; label: string } | null>(null);
   const isCheques = tab === "cheque";
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   const load = async () => {
     setLoading(true);
@@ -458,7 +460,8 @@ export function AccountingCheques() {
           </thead>
           <tbody>
             {data.items.map(c => (
-              <tr key={c.id} style={c.overdue ? { background: "oklch(97% 0.03 60)" } : undefined}>
+              <tr key={c.id} ref={c.id === focusId ? attachFocus : undefined}
+                style={c.overdue ? { background: "oklch(97% 0.03 60)" } : undefined}>
                 <td style={{ ...cell, fontFamily: mono, fontSize: 12 }}>{c.reference || "—"}</td>
                 <td style={cell}>
                   <span className={`chip-c ${c.mode === "cheque" ? "chip-c-blue" : "chip-c"}`}>{c.mode_label}</span>

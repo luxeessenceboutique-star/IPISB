@@ -113,7 +113,7 @@ async def create_assignment(
             f"Nouveau contrôle continu : {body.title}",
             body.description or None,
             "info",
-            "/dashboard/assignments",
+            f"/dashboard/assignments?focus={new_assignment['id']}",
         )
         # Email enrolled students
         try:
@@ -249,7 +249,7 @@ async def grade_submission(
                 f"Contrôle continu noté : {assignment_title}",
                 f"Votre note : {body.grade}/20",
                 "success",
-                "/dashboard/assignments",
+                f"/dashboard/assignments?focus={sub['assignment_id']}",
             )
             # Email the student their grade
             try:

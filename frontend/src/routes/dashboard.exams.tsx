@@ -13,6 +13,7 @@ import { GraduationCap, Plus, Loader2, Timer, AlertTriangle, ChevronRight, Eye, 
 import { ListSkeleton } from "@/components/Skeletons";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { QuestionView } from "@/components/exams/QuestionView";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 
 export const Route = createFileRoute("/dashboard/exams")({
   beforeLoad: async () => {
@@ -35,6 +36,7 @@ function ExamsPage() {
 
   const [exams,      setExams]      = useState<Exam[]>([]);
   const [loading,    setLoading]    = useState(true);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   const [takingExam, setTakingExam] = useState<{ exam: Exam; questions: Question[] } | null>(null);
   const [answers,    setAnswers]    = useState<Record<string, number>>({});
@@ -223,7 +225,7 @@ function ExamsPage() {
   const done     = canCreate ? []    : exams.filter(e => !!e.my_response);
 
   const examCard = (exam: Exam) => (
-    <article key={exam.id} className="dash-card lift-c card-pop flex flex-col gap-3 p-5">
+    <article key={exam.id} ref={exam.id === focusId ? attachFocus : undefined} className="dash-card lift-c card-pop flex flex-col gap-3 p-5">
       <div className="flex items-center justify-between gap-2">
         <span className="chip-c chip-c-green">{exam.course_title}</span>
         {canCreate
@@ -287,7 +289,7 @@ function ExamsPage() {
               <SectionLabel>{lang === "fr" ? "Résultats" : lang === "ar" ? "النتائج" : "Results"}</SectionLabel>
               <div className="dash-card overflow-hidden">
                 {done.map(exam => (
-                  <div key={exam.id} className="row-c">
+                  <div key={exam.id} ref={exam.id === focusId ? attachFocus : undefined} className="row-c">
                     <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}>
                       <GraduationCap size={20} strokeWidth={1.7} />
                     </span>

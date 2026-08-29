@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Plane, Plus, Trash2, X, FileDown, Pencil, Check, Ban } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
@@ -333,6 +334,7 @@ export function AccountingMissionNotes() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   function load() {
     setLoading(true);
@@ -419,7 +421,7 @@ export function AccountingMissionNotes() {
               </thead>
               <tbody>
                 {items.map(n => (
-                  <tr key={n.id}>
+                  <tr key={n.id} ref={n.id === focusId ? attachFocus : undefined}>
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>{n.reference ?? "—"}</td>
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>{fmtDate(n.note_date)}</td>
                     <td style={{ ...cell, whiteSpace: "normal", minWidth: 150 }}>{n.beneficiary_name}</td>

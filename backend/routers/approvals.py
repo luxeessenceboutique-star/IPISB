@@ -423,7 +423,7 @@ async def approve_operation(
         title="Saisie approuvée ✅",
         message=f"Votre saisie « {label} » a été validée par l'administration.",
         type="success",
-        link="/dashboard/accounting?tab=mine",
+        link=f"/dashboard/accounting?tab=mine&focus={op_id}",
     )
     log_audit(db, user.id, "approval.approve", "pending_operation", op_id,
               {"op_type": op["op_type"], "result_id": result_id})
@@ -465,7 +465,7 @@ async def reject_operation(
         title="Saisie rejetée ⛔",
         message=f"Votre saisie « {label} » a été rejetée. Motif : {comment}",
         type="error",
-        link="/dashboard/accounting?tab=mine",
+        link=f"/dashboard/accounting?tab=mine&focus={op_id}",
     )
     log_audit(db, user.id, "approval.reject", "pending_operation", op_id,
               {"op_type": op["op_type"], "comment": comment})

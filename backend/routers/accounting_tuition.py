@@ -610,16 +610,16 @@ async def create_payment(
             "amount": body.amount,
             "created_by": user.id,
         }).execute()
+        op_id = op.data[0]["id"] if op.data else None
         admins = _admin_ids(db)
         notify_users(
             db, admins,
             title="Nouvelle saisie à valider 🧾",
             message="Un paiement de scolarité saisi par la caisse attend votre validation.",
             type="info",
-            link="/dashboard/accounting?tab=validations",
+            link=f"/dashboard/accounting?tab=validations&focus={op_id}",
         )
-        log_audit(db, user.id, "tuition_payment.pending", "pending_operation",
-                  (op.data[0]["id"] if op.data else None),
+        log_audit(db, user.id, "tuition_payment.pending", "pending_operation", op_id,
                   {"class_id": body.class_id, "student_id": body.student_id, "amount": body.amount})
         return {"pending": True}
 
@@ -875,16 +875,16 @@ async def delete_payment(
         return {"ok": True, "auto_approved": True}
 
     op = db.from_("pending_operations").insert(row).execute()
+    op_id = op.data[0]["id"] if op.data else None
 
     notify_users(
         db, [a for a in _admin_ids(db) if a != user.id],
         title="Suppression de versement à valider ⚠️",
         message="Un paiement de scolarité est proposé à la suppression et attend une seconde validation.",
         type="warning",
-        link="/dashboard/accounting?tab=validations",
+        link=f"/dashboard/accounting?tab=validations&focus={op_id}",
     )
-    log_audit(db, user.id, "tuition_payment.delete_pending", "pending_operation",
-              (op.data[0]["id"] if op.data else None),
+    log_audit(db, user.id, "tuition_payment.delete_pending", "pending_operation", op_id,
               {"payment_id": payment_id, "amount": p.get("amount"), "reference": p.get("reference")})
     return {"pending": True}
 

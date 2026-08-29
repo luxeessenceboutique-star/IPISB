@@ -57,7 +57,7 @@ def _notify_admins_new_quote(db: Client, user: CurrentUser, pr: dict) -> None:
                 title="Nouveau devis déposé 📄",
                 message=f"{user.email} a ajouté un devis à la demande {pr.get('request_number', '')}. Une décision est attendue.",
                 type="info",
-                link="/dashboard/accounting?tab=purchase_requests",
+                link=f"/dashboard/accounting?tab=purchase_requests&focus={pr.get('id')}",
             )
     except Exception:
         pass
