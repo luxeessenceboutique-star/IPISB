@@ -217,7 +217,7 @@ async def create_note(
         title="Avance de caisse à approuver 🧾",
         message=f"{note.get('reference') or 'Note'} — {row['beneficiary_name']} · {amount_str} en attente de validation N+1.",
         type="info",
-        link=f"/dashboard/accounting?tab=cash_notes&focus={note.get('id')}",
+        link=f"/dashboard/accounting?tab=validations&focus={note.get('id')}",
     )
     log_audit(db, user.id, "cash_note.create", "cash_note", note.get("id"),
               {"reference": note.get("reference"), "total": total, "nc": body.nc, "status": "pending"})

@@ -117,7 +117,7 @@ def compute_agenda_items(db: Client) -> list[dict]:
             "category": "hr_contract", "domain": "rh",
             "title": f"Fin de contrat — {e.get('full_name') or '—'}", "due_date": e["contract_end"],
             "severity": severity_for(delta), "responsible": hr_ids,
-            "link": f"/dashboard/rh?tab=employees&focus={e['id']}",
+            "link": f"/dashboard/rh/employees/{e['id']}?tab=profil",
         })
 
     # ── RH : fins de période d'essai proches ────────────────────────────────
@@ -135,7 +135,7 @@ def compute_agenda_items(db: Client) -> list[dict]:
             "category": "hr_probation", "domain": "rh",
             "title": f"Fin de période d'essai — {e.get('full_name') or '—'}", "due_date": e["probation_end_date"],
             "severity": severity_for(delta), "responsible": hr_ids,
-            "link": f"/dashboard/rh?tab=employees&focus={e['id']}",
+            "link": f"/dashboard/rh/employees/{e['id']}?tab=profil",
         })
 
     # ── Comptabilité : opérations en attente depuis trop longtemps ─────────

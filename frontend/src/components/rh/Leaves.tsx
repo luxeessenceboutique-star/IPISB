@@ -330,6 +330,15 @@ export function RhLeaves() {
   useEffect(() => { api.get("/api/rh/employees?page_size=200").then(r => setEmployees(r.items ?? [])).catch(() => {}); }, []);
   useEffect(() => { if (view === "calendar") loadCalendar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [view]);
 
+  // Deep-link depuis un rappel (?focus=<leaveId>) : ouvre d'office le volet de
+  // détail de la demande visée (le défilement + le nettoyage d'URL sont gérés
+  // par attachFocus posé sur la ligne).
+  useEffect(() => {
+    if (!focusId || view !== "list") return;
+    const l = leaves.find(x => x.id === focusId);
+    if (l) setSelected(l);
+  }, [focusId, leaves, view]);
+
   useEffect(() => {
     if (!selected) { setBalance(null); return; }
     api.get(`/api/rh/leaves/balance/${selected.employee_id}`).then(setBalance).catch(() => setBalance(null));

@@ -230,7 +230,7 @@ async def create_note(
         title="Frais de mission à approuver 🧳",
         message=f"{note.get('reference') or 'Note'} — {row['beneficiary_name']} · {amount_str} en attente de validation N+1.",
         type="info",
-        link=f"/dashboard/accounting?tab=mission_notes&focus={note.get('id')}",
+        link=f"/dashboard/accounting?tab=validations&focus={note.get('id')}",
     )
     log_audit(db, user.id, "mission_note.create", "mission_note", note.get("id"),
               {"reference": note.get("reference"), "total": total, "nc": body.nc, "status": "pending"})

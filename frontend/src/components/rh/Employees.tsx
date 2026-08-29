@@ -5,7 +5,6 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Plus, Search, Users, Trash2, ChevronLeft, ChevronRight, Pencil, Eye, FileText } from "lucide-react";
 import { SectionLabel, EmptyHint, DashAvatar } from "@/components/dashboard/ui";
-import { useDeepLinkFocus } from "@/lib/deep-link";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -350,7 +349,6 @@ export function RhEmployees() {
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
-  const { focusId, attachFocus } = useDeepLinkFocus();
 
   async function load() {
     setLoading(true);
@@ -426,7 +424,7 @@ export function RhEmployees() {
         <>
           <div className="dash-card overflow-hidden">
             {employees.map(emp => (
-              <div key={emp.id} ref={emp.id === focusId ? attachFocus : undefined} className="row-c flex-wrap">
+              <div key={emp.id} className="row-c flex-wrap">
                 {emp.photo_url ? (
                   <img
                     src={emp.photo_url}
