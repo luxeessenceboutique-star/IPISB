@@ -64,6 +64,13 @@ function quoteAmountLabel(q: Quote): string {
   }
   return `${base} ${cur}`;
 }
+// Total RÉEL du devis (contrairement à quoteAmountLabel, qui ne fait
+// qu'afficher la décomposition « 4 800 + 50 » sans additionner) — à utiliser
+// partout où un montant chiffré/comparable est requis (échéancier, écarts).
+function quoteTrueTotal(q: Quote): number {
+  const extra = q.delivery_required && !q.delivery_included ? (q.delivery_cost ?? 0) : 0;
+  return q.amount + extra;
+}
 type Order = {
   id: string; purchase_number: string; supplier_name: string | null; total_incl_vat: number;
   valide_responsable_at: string | null; valide_comptable_at: string | null; payment_status: string;
@@ -553,7 +560,9 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
   // Mode/échéancier de paiement : défini APRÈS le choix du devis (devis retenu), avant/à la commande.
   const canPlanPayment = pr.status === "devis_valide" || !!pr.order;
   const retainedQuote = pr.quotations.find(q => q.retenu);
-  const schedTotal = pr.order?.total_incl_vat ?? retainedQuote?.amount ?? pr.budget_estimate ?? 0;
+  // Livraison payante non incluse dans le devis → à ajouter au total réel
+  // (quoteTrueTotal), pas seulement affichée en décomposé (quoteAmountLabel).
+  const schedTotal = pr.order?.total_incl_vat ?? (retainedQuote ? quoteTrueTotal(retainedQuote) : null) ?? pr.budget_estimate ?? 0;
   const schedLabel = pr.order ? "Commande" : retainedQuote ? "Devis retenu" : "Budget estimé";
   const nextRank = ([1, 2, 3, 4, 5].find(r => !pr.quotations.some(q => q.rank === r))) ?? pr.quotations.length + 1;
   const info = (l: string, v: any) => v ? <div style={{ fontSize: 12.5 }}><span style={{ color: PAL.muted }}>{l} : </span><strong style={{ color: PAL.ink }}>{v}</strong></div> : null;

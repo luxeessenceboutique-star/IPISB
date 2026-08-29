@@ -458,12 +458,18 @@ async def create_order(
 
     quote = retained[0]
     title = (pr.get("justification") or pr["request_number"])[:200]
+    # Le total de la commande doit inclure les frais de livraison quand ils
+    # sont payants ET non compris dans le montant du devis (sinon la commande
+    # sous-évalue le montant réellement dû au fournisseur).
+    delivery_extra = 0.0
+    if quote.get("delivery_required") and not quote.get("delivery_included"):
+        delivery_extra = float(quote.get("delivery_cost") or 0)
     data = {
         "title": title,
         "supplier_id": quote.get("supplier_id"),
         "quantity": 1,
-        "unit_price": float(quote.get("amount") or 0),
-        "vat_percent": 0,  # le montant du devis est pris tel quel
+        "unit_price": float(quote.get("amount") or 0) + delivery_extra,
+        "vat_percent": 0,  # le montant du devis (+ livraison éventuelle) est pris tel quel
         "currency": quote.get("currency") or "MAD",
         "purchase_date": datetime.now(timezone.utc).date().isoformat(),
         "payment_method": pr.get("payment_mode"),
