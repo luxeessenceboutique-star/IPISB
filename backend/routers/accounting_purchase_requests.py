@@ -157,22 +157,23 @@ async def create_request(
     log_audit(db, user.id, "purchase_request.create", "purchase_request", pr["id"],
               {"request_number": pr["request_number"],
                "reference": pr.get("reference") or pr.get("request_number")})
-    # Non-admin → prévenir l'administration qu'une DA attend une décision.
-    if not user.can_access_accounting_full():
-        try:
-            from utils.notify import notify_users
-            admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
-            admin_ids = list({r["user_id"] for r in admin_rows if r.get("user_id")})
-            if admin_ids:
-                notify_users(
-                    db, admin_ids,
-                    title="Nouvelle demande d'achat 🛒",
-                    message=f"{user.email} a soumis la demande {pr.get('request_number', '')}. Une décision est attendue.",
-                    type="info",
-                    link=f"/dashboard/accounting?tab=purchase_requests&focus={pr['id']}",
-                )
-        except Exception:
-            pass
+    # Prévenir les AUTRES administrateurs qu'une DA attend une décision — y
+    # compris quand c'est un admin/comptable qui l'a créée (seul l'auteur
+    # lui-même est exclu, jamais toute l'administration).
+    try:
+        from utils.notify import notify_users
+        admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
+        admin_ids = list({r["user_id"] for r in admin_rows if r.get("user_id") and r["user_id"] != user.id})
+        if admin_ids:
+            notify_users(
+                db, admin_ids,
+                title="Nouvelle demande d'achat 🛒",
+                message=f"{user.email} a soumis la demande {pr.get('request_number', '')}. Une décision est attendue.",
+                type="info",
+                link=f"/dashboard/accounting?tab=purchase_requests&focus={pr['id']}",
+            )
+    except Exception:
+        pass
     return pr
 
 
@@ -200,30 +201,28 @@ async def update_request(
     res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
     log_audit(db, user.id, "purchase_request.update", "purchase_request", pr_id, updates)
 
-    # Prévenir l'autre partie que le contenu de la demande a changé (ex. le
-    # demandeur corrige sa DA après un retour, ou l'administration ajuste une
-    # demande pour le compte d'un tiers) — même logique bidirectionnelle que
-    # need_decision, avec le même deep-link `focus`.
+    # Prévenir les AUTRES administrateurs (jamais l'auteur de la modification
+    # lui-même, quel que soit son rôle) ET le demandeur si ce n'est pas lui qui
+    # a modifié — même deep-link `focus` que les autres notifications DA.
     try:
         from utils.notify import notify_users
         num = pr.get("request_number", "")
         requester_id = pr.get("created_by")
-        if not user.can_access_accounting_full():
-            admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
-            admin_ids = list({r["user_id"] for r in admin_rows if r.get("user_id")})
-            if admin_ids:
-                notify_users(
-                    db, admin_ids,
-                    title="Demande d'achat modifiée ✏️",
-                    message=f"{user.email} a modifié la demande {num}.",
-                    type="info",
-                    link=f"/dashboard/accounting?tab=purchase_requests&focus={pr_id}",
-                )
-        elif requester_id and requester_id != user.id:
+        admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
+        admin_ids = {r["user_id"] for r in admin_rows if r.get("user_id") and r["user_id"] != user.id}
+        if admin_ids:
+            notify_users(
+                db, list(admin_ids),
+                title="Demande d'achat modifiée ✏️",
+                message=f"{user.email} a modifié la demande {num}.",
+                type="info",
+                link=f"/dashboard/accounting?tab=purchase_requests&focus={pr_id}",
+            )
+        if requester_id and requester_id != user.id and requester_id not in admin_ids:
             notify_users(
                 db, [requester_id],
                 title="Demande d'achat modifiée ✏️",
-                message=f"Votre demande {num} a été modifiée par l'administration.",
+                message=f"Votre demande {num} a été modifiée.",
                 type="info",
                 link=f"/dashboard/purchase-requests?focus={pr_id}",
             )
@@ -349,22 +348,31 @@ async def quote_decision(
 
 
 def _notify_revert(db: Client, user: CurrentUser, pr: dict, pr_id: str, to_status: str) -> None:
-    """Prévient le demandeur que sa décision précédente a été annulée par
-    l'administration — même deep-link `focus` que les autres notifications DA."""
-    requester_id = pr.get("created_by")
-    if not requester_id or requester_id == user.id:
-        return
+    """Prévient les AUTRES administrateurs (une décision d'un pair vient d'être
+    annulée) et le demandeur (si distinct) — même deep-link `focus`."""
     try:
         from utils.notify import notify_users
         num = pr.get("request_number", "")
         label = "brouillon" if to_status == "brouillon" else "consultation (devis à revoir)"
-        notify_users(
-            db, [requester_id],
-            title="Demande d'achat renvoyée à l'étape précédente ↩️",
-            message=f"Votre demande {num} a été ramenée au stade « {label} ».",
-            type="warning",
-            link=f"/dashboard/purchase-requests?focus={pr_id}",
-        )
+        requester_id = pr.get("created_by")
+        admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
+        admin_ids = {r["user_id"] for r in admin_rows if r.get("user_id") and r["user_id"] != user.id}
+        if admin_ids:
+            notify_users(
+                db, list(admin_ids),
+                title="Demande d'achat renvoyée à l'étape précédente ↩️",
+                message=f"{user.email} a ramené la demande {num} au stade « {label} ».",
+                type="warning",
+                link=f"/dashboard/accounting?tab=purchase_requests&focus={pr_id}",
+            )
+        if requester_id and requester_id != user.id and requester_id not in admin_ids:
+            notify_users(
+                db, [requester_id],
+                title="Demande d'achat renvoyée à l'étape précédente ↩️",
+                message=f"Votre demande {num} a été ramenée au stade « {label} ».",
+                type="warning",
+                link=f"/dashboard/purchase-requests?focus={pr_id}",
+            )
     except Exception:
         pass
 
