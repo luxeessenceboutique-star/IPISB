@@ -317,6 +317,61 @@ async def quote_decision(
     return res.data[0]
 
 
+@router.post("/{pr_id}/revert")
+async def revert_request(
+    pr_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Annule la dernière décision et revient à l'étape précédente — même
+    autorité que la décision elle-même (barème par montant). Bloqué dès que
+    l'aval empêcherait un retour sûr : devis déjà saisis pour annuler la
+    validation du besoin (les supprimer d'abord), commande déjà validée pour
+    annuler le devis retenu (statut alors verrouillé, hors de portée ici)."""
+    pr = _get_or_404(db, pr_id)
+    _require_decide(user, pr.get("budget_estimate") or 0)
+
+    if pr["status"] in ("besoin_valide", "en_consultation"):
+        quotes = db.from_("quotations").select("id").eq("purchase_request_id", pr_id).execute().data or []
+        if quotes:
+            raise HTTPException(400, "Supprimez d'abord les devis saisis pour annuler la validation du besoin.")
+        updates = {
+            "status": "brouillon",
+            "need_decision": "en_attente",
+            "need_decision_comment": None,
+            "need_decided_by": None,
+            "need_decided_at": None,
+        }
+        res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
+        log_audit(db, user.id, "purchase_request.revert", "purchase_request", pr_id, {"to": "brouillon"})
+        return res.data[0]
+
+    if pr["status"] == "devis_valide":
+        # À ce stade, une commande peut exister sans être encore validée (la
+        # validation verrouille déjà la DA en 'commande_emise', hors de ce
+        # cas) — on la retire pour permettre le retour en arrière.
+        existing = db.from_("purchases").select("id").eq("purchase_request_id", pr_id).execute().data or []
+        for p in existing:
+            db.from_("purchases").delete().eq("id", p["id"]).execute()
+
+        quote_ids = [q["id"] for q in (db.from_("quotations").select("id").eq("purchase_request_id", pr_id).execute().data or [])]
+        for qid in quote_ids:
+            db.from_("quotations").update({"retenu": False}).eq("id", qid).execute()
+
+        updates = {
+            "status": "en_consultation",
+            "quote_decision": "en_attente",
+            "quote_decision_comment": None,
+            "quote_decided_by": None,
+            "quote_decided_at": None,
+        }
+        res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
+        log_audit(db, user.id, "purchase_request.revert", "purchase_request", pr_id, {"to": "en_consultation"})
+        return res.data[0]
+
+    raise HTTPException(400, "Aucune étape précédente disponible pour ce statut.")
+
+
 @router.post("/{pr_id}/create-order")
 async def create_order(
     pr_id: str,

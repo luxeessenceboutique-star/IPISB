@@ -446,6 +446,10 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
   function createOrder() {
     act(() => api.post(`/api/accounting/purchase-requests/${prId}/create-order`, {}), "Commande créée.");
   }
+  function revertRequest() {
+    if (!window.confirm("Revenir à l'étape précédente ? La décision actuelle sera annulée.")) return;
+    act(() => api.post(`/api/accounting/purchase-requests/${prId}/revert`, {}), "Retour à l'étape précédente.");
+  }
   function deleteQuote(q: Quote) {
     if (!window.confirm(`Supprimer le devis ${q.quote_number} ?`)) return;
     act(() => api.delete(`/api/accounting/quotations/${q.id}`), "Devis supprimé.");
@@ -491,6 +495,10 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
   const canAddQuote = inQuoteStage;
   // Décisions sur les devis (retenir / retourner / annuler) : admin uniquement.
   const canDecideQuote = canDecide && inQuoteStage;
+  // Revenir à l'étape précédente — même autorité que la décision annulée.
+  // Besoin validé → brouillon (uniquement sans devis saisi) ; devis retenu → consultation.
+  const canRevertNeed = canDecide && inQuoteStage && pr.quotations.length === 0;
+  const canRevertQuote = canDecide && pr.status === "devis_valide";
   // Mode/échéancier de paiement : défini APRÈS le choix du devis (devis retenu), avant/à la commande.
   const canPlanPayment = pr.status === "devis_valide" || !!pr.order;
   const retainedQuote = pr.quotations.find(q => q.retenu);
@@ -568,6 +576,11 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
           <button disabled={busy} onClick={() => needDecision("annulation")} className="btn-c btn-c-danger"><X size={15} />Annuler</button>
         </div>
       )}
+      {canRevertNeed && (
+        <div style={{ marginBottom: 20 }}>
+          <button disabled={busy} onClick={revertRequest} className="btn-c btn-c-sm btn-c-ghost"><RotateCcw size={13} />Revenir à l'étape précédente (annuler la validation du besoin)</button>
+        </div>
+      )}
 
       {/* Consultation / devis */}
       {(canAddQuote || pr.quotations.length > 0) && (
@@ -634,6 +647,11 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
             <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
               <button disabled={busy} onClick={() => quoteDecision("retour")} className="btn-c btn-c-sm btn-c-soft"><RotateCcw size={13} />Retourner</button>
               <button disabled={busy} onClick={() => quoteDecision("annulation")} className="btn-c btn-c-sm btn-c-danger"><X size={14} />Annuler la DA</button>
+            </div>
+          )}
+          {canRevertQuote && (
+            <div style={{ marginBottom: 18 }}>
+              <button disabled={busy} onClick={revertRequest} className="btn-c btn-c-sm btn-c-ghost"><RotateCcw size={13} />Revenir à l'étape précédente (annuler le devis retenu)</button>
             </div>
           )}
         </>

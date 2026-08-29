@@ -108,7 +108,10 @@ function NotificationsPage() {
                 onClick={() => {
                   if (!n.link) return;
                   if (!n.read) markRead(n.id);
-                  navigate({ to: n.link });
+                  // `href` (et non `to`) : TanStack Router découpe la chaîne en
+                  // pathname + search + hash. Indispensable pour les liens du type
+                  // "/dashboard/accounting?tab=validations".
+                  navigate({ href: n.link });
                 }}
               >
                 <span
