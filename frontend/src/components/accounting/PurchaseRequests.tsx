@@ -409,12 +409,47 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
   const [pr, setPr] = useState<PRDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [quoteForm, setQuoteForm] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editCriteria, setEditCriteria] = useState<string[]>([]);
 
   async function load() {
     try { setPr(await api.get(`/api/accounting/purchase-requests/${prId}`)); }
     catch (err: any) { toast.error(err?.message ?? "Erreur de chargement."); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [prId]);
+
+  function startEdit(p: PR) {
+    setEditForm({
+      company: p.company ?? "", service: p.service ?? "", requester_name: p.requester_name ?? "",
+      project: p.project ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
+      request_type: p.request_type, asset_category: p.asset_category, characteristics: p.characteristics ?? "",
+      conformity_note: p.conformity_note ?? "", article_code: p.article_code ?? "",
+      quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0), duration: p.duration ?? "",
+    });
+    setEditCriteria(p.conformity_criteria ?? []);
+    setEditing(true);
+  }
+  const setEditField = (k: string, v: string) => setEditForm(f => ({ ...f, [k]: v }));
+  const toggleEditCriterion = (k: string) =>
+    setEditCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
+
+  async function saveEdit() {
+    if (!editForm.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/api/accounting/purchase-requests/${prId}`, {
+        ...editForm,
+        quantity: parseFloat(editForm.quantity) || 1,
+        budget_estimate: parseFloat(editForm.budget_estimate) || 0,
+        conformity_criteria: editCriteria,
+      });
+      toast.success("Demande mise à jour.");
+      setEditing(false);
+      await load(); onChanged();
+    } catch (err: any) { toast.error(err?.message ?? "Erreur lors de l'enregistrement."); }
+    finally { setBusy(false); }
+  }
 
   async function act(fn: () => Promise<any>, ok: string) {
     setBusy(true);
@@ -486,8 +521,9 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
   if (!pr) return <Backdrop width={720}><div style={{ padding: 20, color: PAL.muted }}>Chargement…</div></Backdrop>;
 
   const st = STATUS[pr.status];
-  // Miroir de LOCKED_STATUSES (backend) : la DA n'accepte plus d'écriture.
-  const cdcLocked = pr.status === "commande_emise" || pr.status === "annulee";
+  // Miroir de LOCKED_STATUSES (backend) : la DA n'accepte plus d'écriture —
+  // ni pièce jointe CDC, ni modification des champs saisis (bouton Modifier).
+  const locked = pr.status === "commande_emise" || pr.status === "annulee";
   const canDecide = can("accounting.purchase_requests", "validate_v2", pr.budget_estimate);
   const canDecideNeed = canDecide && (pr.status === "brouillon" || pr.status === "retournee");
   const inQuoteStage = pr.status === "besoin_valide" || pr.status === "en_consultation";
@@ -514,76 +550,155 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <H2>{pr.request_number}</H2>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={() => api.download(`/api/accounting/purchase-requests/${prId}/pdf`, `Demande_achat_${pr.request_number ?? prId}.pdf`).catch((e: any) => toast.error(e?.message ?? "Erreur lors du téléchargement."))} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }}>
-            Télécharger PDF
-          </button>
-          <span className={`chip-c ${st?.tone}`}>{st?.label ?? pr.status}</span>
-        </div>
-      </div>
-
-      {/* Expression de besoin */}
-      <SectionLabel>Expression de besoin</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 18px", margin: "8px 0 16px" }}>
-        {info("Type", REQ_TYPE[pr.request_type])}
-        {info("Catégorie", CAT[pr.asset_category])}
-        {info("Société", pr.company)} {info("Service", pr.service)}
-        {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
-        {info("Activité", pr.activity)}
-        {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
-        {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
-      </div>
-      {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
-      {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 8 }}>{pr.characteristics}</div>}
-      {(pr.cdc_attachment_name || !cdcLocked) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-          {pr.cdc_attachment_name ? (
-            <button onClick={openCdcAttachment} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={pr.cdc_attachment_name}>
-              <FileText size={12} />Cahier des charges
-            </button>
+          {!editing ? (
+            <>
+              <button onClick={() => api.download(`/api/accounting/purchase-requests/${prId}/pdf`, `Demande_achat_${pr.request_number ?? prId}.pdf`).catch((e: any) => toast.error(e?.message ?? "Erreur lors du téléchargement."))} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }}>
+                Télécharger PDF
+              </button>
+              {!locked && (
+                <button onClick={() => startEdit(pr)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11 }}>
+                  <Pencil size={12} />Modifier
+                </button>
+              )}
+              <span className={`chip-c ${st?.tone}`}>{st?.label ?? pr.status}</span>
+            </>
           ) : (
-            <span style={{ fontSize: 11.5, color: PAL.muted }}>Aucun cahier des charges joint.</span>
-          )}
-          {!cdcLocked && (
-            <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
-              <Paperclip size={12} />{pr.cdc_attachment_name ? "Remplacer" : "Joindre le CDC"}
-              <input
-                type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy}
-                onChange={e => { const f = e.target.files?.[0]; if (f) uploadCdc(f); e.target.value = ""; }}
-                style={{ display: "none" }}
-              />
-            </label>
+            <>
+              <button onClick={() => setEditing(false)} disabled={busy} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+              <button onClick={saveEdit} disabled={busy} className="btn-c btn-c-sm btn-c-primary"><Check size={13} />{busy ? "Enregistrement…" : "Enregistrer"}</button>
+            </>
           )}
         </div>
-      )}
+      </div>
 
-      {(pr.conformity_note || (pr.conformity_criteria && pr.conformity_criteria.length > 0)) && (
-        <div style={{ marginBottom: 14 }}>
-          <SectionLabel>Conformité</SectionLabel>
-          {pr.conformity_note && <div style={{ fontSize: 12.5, color: PAL.ink, margin: "8px 0" }}>{pr.conformity_note}</div>}
-          {pr.conformity_criteria && pr.conformity_criteria.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-              {pr.conformity_criteria.map(c => <span key={c} className="chip-c chip-c-blue">{CONFORMITY[c] ?? c}</span>)}
+      {editing ? (
+        <>
+          {/* Formulaire d'édition — exactement les champs saisis à la création,
+              modifiables tant que la DA n'est pas verrouillée. */}
+          <SectionLabel>Expression de besoin</SectionLabel>
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={labelStyle}>Société</label><input className="u-input" style={fieldStyle} value={editForm.company} onChange={e => setEditField("company", e.target.value)} /></div>
+              <div>
+                <label style={labelStyle}>Service</label>
+                <select className="u-input" style={fieldStyle} value={editForm.service} onChange={e => setEditField("service", e.target.value)}>
+                  <option value="">— Choisir un service —</option>
+                  {SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div><label style={labelStyle}>Demandeur</label><input className="u-input" style={fieldStyle} value={editForm.requester_name} onChange={e => setEditField("requester_name", e.target.value)} /></div>
+              <div><label style={labelStyle}>Projet</label><input className="u-input" style={fieldStyle} value={editForm.project} onChange={e => setEditField("project", e.target.value)} /></div>
+            </div>
+            <label style={labelStyle}>Activité</label>
+            <input className="u-input" style={fieldStyle} value={editForm.activity} onChange={e => setEditField("activity", e.target.value)} />
+            <label style={labelStyle}>Justification du besoin *</label>
+            <textarea className="u-input" style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }} value={editForm.justification} onChange={e => setEditField("justification", e.target.value)} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Type du besoin</label>
+                <select className="u-input" style={fieldStyle} value={editForm.request_type} onChange={e => setEditField("request_type", e.target.value)}>
+                  {Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Catégorie</label>
+                <select className="u-input" style={fieldStyle} value={editForm.asset_category} onChange={e => setEditField("asset_category", e.target.value)}>
+                  {Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+            <label style={labelStyle}>Caractéristiques / CDC</label>
+            <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={editForm.characteristics} onChange={e => setEditField("characteristics", e.target.value)} />
+          </div>
+
+          <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
+          <label style={{ ...labelStyle, display: "block", marginTop: 12 }}>Exigences (texte libre)</label>
+          <textarea className="u-input" style={{ ...fieldStyle, minHeight: 52, resize: "vertical" }} placeholder="ex. bœuf congelé, produit frais du jour…" value={editForm.conformity_note} onChange={e => setEditField("conformity_note", e.target.value)} />
+          <label style={{ ...labelStyle, display: "block" }}>Critères standard</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8 }}>
+            {Object.entries(CONFORMITY).map(([k, v]) => (
+              <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer" }}>
+                <input type="checkbox" checked={editCriteria.includes(k)} onChange={() => toggleEditCriterion(k)} style={{ width: 16, height: 16, accentColor: "var(--pal-primary)" }} />
+                {v}
+              </label>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 16 }}>
+            <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
+            <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} /></div>
+            <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.budget_estimate} onChange={e => setEditField("budget_estimate", e.target.value)} /></div>
+            <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} /></div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Expression de besoin */}
+          <SectionLabel>Expression de besoin</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 18px", margin: "8px 0 16px" }}>
+            {info("Type", REQ_TYPE[pr.request_type])}
+            {info("Catégorie", CAT[pr.asset_category])}
+            {info("Société", pr.company)} {info("Service", pr.service)}
+            {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
+            {info("Activité", pr.activity)}
+            {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
+            {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
+          </div>
+          {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
+          {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 8 }}>{pr.characteristics}</div>}
+          {(pr.cdc_attachment_name || !locked) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              {pr.cdc_attachment_name ? (
+                <button onClick={openCdcAttachment} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={pr.cdc_attachment_name}>
+                  <FileText size={12} />Cahier des charges
+                </button>
+              ) : (
+                <span style={{ fontSize: 11.5, color: PAL.muted }}>Aucun cahier des charges joint.</span>
+              )}
+              {!locked && (
+                <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
+                  <Paperclip size={12} />{pr.cdc_attachment_name ? "Remplacer" : "Joindre le CDC"}
+                  <input
+                    type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadCdc(f); e.target.value = ""; }}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              )}
             </div>
           )}
-        </div>
+
+          {(pr.conformity_note || (pr.conformity_criteria && pr.conformity_criteria.length > 0)) && (
+            <div style={{ marginBottom: 14 }}>
+              <SectionLabel>Conformité</SectionLabel>
+              {pr.conformity_note && <div style={{ fontSize: 12.5, color: PAL.ink, margin: "8px 0" }}>{pr.conformity_note}</div>}
+              {pr.conformity_criteria && pr.conformity_criteria.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                  {pr.conformity_criteria.map(c => <span key={c} className="chip-c chip-c-blue">{CONFORMITY[c] ?? c}</span>)}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
       {pr.need_decision_comment && <div style={{ fontSize: 12.5, color: "var(--pal-danger)", marginBottom: 10 }}>Commentaire décision : {pr.need_decision_comment}</div>}
 
-      {canDecideNeed && (
+      {!editing && canDecideNeed && (
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <button disabled={busy} onClick={() => needDecision("validation")} className="btn-c btn-c-primary"><Check size={15} />Valider le besoin</button>
           <button disabled={busy} onClick={() => needDecision("retour")} className="btn-c btn-c-soft"><RotateCcw size={14} />Retourner</button>
           <button disabled={busy} onClick={() => needDecision("annulation")} className="btn-c btn-c-danger"><X size={15} />Annuler</button>
         </div>
       )}
-      {canRevertNeed && (
+      {!editing && canRevertNeed && (
         <div style={{ marginBottom: 20 }}>
           <button disabled={busy} onClick={revertRequest} className="btn-c btn-c-sm btn-c-ghost"><RotateCcw size={13} />Revenir à l'étape précédente (annuler la validation du besoin)</button>
         </div>
       )}
 
       {/* Consultation / devis */}
-      {(canAddQuote || pr.quotations.length > 0) && (
+      {!editing && (canAddQuote || pr.quotations.length > 0) && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
             <SectionLabel>Consultation — devis ({pr.quotations.length}/5)</SectionLabel>
@@ -658,7 +773,7 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
       )}
 
       {/* Mode & échéancier de paiement — après le choix du devis retenu */}
-      {canPlanPayment && (
+      {!editing && canPlanPayment && (
         <div style={{ marginBottom: 18 }}>
           <SectionLabel>Mode &amp; échéancier de paiement</SectionLabel>
           <div className="dash-card" style={{ padding: 16, margin: "8px 0 4px" }}>
@@ -671,7 +786,7 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
       )}
 
       {/* Commande */}
-      {((canDecide && pr.status === "devis_valide") || pr.order) && (
+      {!editing && ((canDecide && pr.status === "devis_valide") || pr.order) && (
         <>
           <SectionLabel>Commande</SectionLabel>
           {!pr.order ? (
