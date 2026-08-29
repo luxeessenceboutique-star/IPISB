@@ -169,7 +169,7 @@ async def create_request(
                     title="Nouvelle demande d'achat 🛒",
                     message=f"{user.email} a soumis la demande {pr.get('request_number', '')}. Une décision est attendue.",
                     type="info",
-                    link="/dashboard/accounting?tab=purchase_requests",
+                    link=f"/dashboard/accounting?tab=purchase_requests&focus={pr['id']}",
                 )
         except Exception:
             pass
@@ -199,6 +199,37 @@ async def update_request(
 
     res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
     log_audit(db, user.id, "purchase_request.update", "purchase_request", pr_id, updates)
+
+    # Prévenir l'autre partie que le contenu de la demande a changé (ex. le
+    # demandeur corrige sa DA après un retour, ou l'administration ajuste une
+    # demande pour le compte d'un tiers) — même logique bidirectionnelle que
+    # need_decision, avec le même deep-link `focus`.
+    try:
+        from utils.notify import notify_users
+        num = pr.get("request_number", "")
+        requester_id = pr.get("created_by")
+        if not user.can_access_accounting_full():
+            admin_rows = db.from_("user_roles").select("user_id").eq("role", "admin").execute().data or []
+            admin_ids = list({r["user_id"] for r in admin_rows if r.get("user_id")})
+            if admin_ids:
+                notify_users(
+                    db, admin_ids,
+                    title="Demande d'achat modifiée ✏️",
+                    message=f"{user.email} a modifié la demande {num}.",
+                    type="info",
+                    link=f"/dashboard/accounting?tab=purchase_requests&focus={pr_id}",
+                )
+        elif requester_id and requester_id != user.id:
+            notify_users(
+                db, [requester_id],
+                title="Demande d'achat modifiée ✏️",
+                message=f"Votre demande {num} a été modifiée par l'administration.",
+                type="info",
+                link=f"/dashboard/purchase-requests?focus={pr_id}",
+            )
+    except Exception:
+        pass
+
     return res.data[0]
 
 
@@ -268,7 +299,7 @@ async def need_decision(
                     "error",
                 )
             notify_users(db, [requester_id], title=title, message=msg, type=ntype,
-                         link="/dashboard/purchase-requests")
+                         link=f"/dashboard/purchase-requests?focus={pr_id}")
         except Exception:
             pass
     log_audit(db, user.id, "purchase_request.need_decision", "purchase_request", pr_id,
@@ -317,6 +348,27 @@ async def quote_decision(
     return res.data[0]
 
 
+def _notify_revert(db: Client, user: CurrentUser, pr: dict, pr_id: str, to_status: str) -> None:
+    """Prévient le demandeur que sa décision précédente a été annulée par
+    l'administration — même deep-link `focus` que les autres notifications DA."""
+    requester_id = pr.get("created_by")
+    if not requester_id or requester_id == user.id:
+        return
+    try:
+        from utils.notify import notify_users
+        num = pr.get("request_number", "")
+        label = "brouillon" if to_status == "brouillon" else "consultation (devis à revoir)"
+        notify_users(
+            db, [requester_id],
+            title="Demande d'achat renvoyée à l'étape précédente ↩️",
+            message=f"Votre demande {num} a été ramenée au stade « {label} ».",
+            type="warning",
+            link=f"/dashboard/purchase-requests?focus={pr_id}",
+        )
+    except Exception:
+        pass
+
+
 @router.post("/{pr_id}/revert")
 async def revert_request(
     pr_id: str,
@@ -344,6 +396,7 @@ async def revert_request(
         }
         res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
         log_audit(db, user.id, "purchase_request.revert", "purchase_request", pr_id, {"to": "brouillon"})
+        _notify_revert(db, user, pr, pr_id, "brouillon")
         return res.data[0]
 
     if pr["status"] == "devis_valide":
@@ -367,6 +420,7 @@ async def revert_request(
         }
         res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
         log_audit(db, user.id, "purchase_request.revert", "purchase_request", pr_id, {"to": "en_consultation"})
+        _notify_revert(db, user, pr, pr_id, "en_consultation")
         return res.data[0]
 
     raise HTTPException(400, "Aucune étape précédente disponible pour ce statut.")

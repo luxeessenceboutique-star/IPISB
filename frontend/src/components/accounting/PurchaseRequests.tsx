@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { usePermissions } from "@/lib/permissions";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
 
 const PAL = {
@@ -998,6 +999,16 @@ export function AccountingPurchaseRequests() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+
+  // Deep-link depuis une notification (?focus=<id>) — ouvre directement la
+  // fiche visée, indépendamment de la page/du filtre courant (le détail se
+  // recharge lui-même par id, pas besoin que l'item soit dans `items`).
+  const { focusId, clearFocus } = useDeepLinkFocus();
+  useEffect(() => {
+    if (!focusId) return;
+    setDetailId(focusId);
+    clearFocus();
+  }, [focusId, clearFocus]);
 
   async function load() {
     setLoading(true);
