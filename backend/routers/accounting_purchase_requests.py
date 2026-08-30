@@ -23,9 +23,10 @@ DECISIONS = {"validation", "retour", "annulation"}
 _DECISION_STATUS = {"retour": "retournee", "annulation": "annulee"}
 # Statuts « figés » : on n'édite plus la DA
 LOCKED_STATUSES = {"commande_emise", "annulee"}
-# Modes de règlement d'une échéance ; l'axe n\c en découle.
-INSTALLMENT_MODES = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
-CASH_SOCIAL_MODES = {"caisse_sociale"}  # → caisse sociale ('noir')
+# Modes de règlement d'une échéance. « Autre » retiré ; « caisse_sociale »
+# renommée Caisse comptable et rattachée au journal comptable (tous les modes
+# sont désormais de nature comptable — plus de distinction « noir »).
+INSTALLMENT_MODES = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
 # Le mode/échéancier se saisit APRÈS le choix du devis (devis retenu) et reste
 # modifiable jusqu'à l'émission de la commande incluse.
 INSTALLMENT_EDIT_ALLOWED = {"devis_valide", "commande_emise"}
@@ -498,7 +499,7 @@ def _installment_row(it, rank: int, user_id: str, pr_id: str) -> dict:
         "label": (it.label or "").strip() or None,
         "amount": max(float(it.amount or 0), 0),
         "payment_mode": it.payment_mode,
-        "nc": "noir" if it.payment_mode in CASH_SOCIAL_MODES else "comptable",
+        "nc": "comptable",  # tous les modes sont désormais rattachés au journal comptable
         "due_date": it.due_date or None,
         "created_by": user_id,
     }

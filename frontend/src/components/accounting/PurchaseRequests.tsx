@@ -41,7 +41,7 @@ const CONFORMITY: Record<string, string> = {
   certificat: "Certificat / norme de conformité",
   qhse: "Contrôle QHSE effectué",
 };
-const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", caisse_sociale: "Caisse sociale" };
+const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", caisse_sociale: "Caisse comptable" };
 
 type Supplier = { id: string; company_name: string };
 type Quote = {
@@ -891,8 +891,9 @@ const cell: React.CSSProperties = { padding: "7px 12px", borderBottom: `1px soli
 // (ex. avance « en noir » hors facture). N'alimente pas le journal de caisse
 // (phase 1 : planification uniquement).
 type IRow = { label: string; amount: string; payment_mode: string; due_date: string };
-const IMODES: Record<string, string> = { ...PAY_MODE, autre: "Autre" };
-const isNoir = (m: string) => m === "caisse_sociale";
+// Tous les modes de règlement (dont Caisse comptable) sont rattachés au
+// journal comptable — plus de distinction « caisse sociale/comptable ».
+const IMODES: Record<string, string> = PAY_MODE;
 const JALON_SUGGESTIONS = ["Avance", "À la commande", "À la livraison", "Après contrôle qualité", "Après montage", "Pourboire livreur", "Mensualité 1", "Mensualité 2", "Mensualité 3", "Solde"];
 const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
   label: d.label ?? "", amount: String(d.amount ?? 0),
@@ -901,16 +902,11 @@ const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
 
 function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; rows: IRow[]; label?: string }) {
   const planned = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  // Chaque ligne est comptabilisée selon SA propre nature : ventilation, pas d'agrégat « dépassement ».
-  const social = rows.reduce((s, r) => s + (isNoir(r.payment_mode) ? (parseFloat(r.amount) || 0) : 0), 0);
-  const comptable = planned - social;
   const ecart = planned - total;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "flex-end", marginTop: 10, fontSize: 12, fontFamily: mono }}>
       <span style={{ color: PAL.muted }}>{label}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(total)}</b></span>
       <span style={{ color: PAL.muted }}>Planifié&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(planned)}</b></span>
-      <span style={{ color: PAL.muted }}>Caisse sociale&nbsp;: <b style={{ color: "var(--pal-amber, #b45309)" }}>{fmtMAD(social)}</b></span>
-      <span style={{ color: PAL.muted }}>Comptable&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(comptable)}</b></span>
       {Math.abs(ecart) > 0.005 && (
         <span style={{ color: PAL.muted }} title="Écart entre le total planifié et le devis retenu. Chaque ligne est comptabilisée selon sa propre nature, il n'y a pas de « dépassement » global.">
           Écart&nbsp;: <b style={{ color: PAL.ink }}>{ecart > 0 ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
@@ -984,14 +980,13 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
-                  <th style={th}>Jalon</th><th style={th}>Règlement</th><th style={th}>Nature</th><th style={th}>Date prévue</th><th style={{ ...th, textAlign: "right", paddingRight: 0 }}>Montant</th>
+                  <th style={th}>Jalon</th><th style={th}>Règlement</th><th style={th}>Date prévue</th><th style={{ ...th, textAlign: "right", paddingRight: 0 }}>Montant</th>
                 </tr></thead>
                 <tbody>
                   {saved.map((r, i) => (
                     <tr key={i}>
                       <td style={td}>{r.label || "—"}</td>
                       <td style={{ ...td, color: PAL.muted }}>{IMODES[r.payment_mode] ?? r.payment_mode}</td>
-                      <td style={td}><span className={`chip-c ${isNoir(r.payment_mode) ? "chip-c-amber" : "chip-c-blue"}`}>{isNoir(r.payment_mode) ? "Caisse sociale" : "Comptable"}</span></td>
                       <td style={{ ...td, color: PAL.muted, fontFamily: mono }}>{r.due_date ? r.due_date.slice(0, 10).split("-").reverse().join("/") : "—"}</td>
                       <td style={{ ...td, padding: "5px 0 5px 8px", textAlign: "right", fontFamily: mono, fontWeight: 700 }}>{fmtMAD(parseFloat(r.amount) || 0)}</td>
                     </tr>

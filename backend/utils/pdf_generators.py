@@ -316,7 +316,7 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     # de chevaucher la signature/le pied de page.
     _PAY_LABEL = {
         "ov_permanent": "OV permanent", "ov_ponctuel": "OV ponctuel", "cheque": "Chèque",
-        "caisse_sociale": "Caisse sociale", "autre": "Autre",
+        "caisse_sociale": "Caisse comptable",
     }
     ROW_STEP = 4.6 * mm
     HEADER_MM = 5.5 + 1.5 + 4.2   # titre + en-têtes de colonnes + filet
@@ -345,9 +345,6 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
             amt = float(it.get("amount") or 0); planned += amt
             label = (it.get("label") or "—")[:26]
             mode = _PAY_LABEL.get(it.get("payment_mode"), it.get("payment_mode") or "—")
-            # Flag « caisse sociale » seulement si le mode ne le dit pas déjà (évite la redondance).
-            if it.get("nc") == "noir" and it.get("payment_mode") != "caisse_sociale":
-                mode += " · c. sociale"
             raw = it.get("due_date")
             due = "—"
             if raw:
@@ -498,35 +495,31 @@ def render_purchase_request_pdf(pr: dict, quotes: list, installments: list | Non
     c.drawString(20 * mm, y - 6 * mm, f"Décision : {dec.upper()} {f'({comment})' if comment else ''}")
 
     # ── Mode & échéancier de paiement prévisionnel (rattaché à la DA) ──
+    # Tous les modes de règlement (dont Caisse comptable) sont rattachés au
+    # journal comptable — plus de distinction « caisse sociale/comptable ».
     if installments:
         _PAY_LABEL = {
             "ov_permanent": "OV permanent", "ov_ponctuel": "OV ponctuel", "cheque": "Chèque",
-            "caisse_sociale": "Caisse sociale", "autre": "Autre",
+            "caisse_sociale": "Caisse comptable",
         }
         y -= 20 * mm
         c.setFont("Helvetica-Bold", 10)
         c.drawString(20 * mm, y, "Mode & échéancier de paiement (prévisionnel) :")
         y -= 8 * mm
-        # Colonnes alignées sur le tableau à l'écran : Jalon | Règlement | Nature | Date prévue | Montant
+        # Colonnes alignées sur le tableau à l'écran : Jalon | Règlement | Date prévue | Montant
         c.setFont("Helvetica-Bold", 9)
         c.drawString(20 * mm, y, "Jalon")
         c.drawString(70 * mm, y, "Règlement")
-        c.drawString(108 * mm, y, "Nature")
-        c.drawString(138 * mm, y, "Date prévue")
+        c.drawString(120 * mm, y, "Date prévue")
         c.drawRightString(width - 20 * mm, y, "Montant")
         c.setLineWidth(0.5)
         c.line(20 * mm, y - 2 * mm, width - 20 * mm, y - 2 * mm)
         c.setFont("Helvetica", 9)
         planned = 0.0
-        social = 0.0
         for it in installments:
             amt = float(it.get("amount") or 0); planned += amt
             label = (it.get("label") or "—")[:28]
             mode = _PAY_LABEL.get(it.get("payment_mode"), it.get("payment_mode") or "—")
-            is_social = it.get("nc") == "noir"
-            nature = "Caisse sociale" if is_social else "Comptable"
-            if is_social:
-                social += amt
             raw = it.get("due_date")
             due = "—"
             if raw:
@@ -534,24 +527,18 @@ def render_purchase_request_pdf(pr: dict, quotes: list, installments: list | Non
                 due = f"{parts[2]}/{parts[1]}/{parts[0]}" if len(parts) == 3 else str(raw)[:10]
             y -= 7 * mm
             c.drawString(20 * mm, y, label)
-            c.drawString(70 * mm, y, mode[:22])
-            c.drawString(108 * mm, y, nature)
-            c.drawString(138 * mm, y, due)
+            c.drawString(70 * mm, y, mode[:24])
+            c.drawString(120 * mm, y, due)
             c.drawRightString(width - 20 * mm, y, fmt_mad(amt))
         y -= 3 * mm
         c.setLineWidth(0.5)
         c.line(20 * mm, y, width - 20 * mm, y)
         y -= 6 * mm
-        comptable = planned - social
         c.setFont("Helvetica-Bold", 9)
         c.drawString(20 * mm, y, "Total planifié :")
         c.drawRightString(width - 20 * mm, y, fmt_mad(planned))
-        # Ventilation par nature : chaque ligne est comptabilisée selon la sienne.
-        # Pas d'agrégat « dépassement en caisse sociale ».
         y -= 6 * mm
         c.setFont("Helvetica", 8.5)
-        c.drawString(20 * mm, y, f"Dont caisse sociale : {fmt_mad(social)}")
-        c.drawRightString(width - 20 * mm, y, f"Dont comptable : {fmt_mad(comptable)}")
         retenu = next((q for q in quotes if q.get("retenu")), None)
         if retenu:
             y -= 5 * mm
