@@ -644,6 +644,7 @@ class QuotationCreate(BaseModel):
     delivery_required: bool = False
     delivery_cost: Optional[float] = None  # None = coût inconnu / à préciser ; 0 = gratuite
     delivery_included: bool = False  # la livraison est-elle déjà comprise dans `amount` ?
+    vat_percent: float = 20  # `amount` reste HT ; total_incl_vat (TTC) est calculé en base
 
 
 class QuotationUpdate(BaseModel):
@@ -658,6 +659,7 @@ class QuotationUpdate(BaseModel):
     delivery_required: Optional[bool] = None
     delivery_cost: Optional[float] = None
     delivery_included: Optional[bool] = None
+    vat_percent: Optional[float] = None
 
 
 class ClassTuitionUpdate(BaseModel):

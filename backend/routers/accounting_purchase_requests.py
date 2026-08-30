@@ -468,8 +468,8 @@ async def create_order(
         "title": title,
         "supplier_id": quote.get("supplier_id"),
         "quantity": 1,
-        "unit_price": float(quote.get("amount") or 0) + delivery_extra,
-        "vat_percent": 0,  # le montant du devis (+ livraison éventuelle) est pris tel quel
+        "unit_price": float(quote.get("amount") or 0) + delivery_extra,  # HT + livraison éventuelle
+        "vat_percent": float(quote.get("vat_percent") or 0),  # repris du devis retenu — purchases.total_incl_vat s'en charge
         "currency": quote.get("currency") or "MAD",
         "purchase_date": datetime.now(timezone.utc).date().isoformat(),
         "payment_method": pr.get("payment_mode"),

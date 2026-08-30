@@ -50,6 +50,7 @@ type Quote = {
   amount: number; currency: string; rank: number; retenu: boolean;
   comment: string | null; attachment_name: string | null; attachment_path: string | null;
   delivery_required: boolean; delivery_cost: number | null; delivery_included: boolean;
+  vat_percent: number; total_incl_vat: number;
 };
 // Formatage nombre SANS suffixe (fmtMAD ajoute déjà « MAD » → évite le doublon).
 const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n);
@@ -64,12 +65,14 @@ function quoteAmountLabel(q: Quote): string {
   }
   return `${base} ${cur}`;
 }
-// Total RÉEL du devis (contrairement à quoteAmountLabel, qui ne fait
-// qu'afficher la décomposition « 4 800 + 50 » sans additionner) — à utiliser
-// partout où un montant chiffré/comparable est requis (échéancier, écarts).
+// Total RÉELLEMENT dû (TTC), calculé côté base (colonne générée
+// total_incl_vat = (amount + livraison éventuelle) × (1 + vat_percent/100))
+// — contrairement à quoteAmountLabel, qui ne fait qu'afficher la
+// décomposition HT « 4 800 + 50 » sans additionner ni appliquer la TVA. À
+// utiliser partout où un montant chiffré/comparable est requis (échéancier,
+// écarts, commande).
 function quoteTrueTotal(q: Quote): number {
-  const extra = q.delivery_required && !q.delivery_included ? (q.delivery_cost ?? 0) : 0;
-  return q.amount + extra;
+  return q.total_incl_vat;
 }
 type Order = {
   id: string; purchase_number: string; supplier_name: string | null; total_incl_vat: number;
@@ -240,9 +243,15 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
   const [deliveryIncluded, setDeliveryIncluded] = useState(false);  // livraison comprise dans le total du devis ?
   const [form, setForm] = useState({
     supplier_id: "", quote_number: "", quote_date: new Date().toISOString().slice(0, 10),
-    expiration_date: "", amount: "0", currency: "MAD", comment: "", delivery_cost: "",
+    expiration_date: "", amount: "0", currency: "MAD", comment: "", delivery_cost: "", vat_percent: "20",
   });
   const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
+
+  // Aperçu TTC en direct (même formule que la colonne générée total_incl_vat
+  // en base) — purement visuel, la valeur enregistrée reste calculée côté DB.
+  const previewDeliveryExtra = deliveryMode === "paid" && !deliveryIncluded ? (parseFloat(form.delivery_cost) || 0) : 0;
+  const previewHt = (parseFloat(form.amount) || 0) + previewDeliveryExtra;
+  const previewTtc = previewHt * (1 + (parseFloat(form.vat_percent) || 0) / 100);
 
   async function submit() {
     if (!form.quote_number.trim()) { toast.error("Le numéro de devis est requis."); return; }
@@ -258,6 +267,7 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
         currency: form.currency,
         rank: nextRank,
         comment: form.comment.trim() || null,
+        vat_percent: parseFloat(form.vat_percent) || 0,
         delivery_required: deliveryMode !== "none",
         delivery_cost:
           deliveryMode === "free" ? 0
@@ -326,15 +336,27 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
           />
         )}
 
-        {/* N° devis | Montant */}
+        {/* N° devis | Montant HT */}
         <div><label style={labelStyle}>N° devis{req}</label><input className="u-input" style={cellInput} placeholder="ex. DV-2026-014" value={form.quote_number} onChange={e => set("quote_number", e.target.value)} /></div>
         <div>
-          <label style={labelStyle}>Montant du devis</label>
+          <label style={labelStyle}>Montant du devis (HT, sans taxes)</label>
           <div style={{ ...segWrap, marginTop: 6 }}>
             <input type="number" min="0" step="any" style={segInput} value={form.amount} onChange={e => set("amount", e.target.value)} />
             <select style={segSelect} value={form.currency} onChange={e => set("currency", e.target.value)}>
               <option value="MAD">MAD</option><option value="EUR">EUR</option><option value="USD">USD</option>
             </select>
+          </div>
+        </div>
+
+        {/* TVA (%) | Montant TTC (calculé, lecture seule) */}
+        <div>
+          <label style={labelStyle}>TVA (%)</label>
+          <input type="number" min="0" max="100" step="any" className="u-input" style={cellInput} value={form.vat_percent} onChange={e => set("vat_percent", e.target.value)} />
+        </div>
+        <div>
+          <label style={labelStyle}>Montant du devis (TTC)</label>
+          <div style={{ ...cellInput, display: "flex", alignItems: "center", background: "var(--pal-pale)", fontWeight: 700, color: PAL.ink }}>
+            {fmtNum(previewTtc)} {form.currency}
           </div>
         </div>
 
@@ -746,7 +768,8 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
                 <tbody>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={cell}>{q.supplier_name || "—"}</td>)}</tr>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, color: PAL.muted }}>{q.quote_number}</td>)}</tr>
-                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}>{quoteAmountLabel(q)}</td>)}</tr>
+                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}><span style={{ color: PAL.muted, fontWeight: 400, fontSize: 10.5 }}>HT </span>{quoteAmountLabel(q)}</td>)}</tr>
+                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}><span style={{ color: PAL.muted, fontWeight: 400, fontSize: 10.5 }}>TTC ({q.vat_percent}%) </span>{fmtNum(q.total_incl_vat)} {q.currency || "MAD"}</td>)}</tr>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, color: PAL.muted, fontSize: 11.5 }}>{q.expiration_date ? `échéance ${new Date(q.expiration_date).toLocaleDateString("fr-FR")}` : ""}</td>)}</tr>
                   <tr>{pr.quotations.map(q => (
                     <td key={q.id} style={{ ...cell, fontSize: 11.5 }}>
