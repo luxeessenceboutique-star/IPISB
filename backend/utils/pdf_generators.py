@@ -371,7 +371,11 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     if installments:
         needed_mm = HEADER_MM + TAIL_MM + (ROW_STEP / mm) * len(installments)
         if (totals_top - safe_bottom) / mm >= needed_mm:
-            left_bottom = _draw_installments(totals_top, installments)
+            # Calé en bas de la zone disponible (juste au-dessus de la
+            # signature/du pied de page) plutôt qu'en haut, juste après le
+            # tableau produit — l'espace libre reste en haut, pas en bas.
+            top_y = safe_bottom + needed_mm * mm
+            left_bottom = _draw_installments(top_y, installments)
         else:
             overflow_to_p2 = True
             L(20, totals_top, "Échéancier de paiement", "Helvetica-Bold", 9.5, _INK)
