@@ -887,8 +887,9 @@ const cell: React.CSSProperties = { padding: "7px 12px", borderBottom: `1px soli
 
 // ── Échéancier de paiement (prévisionnel) ────────────────────────────────────
 // Bloc autonome du bon de commande : plan de versements échelonnés (jalon +
-// montant + mode + date). Total LIBRE — la somme peut différer du total TTC
-// (ex. avance « en noir » hors facture). N'alimente pas le journal de caisse
+// montant + mode + date). Le total planifié ne peut pas dépasser le devis
+// retenu/la commande (voir save() ci-dessous) — un total inférieur reste
+// permis (échéancier encore incomplet). N'alimente pas le journal de caisse
 // (phase 1 : planification uniquement).
 type IRow = { label: string; amount: string; payment_mode: string; due_date: string };
 // Tous les modes de règlement (dont Caisse comptable) sont rattachés au
@@ -903,13 +904,17 @@ const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
 function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; rows: IRow[]; label?: string }) {
   const planned = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const ecart = planned - total;
+  const overBudget = ecart > 0.005;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "flex-end", marginTop: 10, fontSize: 12, fontFamily: mono }}>
       <span style={{ color: PAL.muted }}>{label}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(total)}</b></span>
       <span style={{ color: PAL.muted }}>Planifié&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(planned)}</b></span>
       {Math.abs(ecart) > 0.005 && (
-        <span style={{ color: PAL.muted }} title="Écart entre le total planifié et le devis retenu. Chaque ligne est comptabilisée selon sa propre nature, il n'y a pas de « dépassement » global.">
-          Écart&nbsp;: <b style={{ color: PAL.ink }}>{ecart > 0 ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
+        <span
+          style={{ color: PAL.muted }}
+          title={overBudget ? "Le total planifié dépasse le devis retenu — l'enregistrement est bloqué tant que l'écart n'est pas résorbé." : "Le total planifié reste en dessous du devis retenu."}
+        >
+          Écart&nbsp;: <b style={{ color: overBudget ? "var(--pal-danger)" : PAL.ink }}>{overBudget ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
         </span>
       )}
     </div>
@@ -940,14 +945,17 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
   const delRow = (i: number) => setRows(rs => rs.filter((_, j) => j !== i));
 
   async function save() {
+    const items = rows
+      .filter(r => (parseFloat(r.amount) || 0) > 0 || r.label.trim())
+      .map(r => ({ label: r.label.trim() || null, amount: parseFloat(r.amount) || 0, payment_mode: r.payment_mode, due_date: r.due_date || null }));
+    const planned = items.reduce((s, r) => s + r.amount, 0);
+    if (planned > total + 0.01) {
+      toast.error(`Le total planifié (${fmtMAD(planned)}) dépasse ${totalLabel === "Commande" ? "la commande" : totalLabel.toLowerCase()} (${fmtMAD(total)}) — écart de ${fmtMAD(planned - total)}.`);
+      return;
+    }
     setBusy(true);
     try {
-      const payload = {
-        installments: rows
-          .filter(r => (parseFloat(r.amount) || 0) > 0 || r.label.trim())
-          .map(r => ({ label: r.label.trim() || null, amount: parseFloat(r.amount) || 0, payment_mode: r.payment_mode, due_date: r.due_date || null })),
-      };
-      const data = await api.put(`/api/accounting/purchase-requests/${prId}/installments`, payload);
+      const data = await api.put(`/api/accounting/purchase-requests/${prId}/installments`, { installments: items });
       setSaved(mapRows(data));
       setEditing(false);
       toast.success("Échéancier enregistré.");

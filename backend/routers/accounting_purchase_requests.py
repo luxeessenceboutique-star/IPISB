@@ -528,8 +528,9 @@ async def replace_installments(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Remplace intégralement l'échéancier (admin). Saisi une fois le devis retenu,
-    avant/à l'émission de la commande. Total libre : la somme des échéances peut
-    différer du montant retenu (ex. avance « en noir » hors facture)."""
+    avant/à l'émission de la commande. Le total planifié ne peut pas dépasser le
+    devis retenu/la commande — un total inférieur reste permis (échéancier
+    encore incomplet)."""
     pr = _get_or_404(db, pr_id)
     _require_decide(user, pr.get("budget_estimate") or 0)
     if pr["status"] not in INSTALLMENT_EDIT_ALLOWED:
@@ -540,6 +541,28 @@ async def replace_installments(
         for i, it in enumerate(body.installments, start=1)
         if float(it.amount or 0) > 0 or (it.label or "").strip()
     ]
+
+    # Le total planifié ne doit pas dépasser le devis retenu/la commande —
+    # même référence que schedTotal côté frontend (commande si émise, sinon
+    # devis retenu TTC, sinon budget estimé).
+    reference_total = float(pr.get("budget_estimate") or 0)
+    order_rows = db.from_("purchases").select("total_incl_vat").eq("purchase_request_id", pr_id).limit(1).execute().data or []
+    if order_rows:
+        reference_total = float(order_rows[0].get("total_incl_vat") or 0)
+    else:
+        quote_rows = (
+            db.from_("quotations").select("total_incl_vat")
+            .eq("purchase_request_id", pr_id).eq("retenu", True).limit(1).execute().data or []
+        )
+        if quote_rows:
+            reference_total = float(quote_rows[0].get("total_incl_vat") or 0)
+    planned_total = sum(float(r.get("amount") or 0) for r in to_insert)
+    if planned_total > reference_total + 0.01:
+        raise HTTPException(
+            400,
+            f"Le total planifié ({planned_total:.2f} MAD) dépasse le montant de référence "
+            f"({reference_total:.2f} MAD) — écart de {planned_total - reference_total:.2f} MAD.",
+        )
 
     db.from_("purchase_installments").delete().eq("purchase_request_id", pr_id).execute()
     if to_insert:
