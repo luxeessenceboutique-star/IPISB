@@ -67,6 +67,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 type FormItem = { article: string; prestataire: string; montant: string };
 const EMPTY_ROW: FormItem = { article: "", prestataire: "", montant: "" };
+const MAX_AMOUNT = 4500; // plafond réglementaire d'une note de caisse (MAD)
 
 function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () => void; onSaved: () => void }) {
   const editing = !!note;
@@ -93,6 +94,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   const removeRow = (i: number) => setItems(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows);
 
   const total = items.reduce((s, r) => s + (parseFloat(r.montant) || 0), 0);
+  const overCap = total > MAX_AMOUNT;
 
   async function submit() {
     if (!form.beneficiary_name.trim()) { toast.error("Le nom du bénéficiaire est obligatoire."); return; }
@@ -100,6 +102,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       .map(r => ({ article: r.article.trim() || null, prestataire: r.prestataire.trim() || null, montant: parseFloat(r.montant) || 0 }))
       .filter(r => r.article || r.prestataire || r.montant);
     if (!payloadItems.length) { toast.error("Ajoutez au moins une ligne au tableau."); return; }
+    if (overCap) { toast.error(`Le montant total (${fmtMAD(total)}) dépasse le plafond des notes de caisse (${fmtMAD(MAX_AMOUNT)}).`); return; }
     const payload = {
       note_date: form.note_date,
       beneficiary_name: form.beneficiary_name.trim(),
@@ -225,11 +228,16 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
           <tfoot>
             <tr>
               <td colSpan={2} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: PAL.muted, fontFamily: sans, fontSize: 13 }}>Total Global</td>
-              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: mono, fontWeight: 700, color: "var(--pal-primary)" }}>{fmtMAD(total)}</td>
+              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: mono, fontWeight: 700, color: overCap ? "var(--pal-danger)" : "var(--pal-primary)" }}>{fmtMAD(total)}</td>
               <td />
             </tr>
           </tfoot>
         </table>
+        {overCap && (
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--pal-danger)", fontFamily: sans }}>
+            Le montant dépasse le plafond des notes de caisse ({fmtMAD(MAX_AMOUNT)}).
+          </div>
+        )}
       </div>
 
       <label style={labelStyle}>Commentaire (interne, optionnel)</label>

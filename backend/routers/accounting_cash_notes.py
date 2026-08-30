@@ -11,6 +11,7 @@ from utils.pdf_generators import render_cash_note_pdf
 router = APIRouter(prefix="/accounting/cash-notes", tags=["accounting"])
 
 NC_VALUES = {"noir", "comptable"}
+MAX_AMOUNT = 4500  # plafond réglementaire d'une note de caisse (MAD)
 # Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat).
 PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
@@ -191,6 +192,8 @@ async def create_note(
     if body.nc not in NC_VALUES:
         raise HTTPException(400, "n/c invalide (noir | comptable)")
     items, total = _clean_items(body.items)
+    if total > MAX_AMOUNT:
+        raise HTTPException(400, f"Le montant total ({total:.2f} MAD) dépasse le plafond des notes de caisse ({MAX_AMOUNT} MAD).")
     row = {
         "note_date": body.note_date or _today(),
         "beneficiary_name": body.beneficiary_name.strip(),
@@ -258,6 +261,8 @@ async def update_note(
         updates["nc"] = data["nc"]
     if "items" in data:
         items, total = _clean_items(body.items)
+        if total > MAX_AMOUNT:
+            raise HTTPException(400, f"Le montant total ({total:.2f} MAD) dépasse le plafond des notes de caisse ({MAX_AMOUNT} MAD).")
         updates["items"] = items
         updates["total"] = total
 
