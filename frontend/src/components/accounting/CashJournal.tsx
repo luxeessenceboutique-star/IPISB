@@ -198,6 +198,7 @@ function ManualEntryModal({ channel, onClose, onSaved }: { channel: Channel; onC
     if (!form.action.trim()) { toast.error("L'action est obligatoire."); return; }
     const amount = parseFloat(form.amount);
     if (!(amount > 0)) { toast.error("Le montant doit être positif."); return; }
+    if (channel === "caisse" && amount > 4500) { toast.error("Une transaction en Journal de caisse ne peut pas dépasser 4 500 MAD."); return; }
     setBusy(true);
     try {
       const res: any = await api.post("/api/accounting/cash-journal", payload(channel, form, amount));
@@ -250,6 +251,7 @@ function EditEntryModal({ channel, entry, onClose, onSaved }: { channel: Channel
     if (!form.action.trim()) { toast.error("L'action est obligatoire."); return; }
     const amount = parseFloat(form.amount);
     if (!(amount > 0)) { toast.error("Le montant doit être positif."); return; }
+    if (channel === "caisse" && amount > 4500) { toast.error("Une transaction en Journal de caisse ne peut pas dépasser 4 500 MAD."); return; }
     setBusy(true);
     try {
       const res: any = await api.patch(`/api/accounting/cash-journal/${entry.id}`, payload(channel, form, amount));

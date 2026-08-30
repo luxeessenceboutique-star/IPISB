@@ -953,6 +953,11 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
       toast.error(`Le total planifié (${fmtMAD(planned)}) dépasse ${totalLabel === "Commande" ? "la commande" : totalLabel.toLowerCase()} (${fmtMAD(total)}) — écart de ${fmtMAD(planned - total)}.`);
       return;
     }
+    const overCash = items.find(r => r.payment_mode === "caisse_sociale" && r.amount > 4500);
+    if (overCash) {
+      toast.error(`« ${overCash.label || "Échéance"} » (${fmtMAD(overCash.amount)}) dépasse le plafond de 4 500 MAD pour un règlement en Caisse comptable.`);
+      return;
+    }
     setBusy(true);
     try {
       const data = await api.put(`/api/accounting/purchase-requests/${prId}/installments`, { installments: items });

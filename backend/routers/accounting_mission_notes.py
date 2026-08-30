@@ -15,6 +15,9 @@ router = APIRouter(prefix="/accounting/mission-notes", tags=["accounting"])
 NC_VALUES = {"comptable"}  # « noir » (caisse sociale) retiré — toujours rattaché au journal comptable
 # Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat).
 PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
+# Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD
+# que les notes de caisse) — ne s'applique pas aux modes bancaires.
+CASH_REGISTER_MAX = 4500
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.
@@ -408,6 +411,8 @@ async def pay_note(
     if body.payment_method not in PAYMENT_METHODS:
         raise HTTPException(400, "Mode de règlement invalide.")
     note = _load_note(db, note_id)
+    if body.payment_method == "caisse_sociale" and float(note.get("total") or 0) > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Un règlement en Caisse comptable ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
     status = note.get("status") or "pending"
     if status == "paid":
         raise HTTPException(400, "Note déjà payée.")

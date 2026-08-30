@@ -11,6 +11,9 @@ from utils.uploads import validate_and_read
 router = APIRouter(prefix="/accounting/payments", tags=["accounting"])
 
 PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
+# Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD
+# que les notes de caisse) — ne s'applique pas aux modes bancaires.
+CASH_REGISTER_MAX = 4500
 
 # ── Pièces justificatives (scan) du paiement ──────────────────────────────
 ENTITY_TYPE = "purchase_payment"
@@ -93,6 +96,8 @@ async def create_payment(
         raise HTTPException(400, "Invalid payment_method")
     if body.amount <= 0:
         raise HTTPException(400, "Amount must be greater than zero")
+    if body.payment_method == "caisse_sociale" and body.amount > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Un règlement en Caisse comptable ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
 
     # Verify purchase exists
     purchase_exists = db.from_("purchases").select("id, purchase_request_id").eq("id", body.purchase_id).execute().data

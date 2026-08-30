@@ -27,6 +27,9 @@ LOCKED_STATUSES = {"commande_emise", "annulee"}
 # renommée Caisse comptable et rattachée au journal comptable (tous les modes
 # sont désormais de nature comptable — plus de distinction « noir »).
 INSTALLMENT_MODES = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
+# Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD que
+# les notes de caisse) — ne s'applique pas aux modes bancaires (chèque, OV).
+CASH_REGISTER_MAX = 4500
 # Le mode/échéancier se saisit APRÈS le choix du devis (devis retenu) et reste
 # modifiable jusqu'à l'émission de la commande incluse.
 INSTALLMENT_EDIT_ALLOWED = {"devis_valide", "commande_emise"}
@@ -541,6 +544,17 @@ async def replace_installments(
         for i, it in enumerate(body.installments, start=1)
         if float(it.amount or 0) > 0 or (it.label or "").strip()
     ]
+
+    # Règlement en Caisse comptable : plafonné à 4 500 MAD par échéance
+    # (transaction), comme les notes de caisse — les modes bancaires ne sont
+    # pas concernés.
+    for row in to_insert:
+        if row["payment_mode"] == "caisse_sociale" and row["amount"] > CASH_REGISTER_MAX:
+            raise HTTPException(
+                400,
+                f"« {row['label'] or 'Échéance'} » ({row['amount']:.2f} MAD) dépasse le plafond "
+                f"de {CASH_REGISTER_MAX} MAD pour un règlement en Caisse comptable.",
+            )
 
     # Le total planifié ne doit pas dépasser le devis retenu/la commande —
     # même référence que schedTotal côté frontend (commande si émise, sinon

@@ -27,6 +27,9 @@ NC_VALUES = {"comptable"}
 CHANNELS = {"caisse", "banque"}
 CASH = "caisse"
 BANK = "banque"
+# Plafond réglementaire d'une transaction en Journal de caisse (espèces) — ne
+# s'applique pas au Journal des comptes (banque).
+CASH_REGISTER_MAX = 4500
 
 # Modes de règlement normalisés et registre de rattachement.
 BANK_MODES = {"virement", "versement", "ov_permanent", "ov_ponctuel", "cheque", "prelevement", "carte"}
@@ -665,6 +668,8 @@ async def create_entry(
         raise HTTPException(400, "Le montant doit être positif")
     if not (body.action or "").strip():
         raise HTTPException(400, "L'action est obligatoire")
+    if channel == CASH and body.amount > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Une transaction en Journal de caisse ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
 
     # Mode de règlement : obligatoire et forcément bancaire au Journal des comptes.
     mode = normalize_mode(body.payment_mode)
@@ -971,6 +976,9 @@ async def update_entry(
             raise HTTPException(400, "Mode de règlement bancaire requis (virement, OV, chèque…)")
     elif target_mode in BANK_MODES:
         raise HTTPException(400, "Mode bancaire : la ligne relève du journal des comptes")
+    target_amount = updates.get("amount", entry.get("amount") or 0)
+    if target_channel == CASH and float(target_amount or 0) > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Une transaction en Journal de caisse ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
 
     if user.can_access_accounting_full():
         if not updates:

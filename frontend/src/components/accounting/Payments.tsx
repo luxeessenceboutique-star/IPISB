@@ -91,6 +91,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
   async function submit() {
     const amt = parseFloat(form.amount);
     if (!amt || amt <= 0) { toast.error("Le montant doit être supérieur à zéro."); return; }
+    if (form.payment_method === "caisse_sociale" && amt > 4500) { toast.error("Un règlement en Caisse comptable ne peut pas dépasser 4 500 MAD."); return; }
     if (scanFile && scanFile.size > 20 * 1024 * 1024) { toast.error("Le scan dépasse 20 Mo."); return; }
     setBusy(true);
     try {
@@ -578,6 +579,7 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (form.payment_method === "caisse_sociale" && note.total > 4500) { toast.error("Un règlement en Caisse comptable ne peut pas dépasser 4 500 MAD."); return; }
     if (docFile && docFile.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
     setBusy(true);
     try {
