@@ -215,17 +215,11 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
             yd -= 4.6 * mm; L(120, yd, line, "Helvetica-Oblique", 8.5, _MUTED)
 
     # ── Encadré gris : métadonnées (issues de la DA) ──
-    pay_mode = PAY_MODE_LABELS.get(purchase.get("payment_method") or pr.get("payment_mode"), "—")
-    terms = supplier.get("payment_terms_days")
     rows = [
         ("Date", purchase.get("purchase_date") or "—"),
         ("Bon de commande N°", purchase.get("purchase_number") or "—"),
         ("N° demande (DA)", pr.get("request_number") or "—"),
-        ("Modalité de paiement", f"{terms} jours" if terms is not None else "—"),
-        ("Mode de paiement", pay_mode),
-        ("Émis par", pr.get("requester_name") or COMPANY["name"]),
-        ("Projet", pr.get("project") or "—"),
-        ("Activité", pr.get("activity") or "—"),
+        ("N° devis", (quote or {}).get("quote_number") or "—"),
     ]
     box_top = height - 96 * mm
     row_h = 6 * mm
