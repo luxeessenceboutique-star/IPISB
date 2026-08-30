@@ -160,7 +160,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
           </div>
         </div>
 
-        <label style={labelStyle}>Référence (N° Chèque, virement…)</label>
+        <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <label style={labelStyle}>Scan de la pièce justificative</label>
@@ -429,7 +429,7 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
           </div>
         </div>
 
-        <label style={labelStyle}>Référence (N° Chèque, virement…)</label>
+        <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
@@ -581,7 +581,7 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
           </div>
         </div>
 
-        <label style={labelStyle}>Référence (N° Chèque, virement…)</label>
+        <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
