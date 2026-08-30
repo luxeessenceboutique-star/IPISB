@@ -894,7 +894,7 @@ type IRow = { label: string; amount: string; payment_mode: string; due_date: str
 // Tous les modes de règlement (dont Caisse comptable) sont rattachés au
 // journal comptable — plus de distinction « caisse sociale/comptable ».
 const IMODES: Record<string, string> = PAY_MODE;
-const JALON_SUGGESTIONS = ["Avance", "À la commande", "À la livraison", "Après contrôle qualité", "Après montage", "Pourboire livreur", "Mensualité 1", "Mensualité 2", "Mensualité 3", "Solde"];
+const JALON_SUGGESTIONS = ["Avance", "À la commande", "À la livraison", "Après contrôle qualité", "Après montage", "Mensualité 1", "Mensualité 2", "Mensualité 3", "Solde"];
 const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
   label: d.label ?? "", amount: String(d.amount ?? 0),
   payment_mode: d.payment_mode ?? "cheque", due_date: d.due_date ?? "",
