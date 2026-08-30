@@ -81,7 +81,6 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
     amount: preset?.amount != null ? String(preset.amount) : "",
     payment_date: new Date().toISOString().slice(0, 10),
     payment_method: preset?.method ?? "cheque",
-    reference: "",
     comment: "",
   });
   const [scanFile, setScanFile] = useState<File | null>(null);
@@ -100,7 +99,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
         amount: amt,
         payment_date: form.payment_date,
         payment_method: form.payment_method,
-        reference: form.reference || null,
+        reference: null,
         comment: form.comment || null,
         installment_id: preset?.installmentId ?? null,
       });
@@ -152,18 +151,21 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={labelStyle}>Mode de paiement</label>
-            <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            {preset?.method ? (
+              <div style={{ ...fieldStyle, display: "flex", alignItems: "center", background: "var(--pal-pale)", color: PAL.ink, fontWeight: 600 }}>
+                {PAYMENT_METHODS[form.payment_method] ?? form.payment_method}
+              </div>
+            ) : (
+              <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
+                {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label style={labelStyle}>Date du paiement</label>
             <input type="date" value={form.payment_date} onChange={e => setForm(f => ({ ...f, payment_date: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
         </div>
-
-        <label style={labelStyle}>Justification</label>
-        <input type="text" placeholder="Ex: CH-874291" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <label style={labelStyle}>Scan de la pièce justificative</label>
         <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, marginTop: 6, marginBottom: 4 }}>
