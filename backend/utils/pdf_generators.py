@@ -295,6 +295,8 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     L(CX["ttva"], ty, fmt_mad(total_tva), "Helvetica", 8, _INK)
     R(CX["ttc"], ty, fmt_mad(total_ttc), "Helvetica", 8, _INK)
 
+    fy = 42 * mm  # y du filet de pied de page — défini tôt, utilisé aussi par l'échéancier/la signature ci-dessous.
+
     # ── Totaux (colonne droite) ──
     totals_top = ty - 12 * mm
     ty = totals_top
@@ -317,20 +319,30 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
             if d_cost <= 0:  # gratuite
                 d_txt = "Gratuite"; d_col = (0.0, 0.55, 0.30)
             else:
-                d_txt = f"{fmt_mad(d_cost)} MAD{suffix}"; d_col = _INK
+                d_txt = f"{fmt_mad(d_cost)}{suffix}"; d_col = _INK  # fmt_mad() ajoute déjà « MAD »
         ty -= 6 * mm
         L(150, ty, "Livraison", "Helvetica", 9, _MUTED)
         R(190, ty, d_txt, "Helvetica-Bold", 9, d_col)
     right_bottom = ty
 
     # ── Échéancier de paiement prévisionnel (colonne gauche) ──
-    left_bottom = totals_top
-    if installments:
-        _PAY_LABEL = {
-            "ov_permanent": "OV permanent", "ov_ponctuel": "OV ponctuel", "cheque": "Chèque",
-            "caisse_sociale": "Caisse sociale", "autre": "Autre",
-        }
-        ey = totals_top
+    # Un pas de ligne fixe (confortable, jamais compressé jusqu'à l'illisible)
+    # — s'il n'y a pas la place pour toutes les échéances au-dessus de
+    # `safe_bottom`, l'échéancier bascule intégralement en page 2 plutôt que
+    # de chevaucher la signature/le pied de page.
+    _PAY_LABEL = {
+        "ov_permanent": "OV permanent", "ov_ponctuel": "OV ponctuel", "cheque": "Chèque",
+        "caisse_sociale": "Caisse sociale", "autre": "Autre",
+    }
+    ROW_STEP = 4.6 * mm
+    HEADER_MM = 5.5 + 1.5 + 4.2   # titre + en-têtes de colonnes + filet
+    TAIL_MM = 4.8                  # ligne « Total planifié » + marge
+    safe_bottom = fy + 14 * mm      # marge au-dessus du filet de pied de page
+
+    def _draw_installments(top_y, rows):
+        """Dessine le tableau Échéancier à partir de `top_y`. Retourne le y
+        juste sous la dernière ligne (pour y placer la signature)."""
+        ey = top_y
         L(20, ey, "Échéancier de paiement", "Helvetica-Bold", 9.5, _INK)
         ey -= 5.5 * mm
         L(20, ey, "Échéance", "Helvetica-Bold", 7, _MUTED)
@@ -342,7 +354,7 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
         c.line(20 * mm, ey, 135 * mm, ey)
         ey -= 4.2 * mm
         planned = 0.0
-        for it in installments:
+        for it in rows:
             amt = float(it.get("amount") or 0); planned += amt
             label = (it.get("label") or "—")[:26]
             mode = _PAY_LABEL.get(it.get("payment_mode"), it.get("payment_mode") or "—")
@@ -358,39 +370,65 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
             L(66, ey, mode[:24], "Helvetica", 7, _MUTED)
             L(104, ey, due, "Helvetica", 7.5, _MUTED)
             R(135, ey, fmt_mad(amt), "Helvetica", 7.5, _INK)
-            ey -= 4.6 * mm
+            ey -= ROW_STEP
         c.setStrokeColorRGB(0.85, 0.85, 0.85); c.setLineWidth(0.4)
         c.line(20 * mm, ey + 2.2 * mm, 135 * mm, ey + 2.2 * mm)
         L(20, ey, "Total planifié", "Helvetica-Bold", 8, _INK)
         R(135, ey, fmt_mad(planned), "Helvetica-Bold", 8, _INK)
-        ey -= 4.8 * mm
-        left_bottom = ey
+        ey -= TAIL_MM * mm
+        return ey
 
-    # ── Signature (sous les deux colonnes, jamais sous le pied de page) ──
-    L(20, max(min(right_bottom, left_bottom) - 10 * mm, 60 * mm), "Signature :", "Helvetica", 9, _INK)
+    left_bottom = totals_top
+    overflow_to_p2 = False
+    if installments:
+        needed_mm = HEADER_MM + TAIL_MM + (ROW_STEP / mm) * len(installments)
+        if (totals_top - safe_bottom) / mm >= needed_mm:
+            left_bottom = _draw_installments(totals_top, installments)
+        else:
+            overflow_to_p2 = True
+            L(20, totals_top, "Échéancier de paiement", "Helvetica-Bold", 9.5, _INK)
+            L(20, totals_top - 5.5 * mm, "→ Détail en page suivante.", "Helvetica-Oblique", 8.5, _MUTED)
+
+    # ── Signature (page 1, sauf si l'échéancier a basculé en page 2 — elle y
+    # est alors redessinée sous l'échéancier complet). ──
+    if not overflow_to_p2:
+        L(20, max(min(right_bottom, left_bottom) - 10 * mm, safe_bottom), "Signature :", "Helvetica", 9, _INK)
 
     # ── Pied de page : 3 colonnes ──
-    fy = 42 * mm
-    c.setStrokeColorRGB(0.8, 0.8, 0.8); c.setLineWidth(0.5)
-    c.line(20 * mm, fy + 4 * mm, width - 20 * mm, fy + 4 * mm)
+    def _draw_footer():
+        c.setStrokeColorRGB(0.8, 0.8, 0.8); c.setLineWidth(0.5)
+        c.line(20 * mm, fy + 4 * mm, width - 20 * mm, fy + 4 * mm)
 
-    def _footer_col(x, title, lines):
-        yy = fy
-        L(x, yy, title, "Helvetica-Bold", 7.5, _INK)
-        for ln in lines:
-            if ln:
-                yy -= 3.8 * mm; L(x, yy, ln, "Helvetica", 7.5, _MUTED)
+        def _footer_col(x, title, lines):
+            yy = fy
+            L(x, yy, title, "Helvetica-Bold", 7.5, _INK)
+            for ln in lines:
+                if ln:
+                    yy -= 3.8 * mm; L(x, yy, ln, "Helvetica", 7.5, _MUTED)
 
-    _footer_col(20, "IPISB — Identifiants",
-                [COMPANY.get("address"),
-                 f"RC : {COMPANY['rc']}" if COMPANY.get("rc") else None,
-                 f"IF : {COMPANY['if']}" if COMPANY.get("if") else None,
-                 f"ICE : {COMPANY['ice']}" if COMPANY.get("ice") else None])
-    _footer_col(85, "Banque (IPISB)",
-                [f"RIB : {COMPANY['rib']}" if COMPANY.get("rib") else None])
-    _footer_col(145, "Détails bancaires (fournisseur)",
-                [supplier.get("bank"), supplier.get("bank_branch"),
-                 f"RIB : {supplier['rib']}" if supplier.get("rib") else None])
+        _footer_col(20, "IPISB — Identifiants",
+                    [COMPANY.get("address"),
+                     f"RC : {COMPANY['rc']}" if COMPANY.get("rc") else None,
+                     f"IF : {COMPANY['if']}" if COMPANY.get("if") else None,
+                     f"ICE : {COMPANY['ice']}" if COMPANY.get("ice") else None])
+        _footer_col(85, "Banque (IPISB)",
+                    [f"RIB : {COMPANY['rib']}" if COMPANY.get("rib") else None])
+        _footer_col(145, "Détails bancaires (fournisseur)",
+                    [supplier.get("bank"), supplier.get("bank_branch"),
+                     f"RIB : {supplier['rib']}" if supplier.get("rib") else None])
+
+    _draw_footer()
+
+    if overflow_to_p2:
+        c.showPage()
+        c.setFillColorRGB(*_TEAL); c.setFont("Helvetica-Bold", 13)
+        c.drawString(20 * mm, height - 20 * mm,
+                     f"Bon de commande {purchase.get('purchase_number') or ''} — Échéancier (suite)")
+        c.setStrokeColorRGB(*_TEAL); c.setLineWidth(1.2)
+        c.line(20 * mm, height - 24 * mm, width - 20 * mm, height - 24 * mm)
+        p2_bottom = _draw_installments(height - 35 * mm, installments)
+        L(20, p2_bottom - 10 * mm, "Signature :", "Helvetica", 9, _INK)
+        _draw_footer()
 
     c.showPage()
     c.save()
