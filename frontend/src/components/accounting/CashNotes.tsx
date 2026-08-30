@@ -177,17 +177,8 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", alignItems: "center" }}>
-        <div>
-          <label style={labelStyle}>Nature (journal de caisse)</label>
-          <select value={form.nc} onChange={e => set("nc", e.target.value)} className="u-input" style={fieldStyle}>
-            <option value="comptable">Comptable (déclaré)</option>
-            <option value="noir">Caisse sociale (espèces)</option>
-          </select>
-        </div>
-        <div style={{ fontSize: 12, color: PAL.muted, marginTop: 8 }}>
-          Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total, cette nature) n'est comptabilisée qu'au paiement.
-        </div>
+      <div style={{ fontSize: 12, color: PAL.muted, marginTop: 4, marginBottom: 4 }}>
+        Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total) n'est comptabilisée qu'au paiement.
       </div>
 
       {/* Tableau dynamique Article / Prestataire / Montant */}
@@ -341,7 +332,7 @@ export function AccountingCashNotes() {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
               <thead>
                 <tr>
-                  {["N°", "Date", "Bénéficiaire", "CIN", "Objet", "Période", "Total (DH)", "n/c", "Statut", ""].map((h, i) => (
+                  {["N°", "Date", "Bénéficiaire", "CIN", "Objet", "Période", "Total (DH)", "Statut", ""].map((h, i) => (
                     <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 6 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
@@ -358,9 +349,6 @@ export function AccountingCashNotes() {
                       {n.period_from || n.period_to ? `${fmtDate(n.period_from)} → ${fmtDate(n.period_to)}` : "—"}
                     </td>
                     <td style={{ ...cell, fontFamily: mono, fontWeight: 700, textAlign: "right" }}>{fmtMAD(n.total)}</td>
-                    <td style={cell}>
-                      <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
-                    </td>
                     <td style={cell}>
                       <span className={`chip-c ${STATUS_TONES[n.status] ?? "chip-c-amber"}`} title={n.status === "rejected" && n.rejection_reason ? `Motif : ${n.rejection_reason}` : n.status === "paid" && n.payment_date ? `Payée le ${fmtDate(n.payment_date)}${n.paid_by_name ? ` · ${n.paid_by_name}` : ""}` : undefined}>
                         {STATUS_LABELS[n.status] ?? n.status}

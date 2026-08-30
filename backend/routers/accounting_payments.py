@@ -10,7 +10,7 @@ from utils.uploads import validate_and_read
 
 router = APIRouter(prefix="/accounting/payments", tags=["accounting"])
 
-PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
+PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
 
 # ── Pièces justificatives (scan) du paiement ──────────────────────────────
 ENTITY_TYPE = "purchase_payment"
@@ -171,10 +171,8 @@ async def commit_payment(db: Client, data: dict, user_id: str) -> dict:
     })
 
     # Journal : décaissement RÉEL (une ligne par paiement), ventilé selon le MODE de
-    # règlement — chèque / OV → Journal des comptes (banque), caisse sociale ou autre
-    # → Journal de caisse. La NATURE (n/c) en découle : 'caisse_sociale' → 'noir'
-    # (caisse sociale), sinon 'comptable'. Le scan éventuel ne change que le
-    # justificatif, jamais la nature (cf. sync_source_piece(..., update_nc=False)).
+    # règlement — chèque / OV → Journal des comptes (banque), caisse comptable ou
+    # autre → Journal de caisse. Toujours nc='comptable' (create_cash_entry).
     try:
         from routers.accounting_cash_journal import create_cash_entry
         reference = new_payment.get("recu_number") or new_payment.get("reference")
@@ -192,7 +190,7 @@ async def commit_payment(db: Client, data: dict, user_id: str) -> dict:
             prestataire=prestataire,
             action="Paiement achat" + (f" — {detail}" if detail else ""),
             justificatif="Sans pièce",   # aucun scan à la création ; justificatif re-synchronisé à l'upload
-            nc="noir" if payment_method == "caisse_sociale" else "comptable",
+            nc="comptable",
             source_type="purchase_payment",
             source_id=new_payment["id"],
             payment_method=payment_method,
@@ -339,7 +337,7 @@ async def delete_attachment(
         pass
     db.from_("accounting_attachments").delete().eq("id", attachment_id).execute()
     log_audit(db, user.id, "purchase_payment.attachment.delete", "purchase_payment", rows[0]["entity_id"])
-    # Journal de caisse : re-synchronise (repasse en 'noir' s'il ne reste plus de scan).
+    # Journal de caisse : re-synchronise le justificatif (nc reste 'comptable').
     try:
         from routers.accounting_cash_journal import sync_source_piece
         sync_source_piece(db, source_type=ENTITY_TYPE, source_id=rows[0]["entity_id"], update_nc=False)

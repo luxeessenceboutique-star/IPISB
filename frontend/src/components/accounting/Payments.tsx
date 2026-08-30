@@ -55,14 +55,13 @@ type Installment = {
 // Versement pré-rempli depuis une échéance planifiée.
 type Preset = { amount?: number; method?: string; installmentId?: string; label?: string };
 
-const isNoir = (m: string) => m === "caisse_sociale";
-
+// Tous les modes de règlement (dont Caisse comptable) sont rattachés au
+// journal comptable — plus de distinction « caisse sociale/comptable ».
 const PAYMENT_METHODS: Record<string, string> = {
   ov_permanent: "Virement Permanent",
   ov_ponctuel: "Virement Ponctuel",
   cheque: "Chèque",
-  caisse_sociale: "Caisse sociale",
-  autre: "Autre",
+  caisse_sociale: "Caisse comptable",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -301,7 +300,6 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
                       <span style={{ fontSize: 11, color: PAL.muted }}>{PAYMENT_METHODS[inst.payment_mode] ?? inst.payment_mode}</span>
-                      <span className={`chip-c ${isNoir(inst.payment_mode) ? "chip-c-amber" : "chip-c-blue"}`}>{isNoir(inst.payment_mode) ? "Caisse sociale" : "Comptable"}</span>
                       {inst.due_date && <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: PAL.muted, fontFamily: mono }}><Calendar size={11} />{new Date(inst.due_date).toLocaleDateString("fr-FR")}</span>}
                       {paid > 0 && !isPaid && <span style={{ fontSize: 11, color: PAL.muted }}>· payé {fmtMAD(paid)}</span>}
                     </div>
@@ -339,7 +337,7 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, background: PAL.paper }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: PAL.ink }}>
-                  <span>{PAYMENT_METHODS[p.payment_method]}</span>
+                  <span>{PAYMENT_METHODS[p.payment_method] ?? p.payment_method}</span>
                   <span style={{ fontFamily: mono }}>{fmtMAD(p.amount)}</span>
                 </div>
                 {p.recu_number && <div style={{ fontFamily: mono, fontSize: 10.5, color: "var(--pal-primary)", marginTop: 3 }}>{p.recu_number}</div>}
@@ -375,7 +373,7 @@ type CashNoteToPay = {
 
 function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onClose: () => void; onPaid: () => void }) {
   const [form, setForm] = useState({
-    payment_method: note.nc === "noir" ? "caisse_sociale" : "cheque",
+    payment_method: "cheque",
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
@@ -435,7 +433,7 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
-          Le décaissement sera comptabilisé en <strong>{note.nc === "noir" ? "caisse sociale" : "comptable"}</strong> (nature définie sur la note) au journal de caisse.
+          Le décaissement sera comptabilisé au journal de caisse.
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
@@ -493,7 +491,6 @@ function CashNotesToPay() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{n.beneficiary_name}</span>
-                <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
               </div>
               <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>
                 {n.reference ? `${n.reference} · ` : ""}{n.objet || "—"}
@@ -528,7 +525,7 @@ type MissionNoteToPay = {
 
 function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay; onClose: () => void; onPaid: () => void }) {
   const [form, setForm] = useState({
-    payment_method: note.nc === "noir" ? "caisse_sociale" : "cheque",
+    payment_method: "cheque",
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
@@ -588,7 +585,7 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
-          Le décaissement sera comptabilisé en <strong>{note.nc === "noir" ? "caisse sociale" : "comptable"}</strong> (nature définie sur la note) au journal de caisse.
+          Le décaissement sera comptabilisé au journal de caisse.
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
@@ -646,7 +643,6 @@ function MissionNotesToPay() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{n.beneficiary_name}</span>
-                <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
               </div>
               <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>
                 {n.reference ? `${n.reference} · ` : ""}{n.objet || "—"}

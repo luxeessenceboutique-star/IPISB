@@ -231,7 +231,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       <label style={labelStyle}>Objet de mission</label>
       <textarea value={form.objet} onChange={e => set("objet", e.target.value)} placeholder="Motif / objet de la mission" rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" }} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 14px", alignItems: "end" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", alignItems: "end" }}>
         <div>
           <label style={labelStyle}>Mission du</label>
           <input type="date" value={form.mission_from} onChange={e => set("mission_from", e.target.value)} className="u-input" style={fieldStyle} />
@@ -239,13 +239,6 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         <div>
           <label style={labelStyle}>… au</label>
           <input type="date" value={form.mission_to} onChange={e => set("mission_to", e.target.value)} className="u-input" style={fieldStyle} />
-        </div>
-        <div>
-          <label style={labelStyle}>Nature (journal de caisse)</label>
-          <select value={form.nc} onChange={e => set("nc", e.target.value)} className="u-input" style={fieldStyle}>
-            <option value="comptable">Comptable (déclaré)</option>
-            <option value="noir">Caisse sociale (espèces)</option>
-          </select>
         </div>
       </div>
 
@@ -310,7 +303,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       </div>
 
       <div style={{ fontSize: 12, color: PAL.muted, marginBottom: 12 }}>
-        Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total global, nature <strong>{form.nc === "noir" ? "caisse sociale" : "comptable"}</strong>) n'est comptabilisée qu'au paiement.
+        Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total global) n'est comptabilisée qu'au paiement.
       </div>
 
       <label style={labelStyle}>Commentaire (interne, optionnel)</label>
@@ -414,7 +407,7 @@ export function AccountingMissionNotes() {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
               <thead>
                 <tr>
-                  {["N°", "Date", "Bénéficiaire", "Objet", "Mission", "Total (DH)", "n/c", "Statut", ""].map((h, i) => (
+                  {["N°", "Date", "Bénéficiaire", "Objet", "Mission", "Total (DH)", "Statut", ""].map((h, i) => (
                     <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 5 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
@@ -430,9 +423,6 @@ export function AccountingMissionNotes() {
                       {n.mission_from || n.mission_to ? `${fmtDate(n.mission_from)} → ${fmtDate(n.mission_to)}` : "—"}
                     </td>
                     <td style={{ ...cell, fontFamily: mono, fontWeight: 700, textAlign: "right" }}>{fmtMAD(n.total)}</td>
-                    <td style={cell}>
-                      <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
-                    </td>
                     <td style={cell}>
                       <span className={`chip-c ${STATUS_TONES[n.status] ?? "chip-c-amber"}`} title={n.status === "rejected" && n.rejection_reason ? `Motif : ${n.rejection_reason}` : n.status === "paid" && n.payment_date ? `Payée le ${fmtDate(n.payment_date)}${n.paid_by_name ? ` · ${n.paid_by_name}` : ""}` : undefined}>
                         {STATUS_LABELS[n.status] ?? n.status}

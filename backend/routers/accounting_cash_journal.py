@@ -14,19 +14,16 @@ from utils.pdf_generators import render_cash_journal_pdf
 router = APIRouter(prefix="/accounting/cash-journal", tags=["accounting"])
 
 TYPES = {"entree", "sortie"}
-NC_VALUES = {"noir", "comptable"}
+# Historique : l'axe n/c distinguait 'comptable' (déclaré) de 'noir' (caisse
+# sociale, non comptabilisé). Cette distinction est retirée — nc vaut
+# désormais toujours 'comptable', quel que soit le registre, forcé à l'écriture
+# partout ci-dessous (création, modification, sync des pièces).
+NC_VALUES = {"comptable"}
 
 # ── Deux registres, une seule table (colonne `channel`, migration l36) ───────
-#   'caisse' → Journal de caisse   : espèces (caisse physique), axe n/c actif
+#   'caisse' → Journal de caisse   : espèces (caisse physique)
 #   'banque' → Journal des comptes : virement / OV / chèque / carte / prélèvement
-#
-# TROIS natures d'opération, et pas une quatrième (channel × nc) :
-#   1. caisse + nc='comptable' → caisse comptabilisée
-#   2. caisse + nc='noir'      → caisse sociale (noire) : NON comptabilisée
-#   3. banque                  → toujours comptabilisée ; nc est forcé à
-#                                'comptable' partout (création, modification,
-#                                sync des pièces, migration) — il n'existe pas
-#                                de mouvement bancaire non déclaré.
+# Les deux sont toujours comptabilisés (nc='comptable').
 CHANNELS = {"caisse", "banque"}
 CASH = "caisse"
 BANK = "banque"
@@ -36,7 +33,7 @@ BANK_MODES = {"virement", "versement", "ov_permanent", "ov_ponctuel", "cheque", 
 MODE_LABELS = {
     "virement": "Virement", "versement": "Versement", "ov_permanent": "OV permanent",
     "ov_ponctuel": "OV ponctuel", "cheque": "Chèque", "prelevement": "Prélèvement",
-    "carte": "Carte bancaire", "especes": "Espèces", "caisse_sociale": "Caisse sociale",
+    "carte": "Carte bancaire", "especes": "Espèces", "caisse_sociale": "Caisse comptable",
     "autre": "Autre",
 }
 # Les modes arrivent tantôt en clés canoniques ('ov_permanent', 'cheque'), tantôt
@@ -186,19 +183,13 @@ def piece_type_label(kinds) -> str | None:
 
 
 def sync_source_piece(db: Client, *, source_type: str, source_id: str, update_nc: bool = True) -> None:
-    """Recalcule le justificatif (et, si update_nc, le nc) de l'entrée de caisse
-    d'une source selon les pièces justificatives actuellement jointes :
-      - au moins une pièce → justificatif = type de pièce (+ nc='comptable' si update_nc)
-      - aucune pièce        → justificatif = 'Sans pièce'  (+ nc='noir' si update_nc)
+    """Recalcule le justificatif de l'entrée de caisse d'une source selon les
+    pièces justificatives actuellement jointes : au moins une pièce →
+    justificatif = type de pièce ; aucune pièce → justificatif = 'Sans pièce'
     (entity_type des pièces = source_type : 'revenue' | 'expense' | 'purchase_payment').
 
-    update_nc=False pour les paiements d'achat : leur nature (caisse sociale /
-    comptable) découle du MODE de règlement, pas de la présence d'un scan — un
-    justificatif ne doit donc jamais faire basculer un paiement en caisse sociale
-    vers 'comptable'.
-
-    L'axe n/c ne concerne que la CAISSE : une ligne du Journal des comptes
-    (channel='banque') reste 'comptable' même sans scan."""
+    `update_nc` est conservé par compatibilité d'appel mais n'a plus d'effet :
+    nc vaut toujours 'comptable', quel que soit le justificatif."""
     kinds = [
         r.get("kind")
         for r in (
@@ -211,13 +202,6 @@ def sync_source_piece(db: Client, *, source_type: str, source_id: str, update_nc
     has = label is not None
     base = db.from_("cash_journal").update({"justificatif": label if has else "Sans pièce"})
     base.eq("source_type", source_type).eq("source_id", source_id).execute()
-    if update_nc:
-        (
-            db.from_("cash_journal").update({"nc": "comptable" if has else "noir"})
-            .eq("source_type", source_type).eq("source_id", source_id)
-            .eq("channel", CASH)
-            .execute()
-        )
 
 
 def create_cash_entry(
@@ -260,7 +244,7 @@ def create_cash_entry(
         "prestataire": prestataire,
         "amount": _num(amount),
         "justificatif": justificatif,
-        "nc": "comptable" if channel == BANK else (nc if nc in NC_VALUES else "comptable"),
+        "nc": "comptable",  # nc conservé en paramètre pour compat d'appel, sans effet
         "channel": channel,
         "payment_mode": mode,
         "payment_ref": payment_ref,
@@ -623,8 +607,7 @@ async def export_cash_journal_xlsx(
             "sortie": _num(r.get("amount")) if r.get("type") != "entree" else 0,
             "solde": r.get("balance") or 0,
             "piece": r.get("payment_ref") or r.get("justificatif") or "",
-            "axe": (mode_label(r.get("payment_mode")) or "—") if is_bank
-                   else ("Caisse sociale" if r.get("nc") == "noir" else "Comptabilisé"),
+            "axe": (mode_label(r.get("payment_mode")) or "—") if is_bank else "Comptabilisé",
             "sign1": "",
             "sign2": "",
         }
@@ -678,8 +661,6 @@ async def create_entry(
         raise HTTPException(403, "Saisie non autorisée")
     if body.type not in TYPES:
         raise HTTPException(400, "Type invalide (entree | sortie)")
-    if body.nc not in NC_VALUES:
-        raise HTTPException(400, "n/c invalide (noir | comptable)")
     if body.amount < 0:
         raise HTTPException(400, "Le montant doit être positif")
     if not (body.action or "").strip():
@@ -700,8 +681,7 @@ async def create_entry(
         "prestataire": body.prestataire,
         "amount": _num(body.amount),
         "justificatif": body.justificatif,
-        # L'axe n/c ne vit qu'en caisse : une ligne bancaire est déclarée.
-        "nc": "comptable" if channel == BANK else body.nc,
+        "nc": "comptable",
         "channel": channel,
         "payment_mode": mode,
         "payment_ref": (body.payment_ref or "").strip() or None,
@@ -964,8 +944,8 @@ async def update_entry(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if "type" in updates and updates["type"] not in TYPES:
         raise HTTPException(400, "Type invalide (entree | sortie)")
-    if "nc" in updates and updates["nc"] not in NC_VALUES:
-        raise HTTPException(400, "n/c invalide (noir | comptable)")
+    if "nc" in updates:
+        updates["nc"] = "comptable"
     if "channel" in updates:
         _check_channel(updates["channel"])
         # Reventiler une ligne d'un journal à l'autre est un arbitrage comptable.
@@ -989,8 +969,6 @@ async def update_entry(
     if target_channel == BANK:
         if target_mode not in BANK_MODES:
             raise HTTPException(400, "Mode de règlement bancaire requis (virement, OV, chèque…)")
-        if updates:
-            updates["nc"] = "comptable"   # une ligne bancaire est déclarée par construction
     elif target_mode in BANK_MODES:
         raise HTTPException(400, "Mode bancaire : la ligne relève du journal des comptes")
 

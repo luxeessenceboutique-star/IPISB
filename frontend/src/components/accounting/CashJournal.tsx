@@ -12,11 +12,11 @@ const sans = '"Manrope", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 const titleFont = '"Cormorant Garamond", Georgia, serif';
 
-// ── Deux journaux, une même grille (migration l36) — TROIS natures ───────────
-//  1. Caisse comptabilisée   : channel='caisse', nc='comptable'  → comptabilisé
-//  2. Caisse sociale (noir)  : channel='caisse', nc='noir'       → NON comptabilisé
-//  3. Banque (virement/OV/chèque) : channel='banque'             → comptabilisé
-//     (le backend force nc='comptable' : pas de banque non déclarée)
+// ── Deux journaux, une même grille (migration l36) — toujours comptabilisés ──
+//  Caisse (espèces) et Banque (virement/OV/chèque) sont désormais tous deux
+//  nc='comptable' — l'ancienne distinction « caisse sociale (noir) » a été
+//  retirée (le backend force nc='comptable' à l'écriture, quel que soit le
+//  registre).
 export type Channel = "caisse" | "banque";
 
 // Modes de règlement du journal des comptes (clés partagées avec le backend).
@@ -32,7 +32,7 @@ const BANK_MODES: [string, string][] = [
 const MODE_LABELS: Record<string, string> = {
   virement: "Virement", versement: "Versement", ov_permanent: "OV permanent",
   ov_ponctuel: "OV ponctuel", cheque: "Chèque", prelevement: "Prélèvement",
-  carte: "Carte bancaire", especes: "Espèces", caisse_sociale: "Caisse sociale", autre: "Autre",
+  carte: "Carte bancaire", especes: "Espèces", caisse_sociale: "Caisse comptable", autre: "Autre",
 };
 
 const COPY = {
@@ -98,22 +98,15 @@ function StatTile({ label, value, tone }: { label: string; value: string; tone?:
   );
 }
 
-/** Champs propres au journal : n/c en caisse, mode + référence bancaire en banque. */
+/** Champs propres au journal : mode + référence bancaire en banque (la caisse
+ * est toujours comptabilisée — plus de choix n/c à faire). */
 function ChannelFields({ channel, form, set }: {
   channel: Channel;
   form: { nc: string; payment_mode: string; payment_ref: string };
   set: (k: string, v: string) => void;
 }) {
   if (channel === "caisse") {
-    return (
-      <div>
-        <label style={labelStyle}>n/c</label>
-        <select value={form.nc} onChange={e => set("nc", e.target.value)} className="u-input" style={fieldStyle}>
-          <option value="comptable">Caisse comptabilisée</option>
-          <option value="noir">Caisse sociale — non comptabilisée</option>
-        </select>
-      </div>
-    );
+    return null;
   }
   return (
     <div>
@@ -185,7 +178,7 @@ function payload(channel: Channel, form: FormState, amount: number) {
     type: form.type, entry_date: form.entry_date, action: form.action.trim(),
     prestataire: form.prestataire || null, amount,
     justificatif: form.justificatif || null,
-    nc: channel === "banque" ? "comptable" : form.nc,
+    nc: "comptable",
     channel,
     payment_mode: channel === "banque" ? form.payment_mode : null,
     payment_ref: channel === "banque" ? (form.payment_ref || null) : null,

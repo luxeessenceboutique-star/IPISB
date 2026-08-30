@@ -10,10 +10,10 @@ from utils.pdf_generators import render_cash_note_pdf
 
 router = APIRouter(prefix="/accounting/cash-notes", tags=["accounting"])
 
-NC_VALUES = {"noir", "comptable"}
+NC_VALUES = {"comptable"}  # « noir » (caisse sociale) retiré — toujours rattaché au journal comptable
 MAX_AMOUNT = 4500  # plafond réglementaire d'une note de caisse (MAD)
 # Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat).
-PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
+PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.
@@ -94,15 +94,14 @@ def _admin_ids(db: Client) -> list[str]:
 def _cash_entry_fields(note: dict) -> dict:
     """Champs de la ligne de journal (sortie) dérivés d'une note de caisse.
     Le registre découle du MODE de règlement : chèque / OV → Journal des comptes,
-    caisse sociale ou autre → Journal de caisse (cf. migration l36)."""
-    from routers.accounting_cash_journal import resolve_channel, BANK
+    caisse comptable ou autre → Journal de caisse (cf. migration l36)."""
+    from routers.accounting_cash_journal import resolve_channel
 
     presta = note.get("beneficiary_name") or None
     objet = (note.get("objet") or "").strip()
     action = f"Note de caisse — {presta}" if presta else "Note de caisse"
     if objet:
         action = f"{action} · {objet}"
-    nc = note.get("nc") if note.get("nc") in NC_VALUES else "comptable"
     channel, mode = resolve_channel(note.get("payment_method"))
     return {
         # Comptabilisée à la date effective du décaissement (défaut : date de la note).
@@ -112,8 +111,7 @@ def _cash_entry_fields(note: dict) -> dict:
         "prestataire": presta,
         "amount": float(note.get("total") or 0),
         "justificatif": note.get("reference"),
-        # Une opération bancaire est déclarée par construction.
-        "nc": "comptable" if channel == BANK else nc,
+        "nc": "comptable",
         "channel": channel,
         "payment_mode": mode,
         "payment_ref": note.get("payment_reference"),
@@ -189,8 +187,6 @@ async def create_note(
     _require_write(user)
     if not (body.beneficiary_name or "").strip():
         raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
-    if body.nc not in NC_VALUES:
-        raise HTTPException(400, "n/c invalide (noir | comptable)")
     items, total = _clean_items(body.items)
     if total > MAX_AMOUNT:
         raise HTTPException(400, f"Le montant total ({total:.2f} MAD) dépasse le plafond des notes de caisse ({MAX_AMOUNT} MAD).")
@@ -204,7 +200,7 @@ async def create_note(
         "accorded_by": (body.accorded_by or "").strip() or None,
         "items": items,
         "total": total,
-        "nc": body.nc,
+        "nc": "comptable",
         "comment": (body.comment or "").strip() or None,
         "created_by": user.id,
     }
@@ -223,7 +219,7 @@ async def create_note(
         link=f"/dashboard/accounting?tab=validations&focus={note.get('id')}",
     )
     log_audit(db, user.id, "cash_note.create", "cash_note", note.get("id"),
-              {"reference": note.get("reference"), "total": total, "nc": body.nc, "status": "pending"})
+              {"reference": note.get("reference"), "total": total, "status": "pending"})
     return note
 
 
@@ -256,9 +252,7 @@ async def update_note(
             raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
         updates["beneficiary_name"] = name
     if "nc" in data:
-        if data["nc"] not in NC_VALUES:
-            raise HTTPException(400, "n/c invalide (noir | comptable)")
-        updates["nc"] = data["nc"]
+        updates["nc"] = "comptable"
     if "items" in data:
         items, total = _clean_items(body.items)
         if total > MAX_AMOUNT:
