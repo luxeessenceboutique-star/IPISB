@@ -270,17 +270,15 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
 
     fy = 42 * mm  # y du filet de pied de page — défini tôt, utilisé aussi par l'échéancier/la signature ci-dessous.
 
-    # ── Totaux (colonne droite) ──
+    # ── Totaux (colonne droite) — Total HT, Livraison, Total TVA, Total TTC :
+    # la livraison vient juste après le HT dont elle fait partie (base avant
+    # application de la TVA), avant TVA/TTC. ──
     # Colonne de 40 mm (150→190) : « Total TTC » en 10 pt gras touchait sa
     # valeur (label + montant ne tiennent pas côte à côte à cette taille) —
     # ramené à 9 pt comme les autres lignes, qui laisse une marge suffisante.
     totals_top = ty - 7 * mm  # rapproché du tableau produit (était 12 mm, jugé trop éloigné)
     ty = totals_top
     L(150, ty, "Total HT", "Helvetica", 9, _MUTED); R(190, ty, fmt_mad(total_ht), "Helvetica-Bold", 9, _INK)
-    ty -= 6 * mm
-    L(150, ty, "Total TVA", "Helvetica", 9, _MUTED); R(190, ty, fmt_mad(total_tva), "Helvetica-Bold", 9, _INK)
-    ty -= 7 * mm
-    L(150, ty, "Total TTC", "Helvetica-Bold", 9, _TEAL); R(190, ty, fmt_mad(total_ttc), "Helvetica-Bold", 9, _TEAL)
 
     # ── Livraison (issue du devis retenu) ──
     # Le qualificatif « (en sus)/(incluse) » accolé au montant pouvait dépasser
@@ -304,6 +302,11 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
         if qualifier:
             ty -= 3.6 * mm
             R(190, ty, f"({qualifier})", "Helvetica-Oblique", 7.5, _MUTED)
+
+    ty -= 6 * mm
+    L(150, ty, "Total TVA", "Helvetica", 9, _MUTED); R(190, ty, fmt_mad(total_tva), "Helvetica-Bold", 9, _INK)
+    ty -= 7 * mm
+    L(150, ty, "Total TTC", "Helvetica-Bold", 9, _TEAL); R(190, ty, fmt_mad(total_ttc), "Helvetica-Bold", 9, _TEAL)
     right_bottom = ty
 
     # ── Échéancier de paiement prévisionnel (colonne gauche) ──
