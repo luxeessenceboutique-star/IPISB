@@ -241,6 +241,11 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const orderedQty = Number(purchase.quantity) || 0;
+  const receivedQty = receptions.reduce((s, r) => s + (Number(r.received_quantity) || 0), 0);
+  const deliveryStatus = deliveryStatusOf(orderedQty, receivedQty);
+  const remainingQty = Math.max(0, orderedQty - receivedQty);
+
   async function loadAttachments() {
     setLoading(true);
     try {
@@ -327,6 +332,10 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
   async function handleSaveReception() {
     const qty = parseFloat(recForm.received_quantity);
     if (isNaN(qty) || qty <= 0) { toast.error("La quantité reçue doit être supérieure à zéro."); return; }
+    if (orderedQty > 0 && qty > remainingQty + 1e-9) {
+      toast.error(`Quantité supérieure au reste à livrer (${remainingQty} sur ${orderedQty} commandé${orderedQty > 1 ? "s" : ""}).`);
+      return;
+    }
     setSavingReception(true);
     try {
       await api.post("/api/accounting/receptions", {
@@ -389,11 +398,6 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
       toast.error(err?.message ?? "Erreur lors de la suppression.");
     }
   }
-
-  const orderedQty = Number(purchase.quantity) || 0;
-  const receivedQty = receptions.reduce((s, r) => s + (Number(r.received_quantity) || 0), 0);
-  const deliveryStatus = deliveryStatusOf(orderedQty, receivedQty);
-  const remainingQty = Math.max(0, orderedQty - receivedQty);
 
   async function downloadPO() {
     try {
@@ -463,7 +467,7 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
             <span className={`chip-c ${DELIVERY_TONE[deliveryStatus]}`}>{DELIVERY_LABEL[deliveryStatus]}</span>
           )}
         </div>
-        {purchase.valide_comptable_at && !showAddReception && (
+        {purchase.valide_comptable_at && !showAddReception && (orderedQty <= 0 || remainingQty > 0) && (
           <button
             onClick={() => {
               setRecForm(rf => ({ ...rf, received_quantity: String(remainingQty || purchase.quantity) }));
@@ -487,8 +491,8 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
         <div style={{ background: "var(--pal-pale)", padding: 12, borderRadius: 8, marginBottom: 12, fontSize: 12.5 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
             <div>
-              <label style={{ fontSize: 10.5, color: PAL.muted }}>Qté reçue {remainingQty > 0 ? `(reste ${remainingQty})` : ""}</label>
-              <input type="number" step="any" value={recForm.received_quantity} onChange={e => setRecForm(rf => ({ ...rf, received_quantity: e.target.value }))} className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6 }} />
+              <label style={{ fontSize: 10.5, color: PAL.muted }}>Qté reçue {orderedQty > 0 ? `(reste ${remainingQty} sur ${orderedQty})` : ""}</label>
+              <input type="number" step="any" min="0" max={orderedQty > 0 ? remainingQty : undefined} value={recForm.received_quantity} onChange={e => setRecForm(rf => ({ ...rf, received_quantity: e.target.value }))} className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6 }} />
             </div>
             <div>
               <label style={{ fontSize: 10.5, color: PAL.muted }}>Conformité</label>

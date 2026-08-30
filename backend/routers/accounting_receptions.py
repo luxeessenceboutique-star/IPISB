@@ -69,6 +69,27 @@ async def create_reception(
         raise HTTPException(404, "Purchase not found")
     purchase = purchase_rows[0]
 
+    if body.received_quantity <= 0:
+        raise HTTPException(400, "La quantité reçue doit être supérieure à zéro.")
+
+    # On ne réceptionne jamais plus que la quantité commandée : le cumul des
+    # réceptions déjà enregistrées + celle-ci doit rester ≤ quantité de la commande.
+    ordered_qty = float(purchase.get("quantity") or 0)
+    if ordered_qty > 0:
+        prior = (
+            db.from_("purchase_receptions")
+            .select("received_quantity").eq("purchase_id", body.purchase_id)
+            .execute().data or []
+        )
+        already_received = sum(float(r.get("received_quantity") or 0) for r in prior)
+        remaining = ordered_qty - already_received
+        if body.received_quantity > remaining + 1e-9:
+            raise HTTPException(
+                400,
+                f"Quantité reçue ({body.received_quantity:g}) supérieure au reste à livrer "
+                f"({max(remaining, 0):g} sur {ordered_qty:g} commandé(s)).",
+            )
+
     data = body.model_dump()
     data["received_by"] = user.id
     data["created_by"] = user.id
@@ -136,6 +157,28 @@ async def update_reception(
         raise HTTPException(400, "No fields to update")
     if "quality_status" in updates and updates["quality_status"] not in QUALITY_STATUSES:
         raise HTTPException(400, "Invalid quality_status")
+
+    # Même plafond qu'à la création si la quantité reçue est modifiée.
+    if "received_quantity" in updates:
+        if updates["received_quantity"] <= 0:
+            raise HTTPException(400, "La quantité reçue doit être supérieure à zéro.")
+        rec_rows = db.from_("purchase_receptions").select("purchase_id").eq("id", reception_id).execute().data
+        if rec_rows:
+            pid = rec_rows[0]["purchase_id"]
+            pr_rows = db.from_("purchases").select("quantity").eq("id", pid).execute().data
+            ordered_qty = float((pr_rows[0].get("quantity") if pr_rows else 0) or 0)
+            if ordered_qty > 0:
+                others = (
+                    db.from_("purchase_receptions").select("received_quantity")
+                    .eq("purchase_id", pid).neq("id", reception_id).execute().data or []
+                )
+                already = sum(float(r.get("received_quantity") or 0) for r in others)
+                if updates["received_quantity"] > ordered_qty - already + 1e-9:
+                    raise HTTPException(
+                        400,
+                        f"Quantité reçue supérieure au reste à livrer "
+                        f"({max(ordered_qty - already, 0):g} sur {ordered_qty:g}).",
+                    )
 
     res = db.from_("purchase_receptions").update(updates).eq("id", reception_id).execute()
     if not res.data:
