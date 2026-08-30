@@ -293,7 +293,7 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     # Colonne de 40 mm (150→190) : « Total TTC » en 10 pt gras touchait sa
     # valeur (label + montant ne tiennent pas côte à côte à cette taille) —
     # ramené à 9 pt comme les autres lignes, qui laisse une marge suffisante.
-    totals_top = ty - 12 * mm
+    totals_top = ty - 7 * mm  # rapproché du tableau produit (était 12 mm, jugé trop éloigné)
     ty = totals_top
     L(150, ty, "Total HT", "Helvetica", 9, _MUTED); R(190, ty, fmt_mad(total_ht), "Helvetica-Bold", 9, _INK)
     ty -= 6 * mm
