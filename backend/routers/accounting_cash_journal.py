@@ -37,6 +37,7 @@ MODE_LABELS = {
     "virement": "Virement", "versement": "Versement", "ov_permanent": "OV permanent",
     "ov_ponctuel": "OV ponctuel", "cheque": "Chèque", "prelevement": "Prélèvement",
     "carte": "Carte bancaire", "especes": "Espèces", "caisse_sociale": "Caisse comptable",
+    "caisse_secondaire": "Caisse sociale",  # propre aux notes de caisse ; distincte de la caisse comptable
     "autre": "Autre",
 }
 # Les modes arrivent tantôt en clés canoniques ('ov_permanent', 'cheque'), tantôt
@@ -54,7 +55,8 @@ _MODE_ALIASES = {
     "carte": "carte", "carte bancaire": "carte", "cb": "carte",
     "espece": "especes", "especes": "especes", "cash": "especes", "liquide": "especes",
     "numeraire": "especes",
-    "caisse_sociale": "caisse_sociale", "caisse sociale": "caisse_sociale",
+    "caisse_sociale": "caisse_sociale", "caisse comptable": "caisse_sociale",
+    "caisse_secondaire": "caisse_secondaire", "caisse sociale": "caisse_secondaire",
     "autre": "autre",
 }
 _ACCENTS = str.maketrans(

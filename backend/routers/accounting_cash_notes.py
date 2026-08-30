@@ -14,8 +14,11 @@ router = APIRouter(prefix="/accounting/cash-notes", tags=["accounting"])
 
 NC_VALUES = {"comptable"}  # « noir » (caisse sociale) retiré — toujours rattaché au journal comptable
 MAX_AMOUNT = 4500  # plafond réglementaire d'une note de caisse (MAD)
-# Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat).
-PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
+# Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat,
+# + « caisse_secondaire » = Caisse sociale, propre aux notes de caisse). Les deux modes
+# caisse restent rattachés au journal comptable (nc='comptable' toujours) — ce ne sont
+# que deux caisses physiques distinctes, pas une réintroduction du hors-comptes.
+PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "caisse_secondaire"}
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.

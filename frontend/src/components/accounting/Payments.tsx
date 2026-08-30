@@ -63,6 +63,12 @@ const PAYMENT_METHODS: Record<string, string> = {
   cheque: "Chèque",
   caisse_sociale: "Caisse comptable",
 };
+// Notes de caisse uniquement : deux caisses physiques distinctes (comptable /
+// sociale), toutes deux rattachées au journal comptable (aucune n'est hors-comptes).
+const CASH_NOTE_PAYMENT_METHODS: Record<string, string> = {
+  ...PAYMENT_METHODS,
+  caisse_secondaire: "Caisse sociale",
+};
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Non payé",
@@ -436,7 +442,7 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
           <div>
             <label style={labelStyle}>Mode de règlement</label>
             <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(CASH_NOTE_PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
