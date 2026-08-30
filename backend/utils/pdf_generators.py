@@ -398,10 +398,9 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
                     [COMPANY.get("address"),
                      f"RC : {COMPANY['rc']}" if COMPANY.get("rc") else None,
                      f"IF : {COMPANY['if']}" if COMPANY.get("if") else None,
-                     f"ICE : {COMPANY['ice']}" if COMPANY.get("ice") else None])
-        _footer_col(85, "Banque (IPISB)",
-                    [f"RIB : {COMPANY['rib']}" if COMPANY.get("rib") else None])
-        _footer_col(145, "Détails bancaires (fournisseur)",
+                     f"ICE : {COMPANY['ice']}" if COMPANY.get("ice") else None,
+                     f"RIB : {COMPANY['rib']}" if COMPANY.get("rib") else None])
+        _footer_col(105, "Détails bancaires (fournisseur)",
                     [supplier.get("bank"), supplier.get("bank_branch"),
                      f"RIB : {supplier['rib']}" if supplier.get("rib") else None])
 
