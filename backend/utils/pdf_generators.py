@@ -231,29 +231,10 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
         L(63, ry, val, "Helvetica-Bold", 8.5, _INK)
         ry -= row_h
 
-    # ── Informations additionnelles + conformité ──
-    y2 = box_top - box_h - 12 * mm
-    L(20, y2, "Informations additionnelles", "Helvetica-Bold", 9.5, _INK); y2 -= 5.5 * mm
-    extra = []
-    if pr.get("duration"): extra.append(f"Durée : {pr['duration']}")
-    if pr.get("budget_estimate") is not None: extra.append(f"Budget estimé : {fmt_mad(pr.get('budget_estimate'))}")
-    if extra:
-        L(20, y2, " · ".join(extra), "Helvetica", 8.5, _MUTED); y2 -= 4.6 * mm
-    conf_note = (pr.get("conformity_note") or "").strip()
-    conf_crit = pr.get("conformity_criteria") or []
-    if conf_note or conf_crit:
-        y2 -= 1 * mm; L(20, y2, "Conformité :", "Helvetica-Bold", 8.5, _INK); y2 -= 4.6 * mm
-        for line in _wrap(conf_note, 95, 2):
-            L(20, y2, line, "Helvetica", 8.5, _MUTED); y2 -= 4.6 * mm
-        if conf_crit:
-            crit = ", ".join(CONFORMITY_LABELS.get(k, k) for k in conf_crit)
-            for line in _wrap(crit, 95, 3):
-                L(20, y2, line, "Helvetica", 8.5, _MUTED); y2 -= 4.6 * mm
-
     # ── Tableau produit ──
     # Colonnes (mm) : Réf | Description | Qté | Unité | PU HT | %TVA | Total TVA | Total TTC(droite)
     CX = {"ref": 20, "desc": 42, "qte": 92, "unite": 106, "pu": 120, "tva": 143, "ttva": 156, "ttc": 190}
-    ty = y2 - 10 * mm
+    ty = box_top - box_h - 18 * mm
     L(CX["ref"], ty, "Réf. produit", "Helvetica-Bold", 8, _INK)
     L(CX["desc"], ty, "Description", "Helvetica-Bold", 8, _INK)
     L(CX["qte"], ty, "Quantité", "Helvetica-Bold", 8, _INK)
