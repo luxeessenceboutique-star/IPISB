@@ -234,8 +234,6 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     # ── Informations additionnelles + conformité ──
     y2 = box_top - box_h - 12 * mm
     L(20, y2, "Informations additionnelles", "Helvetica-Bold", 9.5, _INK); y2 -= 5.5 * mm
-    for line in _wrap(pr.get("justification"), 95, 3):
-        L(20, y2, line, "Helvetica", 8.5, _MUTED); y2 -= 4.6 * mm
     extra = []
     if pr.get("duration"): extra.append(f"Durée : {pr['duration']}")
     if pr.get("budget_estimate") is not None: extra.append(f"Budget estimé : {fmt_mad(pr.get('budget_estimate'))}")
