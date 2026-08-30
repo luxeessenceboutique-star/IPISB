@@ -384,7 +384,7 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     # ── Signature (page 1, sauf si l'échéancier a basculé en page 2 — elle y
     # est alors redessinée sous l'échéancier complet). ──
     if not overflow_to_p2:
-        L(10, max(min(right_bottom, left_bottom) - 10 * mm, safe_bottom), "Signature :", "Helvetica", 9, _INK)
+        L(145, max(min(right_bottom, left_bottom) - 10 * mm, safe_bottom), "Signature :", "Helvetica", 9, _INK)
 
     # ── Pied de page : 3 colonnes ──
     def _draw_footer():
@@ -418,7 +418,7 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
         c.setStrokeColorRGB(*_TEAL); c.setLineWidth(1.2)
         c.line(20 * mm, height - 24 * mm, width - 20 * mm, height - 24 * mm)
         p2_bottom = _draw_installments(height - 35 * mm, installments, right_x=190)
-        L(10, p2_bottom - 10 * mm, "Signature :", "Helvetica", 9, _INK)
+        L(145, p2_bottom - 10 * mm, "Signature :", "Helvetica", 9, _INK)
         _draw_footer()
 
     c.showPage()
