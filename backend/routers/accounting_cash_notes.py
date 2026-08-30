@@ -1,12 +1,14 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, Form
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import CashNoteCreate, CashNoteUpdate, CashNotePay, ApprovalReject
 from utils.audit import log_audit
 from utils.notify import notify_users
 from utils.pdf_generators import render_cash_note_pdf
+from utils.uploads import validate_and_read
 
 router = APIRouter(prefix="/accounting/cash-notes", tags=["accounting"])
 
@@ -18,6 +20,11 @@ PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.
 CASH_SOURCE = "cash_note"
+
+# ── Pièce jointe au règlement (facture/reçu/autre + numéro) ─────────────────
+BUCKET = "accounting"
+SIGNED_URL_TTL = 60 * 60  # 1 heure
+ATTACHMENT_KINDS = {"invoice", "receipt", "document"}
 
 
 def _require_read(user: CurrentUser) -> None:
@@ -471,3 +478,104 @@ async def export_note_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ── Pièces justificatives (scan) de l'avance ─────────────────────────────────
+@router.get("/{note_id}/attachments")
+async def list_note_attachments(
+    note_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_read(user)
+    rows = (
+        db.from_("accounting_attachments")
+        .select("id, kind, reference_number, file_name, file_type, file_size, created_at")
+        .eq("entity_type", CASH_SOURCE).eq("entity_id", note_id)
+        .order("created_at", desc=True).execute().data or []
+    )
+    return rows
+
+
+@router.post("/{note_id}/attachments")
+async def upload_note_attachment(
+    note_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    file: UploadFile,
+    kind: Annotated[str, Form()] = "receipt",
+    reference_number: Annotated[Optional[str], Form()] = None,
+):
+    _require_write(user)
+    if kind not in ATTACHMENT_KINDS:
+        raise HTTPException(400, f"Invalid kind. Use one of: {', '.join(ATTACHMENT_KINDS)}")
+    _load_note(db, note_id)
+
+    data, ext = await validate_and_read(file)
+    file_path = f"{CASH_SOURCE}/{note_id}/{uuid.uuid4().hex}.{ext}"
+    try:
+        db.storage.from_(BUCKET).upload(file_path, data, {"content-type": file.content_type})
+    except Exception as e:
+        raise HTTPException(500, f"Failed to store file: {str(e)}")
+
+    res = db.from_("accounting_attachments").insert({
+        "entity_type": CASH_SOURCE,
+        "entity_id": note_id,
+        "kind": kind,
+        "reference_number": (reference_number or "").strip() or None,
+        "file_path": file_path,
+        "file_name": file.filename or "document",
+        "file_type": file.content_type,
+        "file_size": len(data),
+        "uploaded_by": user.id,
+    }).execute()
+    new_attachment = res.data[0]
+    log_audit(db, user.id, "cash_note.attachment.upload", "cash_note", note_id,
+              {"kind": kind, "file_name": file.filename, "reference_number": reference_number})
+    # Journal de caisse : re-synchronise le justificatif affiché (nc reste 'comptable').
+    from routers.accounting_cash_journal import sync_source_piece
+    sync_source_piece(db, source_type=CASH_SOURCE, source_id=note_id, update_nc=False)
+    return new_attachment
+
+
+@router.get("/attachments/{attachment_id}/download")
+async def download_note_attachment(
+    attachment_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_read(user)
+    rows = (
+        db.from_("accounting_attachments").select("*")
+        .eq("id", attachment_id).eq("entity_type", CASH_SOURCE)
+        .execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Not found")
+    signed = db.storage.from_(BUCKET).create_signed_url(rows[0]["file_path"], SIGNED_URL_TTL)
+    return {"signed_url": signed.get("signedURL") or signed.get("signed_url"), "file_name": rows[0]["file_name"]}
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_note_attachment(
+    attachment_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_write(user)
+    rows = (
+        db.from_("accounting_attachments").select("*")
+        .eq("id", attachment_id).eq("entity_type", CASH_SOURCE)
+        .execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Not found")
+    try:
+        db.storage.from_(BUCKET).remove([rows[0]["file_path"]])
+    except Exception:
+        pass
+    db.from_("accounting_attachments").delete().eq("id", attachment_id).execute()
+    log_audit(db, user.id, "cash_note.attachment.delete", "cash_note", rows[0]["entity_id"])
+    from routers.accounting_cash_journal import sync_source_piece
+    sync_source_piece(db, source_type=CASH_SOURCE, source_id=rows[0]["entity_id"], update_nc=False)
+    return {"ok": True}

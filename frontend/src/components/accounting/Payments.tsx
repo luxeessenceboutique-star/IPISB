@@ -86,6 +86,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
   });
   const [scanFile, setScanFile] = useState<File | null>(null);
   const [scanKind, setScanKind] = useState("receipt"); // invoice | receipt | document
+  const [scanNumber, setScanNumber] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
@@ -118,6 +119,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
         const fd = new FormData();
         fd.append("file", scanFile);
         fd.append("kind", scanKind);
+        if (scanNumber.trim()) fd.append("reference_number", scanNumber.trim());
         await api.uploadFile(`/api/accounting/payments/${created.id}/attachments`, fd);
       }
       toast.success("Paiement enregistré !");
@@ -168,7 +170,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
           <select value={scanKind} onChange={e => setScanKind(e.target.value)} className="u-input" style={{ ...fieldStyle, marginTop: 0, marginBottom: 0 }}>
             <option value="invoice">Facture</option>
             <option value="receipt">Reçu</option>
-            <option value="document">Pièce justificative</option>
+            <option value="document">Autre</option>
           </select>
           <label className="btn-c btn-c-ghost" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 0 }}>
             <Paperclip size={14} strokeWidth={1.8} />
@@ -177,10 +179,10 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
               onChange={e => { setScanFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
           </label>
         </div>
-        <div style={{ fontSize: 11.5, color: scanFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12 }}>
-          {scanFile
-            ? `📎 ${scanFile.name} → l'opération sera « comptable »`
-            : "Aucun scan → l'opération sera enregistrée en « caisse sociale » (non justifié). PDF/JPG/PNG, 20 Mo max."}
+        <label style={labelStyle}>Numéro de pièce</label>
+        <input type="text" placeholder="Ex: FA-2026-0123" value={scanNumber} onChange={e => setScanNumber(e.target.value)} className="u-input" style={fieldStyle} />
+        <div style={{ fontSize: 11.5, color: scanFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12, marginTop: -8 }}>
+          {scanFile ? `📎 ${scanFile.name}` : "PDF/JPG/PNG, 20 Mo max (facultatif)."}
         </div>
 
         <label style={labelStyle}>Commentaire</label>
@@ -377,9 +379,13 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
+  const [docKind, setDocKind] = useState("receipt"); // invoice | receipt | document
+  const [docNumber, setDocNumber] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (docFile && docFile.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
     setBusy(true);
     try {
       const res = await api.post(`/api/accounting/cash-notes/${note.id}/pay`, {
@@ -387,6 +393,13 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
         payment_reference: form.payment_reference || null,
         payment_date: form.payment_date,
       });
+      if (docFile) {
+        const fd = new FormData();
+        fd.append("file", docFile);
+        fd.append("kind", docKind);
+        if (docNumber.trim()) fd.append("reference_number", docNumber.trim());
+        await api.uploadFile(`/api/accounting/cash-notes/${note.id}/attachments`, fd);
+      }
       // Décaissement bancaire → validation N+1 avant règlement (l37, l38).
       toast.success(res?.pending
         ? (res.message ?? "Règlement soumis à validation.")
@@ -431,6 +444,34 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
 
         <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Type de pièce</label>
+            <select value={docKind} onChange={e => setDocKind(e.target.value)} className="u-input" style={fieldStyle}>
+              <option value="invoice">Facture</option>
+              <option value="receipt">Reçu</option>
+              <option value="document">Autre</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Numéro</label>
+            <input type="text" placeholder="Ex: FA-2026-0123" value={docNumber} onChange={e => setDocNumber(e.target.value)} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>Pièce jointe</label>
+        <div style={{ marginTop: 6, marginBottom: 4 }}>
+          <label className="btn-c btn-c-ghost" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%" }}>
+            <Paperclip size={14} strokeWidth={1.8} />
+            {docFile ? "Changer le fichier" : "Choisir un fichier"}
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+              onChange={e => { setDocFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+          </label>
+        </div>
+        <div style={{ fontSize: 11.5, color: docFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12 }}>
+          {docFile ? `📎 ${docFile.name}` : "PDF/JPG/PNG, 20 Mo max (facultatif)."}
+        </div>
 
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
           Le décaissement sera comptabilisé au journal de caisse.
@@ -529,9 +570,13 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
+  const [docKind, setDocKind] = useState("receipt"); // invoice | receipt | document
+  const [docNumber, setDocNumber] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (docFile && docFile.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
     setBusy(true);
     try {
       const res = await api.post(`/api/accounting/mission-notes/${note.id}/pay`, {
@@ -539,6 +584,13 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
         payment_reference: form.payment_reference || null,
         payment_date: form.payment_date,
       });
+      if (docFile) {
+        const fd = new FormData();
+        fd.append("file", docFile);
+        fd.append("kind", docKind);
+        if (docNumber.trim()) fd.append("reference_number", docNumber.trim());
+        await api.uploadFile(`/api/accounting/mission-notes/${note.id}/attachments`, fd);
+      }
       // Règlement par chèque → validation N+1 avant décaissement (l37).
       toast.success(res?.pending
         ? (res.message ?? "Règlement soumis à validation.")
@@ -583,6 +635,34 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
 
         <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Type de pièce</label>
+            <select value={docKind} onChange={e => setDocKind(e.target.value)} className="u-input" style={fieldStyle}>
+              <option value="invoice">Facture</option>
+              <option value="receipt">Reçu</option>
+              <option value="document">Autre</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Numéro</label>
+            <input type="text" placeholder="Ex: FA-2026-0123" value={docNumber} onChange={e => setDocNumber(e.target.value)} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>Pièce jointe</label>
+        <div style={{ marginTop: 6, marginBottom: 4 }}>
+          <label className="btn-c btn-c-ghost" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%" }}>
+            <Paperclip size={14} strokeWidth={1.8} />
+            {docFile ? "Changer le fichier" : "Choisir un fichier"}
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+              onChange={e => { setDocFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+          </label>
+        </div>
+        <div style={{ fontSize: 11.5, color: docFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12 }}>
+          {docFile ? `📎 ${docFile.name}` : "PDF/JPG/PNG, 20 Mo max (facultatif)."}
+        </div>
 
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
           Le décaissement sera comptabilisé au journal de caisse.

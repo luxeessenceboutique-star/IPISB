@@ -244,7 +244,7 @@ async def list_attachments(
     _require_admin(user)
     rows = (
         db.from_("accounting_attachments")
-        .select("id, kind, file_name, file_type, file_size, created_at")
+        .select("id, kind, reference_number, file_name, file_type, file_size, created_at")
         .eq("entity_type", ENTITY_TYPE).eq("entity_id", payment_id)
         .order("created_at", desc=True).execute().data or []
     )
@@ -258,6 +258,7 @@ async def upload_attachment(
     db: Annotated[Client, Depends(get_db)],
     file: UploadFile,
     kind: Annotated[str, Form()] = "receipt",
+    reference_number: Annotated[Optional[str], Form()] = None,
 ):
     _require_admin(user)
     if kind not in ATTACHMENT_KINDS:
@@ -279,6 +280,7 @@ async def upload_attachment(
         "entity_type": ENTITY_TYPE,
         "entity_id": payment_id,
         "kind": kind,
+        "reference_number": (reference_number or "").strip() or None,
         "file_path": file_path,
         "file_name": file.filename or "document",
         "file_type": file.content_type,
@@ -287,7 +289,7 @@ async def upload_attachment(
     }).execute()
     new_attachment = res.data[0]
     log_audit(db, user.id, "purchase_payment.attachment.upload", "purchase_payment", payment_id,
-              {"kind": kind, "file_name": file.filename})
+              {"kind": kind, "file_name": file.filename, "reference_number": reference_number})
     # Journal de caisse : le paiement a désormais un scan → comptable + type de pièce.
     try:
         from routers.accounting_cash_journal import sync_source_piece
