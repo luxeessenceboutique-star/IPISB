@@ -298,31 +298,39 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     fy = 42 * mm  # y du filet de pied de page — défini tôt, utilisé aussi par l'échéancier/la signature ci-dessous.
 
     # ── Totaux (colonne droite) ──
+    # Colonne de 40 mm (150→190) : « Total TTC » en 10 pt gras touchait sa
+    # valeur (label + montant ne tiennent pas côte à côte à cette taille) —
+    # ramené à 9 pt comme les autres lignes, qui laisse une marge suffisante.
     totals_top = ty - 12 * mm
     ty = totals_top
     L(150, ty, "Total HT", "Helvetica", 9, _MUTED); R(190, ty, fmt_mad(total_ht), "Helvetica-Bold", 9, _INK)
     ty -= 6 * mm
     L(150, ty, "Total TVA", "Helvetica", 9, _MUTED); R(190, ty, fmt_mad(total_tva), "Helvetica-Bold", 9, _INK)
     ty -= 7 * mm
-    L(150, ty, "Total TTC", "Helvetica-Bold", 10, _TEAL); R(190, ty, fmt_mad(total_ttc), "Helvetica-Bold", 10, _TEAL)
+    L(150, ty, "Total TTC", "Helvetica-Bold", 9, _TEAL); R(190, ty, fmt_mad(total_ttc), "Helvetica-Bold", 9, _TEAL)
 
     # ── Livraison (issue du devis retenu) ──
+    # Le qualificatif « (en sus)/(incluse) » accolé au montant pouvait dépasser
+    # la largeur de colonne et se superposer au label « Livraison » — affiché
+    # sur sa propre ligne, plus petit, plutôt qu'accolé au montant.
     if quote and quote.get("delivery_required"):
         raw_cost = quote.get("delivery_cost")
         included = bool(quote.get("delivery_included"))
-        suffix = " (incluse)" if included else " (en sus)"
+        qualifier = "incluse" if included else "en sus"
         if raw_cost is None:  # coût inconnu / à préciser
-            d_txt = "À préciser" + (" (incluse)" if included else "")
-            d_col = _INK
+            d_txt = "À préciser"; d_col = _INK
         else:
             d_cost = float(raw_cost)
             if d_cost <= 0:  # gratuite
-                d_txt = "Gratuite"; d_col = (0.0, 0.55, 0.30)
+                d_txt = "Gratuite"; d_col = (0.0, 0.55, 0.30); qualifier = None
             else:
-                d_txt = f"{fmt_mad(d_cost)}{suffix}"; d_col = _INK  # fmt_mad() ajoute déjà « MAD »
+                d_txt = fmt_mad(d_cost); d_col = _INK  # fmt_mad() ajoute déjà « MAD »
         ty -= 6 * mm
         L(150, ty, "Livraison", "Helvetica", 9, _MUTED)
         R(190, ty, d_txt, "Helvetica-Bold", 9, d_col)
+        if qualifier:
+            ty -= 3.6 * mm
+            R(190, ty, f"({qualifier})", "Helvetica-Oblique", 7.5, _MUTED)
     right_bottom = ty
 
     # ── Échéancier de paiement prévisionnel (colonne gauche) ──
@@ -339,19 +347,22 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
     TAIL_MM = 4.8                  # ligne « Total planifié » + marge
     safe_bottom = fy + 14 * mm      # marge au-dessus du filet de pied de page
 
-    def _draw_installments(top_y, rows):
-        """Dessine le tableau Échéancier à partir de `top_y`. Retourne le y
-        juste sous la dernière ligne (pour y placer la signature)."""
+    def _draw_installments(top_y, rows, right_x=140):
+        """Dessine le tableau Échéancier à partir de `top_y`. `right_x` est
+        la limite droite de la colonne Montant — 140 mm sur la page 1 (garde
+        une marge avec la colonne Totaux qui commence à 150 mm), 190 mm sur
+        une page 2 dédiée (pleine largeur). Retourne le y juste sous la
+        dernière ligne (pour y placer la signature)."""
         ey = top_y
         L(20, ey, "Échéancier de paiement", "Helvetica-Bold", 9.5, _INK)
         ey -= 5.5 * mm
         L(20, ey, "Échéance", "Helvetica-Bold", 7, _MUTED)
         L(66, ey, "Règlement", "Helvetica-Bold", 7, _MUTED)
-        L(104, ey, "Date", "Helvetica-Bold", 7, _MUTED)
-        R(135, ey, "Montant", "Helvetica-Bold", 7, _MUTED)
+        L(100, ey, "Date", "Helvetica-Bold", 7, _MUTED)
+        R(right_x, ey, "Montant", "Helvetica-Bold", 7, _MUTED)
         ey -= 1.5 * mm
         c.setStrokeColorRGB(0.85, 0.85, 0.85); c.setLineWidth(0.4)
-        c.line(20 * mm, ey, 135 * mm, ey)
+        c.line(20 * mm, ey, right_x * mm, ey)
         ey -= 4.2 * mm
         planned = 0.0
         for it in rows:
@@ -364,17 +375,18 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
             raw = it.get("due_date")
             due = "—"
             if raw:
+                # Année sur 2 chiffres : laisse assez de place avant la colonne Montant.
                 parts = str(raw)[:10].split("-")
-                due = f"{parts[2]}/{parts[1]}/{parts[0]}" if len(parts) == 3 else str(raw)[:10]
+                due = f"{parts[2]}/{parts[1]}/{parts[0][2:]}" if len(parts) == 3 else str(raw)[:10]
             L(20, ey, label, "Helvetica", 7.5, _INK)
             L(66, ey, mode[:24], "Helvetica", 7, _MUTED)
-            L(104, ey, due, "Helvetica", 7.5, _MUTED)
-            R(135, ey, fmt_mad(amt), "Helvetica", 7.5, _INK)
+            L(100, ey, due, "Helvetica", 7.5, _MUTED)
+            R(right_x, ey, fmt_mad(amt), "Helvetica", 7.5, _INK)
             ey -= ROW_STEP
         c.setStrokeColorRGB(0.85, 0.85, 0.85); c.setLineWidth(0.4)
-        c.line(20 * mm, ey + 2.2 * mm, 135 * mm, ey + 2.2 * mm)
+        c.line(20 * mm, ey + 2.2 * mm, right_x * mm, ey + 2.2 * mm)
         L(20, ey, "Total planifié", "Helvetica-Bold", 8, _INK)
-        R(135, ey, fmt_mad(planned), "Helvetica-Bold", 8, _INK)
+        R(right_x, ey, fmt_mad(planned), "Helvetica-Bold", 8, _INK)
         ey -= TAIL_MM * mm
         return ey
 
@@ -426,7 +438,7 @@ def render_purchase_order_pdf(purchase: dict, supplier: dict, pr: dict | None = 
                      f"Bon de commande {purchase.get('purchase_number') or ''} — Échéancier (suite)")
         c.setStrokeColorRGB(*_TEAL); c.setLineWidth(1.2)
         c.line(20 * mm, height - 24 * mm, width - 20 * mm, height - 24 * mm)
-        p2_bottom = _draw_installments(height - 35 * mm, installments)
+        p2_bottom = _draw_installments(height - 35 * mm, installments, right_x=190)
         L(20, p2_bottom - 10 * mm, "Signature :", "Helvetica", 9, _INK)
         _draw_footer()
 
