@@ -19,6 +19,10 @@ MAX_AMOUNT = 4500  # plafond réglementaire d'une note de caisse (MAD)
 # caisse restent rattachés au journal comptable (nc='comptable' toujours) — ce ne sont
 # que deux caisses physiques distinctes, pas une réintroduction du hors-comptes.
 PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "caisse_secondaire"}
+# Caisse visée par l'avance, choisie dès la création (mêmes 2 clés que les
+# modes caisse ci-dessus — pré-remplit le mode de règlement à l'exécution du
+# paiement, qui reste modifiable si le contexte change).
+CAISSE_VALUES = {"caisse_sociale", "caisse_secondaire"}
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.
@@ -197,6 +201,8 @@ async def create_note(
     _require_write(user)
     if not (body.beneficiary_name or "").strip():
         raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
+    if body.caisse not in CAISSE_VALUES:
+        raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
     items, total = _clean_items(body.items)
     if total > MAX_AMOUNT:
         raise HTTPException(400, f"Le montant total ({total:.2f} MAD) dépasse le plafond des notes de caisse ({MAX_AMOUNT} MAD).")
@@ -211,6 +217,7 @@ async def create_note(
         "items": items,
         "total": total,
         "nc": "comptable",
+        "caisse": body.caisse,
         "comment": (body.comment or "").strip() or None,
         "created_by": user.id,
     }
@@ -263,6 +270,10 @@ async def update_note(
         updates["beneficiary_name"] = name
     if "nc" in data:
         updates["nc"] = "comptable"
+    if "caisse" in data:
+        if data["caisse"] not in CAISSE_VALUES:
+            raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
+        updates["caisse"] = data["caisse"]
     if "items" in data:
         items, total = _clean_items(body.items)
         if total > MAX_AMOUNT:

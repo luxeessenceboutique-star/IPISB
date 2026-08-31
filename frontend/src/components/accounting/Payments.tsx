@@ -388,12 +388,15 @@ type CashNoteToPay = {
   objet: string | null;
   total: number;
   nc: "noir" | "comptable";
+  caisse?: "caisse_sociale" | "caisse_secondaire";
   approved_by_name: string | null;
 };
 
 function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onClose: () => void; onPaid: () => void }) {
   const [form, setForm] = useState({
-    payment_method: "cheque",
+    // Pré-rempli avec la caisse déclarée à la création de la note — reste
+    // modifiable si le règlement se fait finalement autrement.
+    payment_method: note.caisse ?? "cheque",
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });

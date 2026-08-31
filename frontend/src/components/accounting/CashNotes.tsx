@@ -18,12 +18,18 @@ type Note = {
   id: string; reference: string | null; note_date: string;
   beneficiary_name: string; beneficiary_cin: string | null; objet: string | null;
   period_from: string | null; period_to: string | null; accorded_by: string | null;
-  items: Item[]; total: number; nc: "noir" | "comptable"; comment: string | null; created_by_name: string | null;
+  items: Item[]; total: number; nc: "noir" | "comptable";
+  caisse: "caisse_sociale" | "caisse_secondaire"; comment: string | null; created_by_name: string | null;
   status: NoteStatus;
   approved_by_name: string | null; paid_by_name: string | null;
   rejection_reason: string | null; payment_method: string | null; payment_date: string | null;
 };
 type NotesData = { items: Note[]; count: number; total: number };
+
+// Caisse visée par l'avance, choisie à la création — deux caisses physiques,
+// toutes deux comptabilisées (le mode de règlement à l'exécution du paiement
+// en est simplement pré-rempli, il reste modifiable si le contexte change).
+const CAISSE_LABELS: Record<string, string> = { caisse_sociale: "Caisse comptable", caisse_secondaire: "Caisse sociale" };
 
 const STATUS_LABELS: Record<NoteStatus, string> = {
   pending: "En attente N+1", approved: "Approuvée", rejected: "Rejetée", paid: "Payée",
@@ -81,6 +87,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     period_to: (note?.period_to || "").slice(0, 10),
     accorded_by: note?.accorded_by || "",
     nc: note?.nc || "comptable",
+    caisse: note?.caisse || "caisse_sociale",
     comment: note?.comment || "",
   });
   const [items, setItems] = useState<FormItem[]>(
@@ -113,6 +120,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       accorded_by: form.accorded_by.trim() || null,
       items: payloadItems,
       nc: form.nc,
+      caisse: form.caisse,
       comment: form.comment.trim() || null,
     };
     setBusy(true);
@@ -151,6 +159,11 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
           <input value={form.accorded_by} onChange={e => set("accorded_by", e.target.value)} placeholder="Direction / Responsable" className="u-input" style={fieldStyle} />
         </div>
       </div>
+
+      <label style={labelStyle}>Caisse</label>
+      <select value={form.caisse} onChange={e => set("caisse", e.target.value)} className="u-input" style={fieldStyle}>
+        {Object.entries(CAISSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0 14px" }}>
         <div>

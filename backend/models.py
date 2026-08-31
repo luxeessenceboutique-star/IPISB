@@ -572,6 +572,7 @@ class CashNoteCreate(BaseModel):
     accorded_by: Optional[str] = None               # Accordée par
     items: list[CashNoteItem] = []                  # [{article, prestataire, montant}]
     nc: str = "comptable"                           # nature journal : 'noir' | 'comptable'
+    caisse: str = "caisse_sociale"                  # caisse visée : caisse_sociale=Comptable | caisse_secondaire=Sociale
     comment: Optional[str] = None
 
 
@@ -586,6 +587,7 @@ class CashNoteUpdate(BaseModel):
     accorded_by: Optional[str] = None
     items: Optional[list[CashNoteItem]] = None
     nc: Optional[str] = None                         # 'noir' | 'comptable'
+    caisse: Optional[str] = None                     # caisse_sociale | caisse_secondaire
     comment: Optional[str] = None
 
 
