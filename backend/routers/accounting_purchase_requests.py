@@ -556,9 +556,10 @@ async def replace_installments(
                 f"de {CASH_REGISTER_MAX} MAD pour un règlement en Caisse comptable.",
             )
 
-    # Le total planifié ne doit pas dépasser le devis retenu/la commande —
-    # même référence que schedTotal côté frontend (commande si émise, sinon
-    # devis retenu TTC, sinon budget estimé).
+    # Le total planifié doit correspondre EXACTEMENT au devis retenu/la commande
+    # — même référence que schedTotal côté frontend (commande si émise, sinon
+    # devis retenu TTC, sinon budget estimé). Ni dépassement ni échéancier
+    # incomplet : les deux laissaient auparavant un écart non couvert.
     reference_total = float(pr.get("budget_estimate") or 0)
     order_rows = db.from_("purchases").select("total_incl_vat").eq("purchase_request_id", pr_id).limit(1).execute().data or []
     if order_rows:
@@ -571,11 +572,16 @@ async def replace_installments(
         if quote_rows:
             reference_total = float(quote_rows[0].get("total_incl_vat") or 0)
     planned_total = sum(float(r.get("amount") or 0) for r in to_insert)
-    if planned_total > reference_total + 0.01:
+    # Un échéancier vide reste permis (réinitialisation) ; dès qu'une échéance
+    # est saisie, le total doit coller au montant de référence à 0,01 MAD près.
+    if to_insert and abs(planned_total - reference_total) > 0.01:
+        ecart = planned_total - reference_total
+        verbe = "dépasse le" if ecart > 0 else "est inférieur au"
         raise HTTPException(
             400,
-            f"Le total planifié ({planned_total:.2f} MAD) dépasse le montant de référence "
-            f"({reference_total:.2f} MAD) — écart de {planned_total - reference_total:.2f} MAD.",
+            f"Le total planifié ({planned_total:.2f} MAD) {verbe} montant de référence "
+            f"({reference_total:.2f} MAD) — écart de {abs(ecart):.2f} MAD. L'échéancier doit "
+            f"couvrir l'intégralité du montant retenu, ni plus ni moins.",
         )
 
     db.from_("purchase_installments").delete().eq("purchase_request_id", pr_id).execute()

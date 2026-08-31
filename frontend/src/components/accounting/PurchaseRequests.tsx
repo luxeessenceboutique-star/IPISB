@@ -905,16 +905,17 @@ function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; ro
   const planned = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const ecart = planned - total;
   const overBudget = ecart > 0.005;
+  const hasGap = Math.abs(ecart) > 0.005;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "flex-end", marginTop: 10, fontSize: 12, fontFamily: mono }}>
       <span style={{ color: PAL.muted }}>{label}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(total)}</b></span>
       <span style={{ color: PAL.muted }}>Planifié&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(planned)}</b></span>
-      {Math.abs(ecart) > 0.005 && (
+      {hasGap && (
         <span
           style={{ color: PAL.muted }}
-          title={overBudget ? "Le total planifié dépasse le devis retenu — l'enregistrement est bloqué tant que l'écart n'est pas résorbé." : "Le total planifié reste en dessous du devis retenu."}
+          title={overBudget ? "Le total planifié dépasse le devis retenu — l'enregistrement est bloqué tant que l'écart n'est pas résorbé." : "Le total planifié est inférieur au devis retenu — l'enregistrement est bloqué tant que l'écart n'est pas résorbé."}
         >
-          Écart&nbsp;: <b style={{ color: overBudget ? "var(--pal-danger)" : PAL.ink }}>{overBudget ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
+          Écart&nbsp;: <b style={{ color: "var(--pal-danger)" }}>{overBudget ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
         </span>
       )}
     </div>
@@ -949,8 +950,13 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
       .filter(r => (parseFloat(r.amount) || 0) > 0 || r.label.trim())
       .map(r => ({ label: r.label.trim() || null, amount: parseFloat(r.amount) || 0, payment_mode: r.payment_mode, due_date: r.due_date || null }));
     const planned = items.reduce((s, r) => s + r.amount, 0);
-    if (planned > total + 0.01) {
-      toast.error(`Le total planifié (${fmtMAD(planned)}) dépasse ${totalLabel === "Commande" ? "la commande" : totalLabel.toLowerCase()} (${fmtMAD(total)}) — écart de ${fmtMAD(planned - total)}.`);
+    // Échéancier vide = réinitialisation, toujours permis. Dès qu'une échéance
+    // est saisie, le total doit coller exactement à la référence — ni écart
+    // positif ni négatif.
+    if (items.length > 0 && Math.abs(planned - total) > 0.01) {
+      const ecart = planned - total;
+      const verbe = ecart > 0 ? "dépasse" : "est inférieur à";
+      toast.error(`Le total planifié (${fmtMAD(planned)}) ${verbe} ${totalLabel === "Commande" ? "la commande" : totalLabel.toLowerCase()} (${fmtMAD(total)}) — écart de ${fmtMAD(Math.abs(ecart))}. L'échéancier doit couvrir l'intégralité du montant, ni plus ni moins.`);
       return;
     }
     const overCash = items.find(r => r.payment_mode === "caisse_sociale" && r.amount > 4500);
