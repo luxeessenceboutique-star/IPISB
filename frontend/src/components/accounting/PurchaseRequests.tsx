@@ -901,8 +901,15 @@ const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
   payment_mode: d.payment_mode ?? "cheque", due_date: d.due_date ?? "",
 }));
 
+// Ventilation par registre : « Caisse comptable » sort de la caisse physique,
+// tout autre mode (chèque, OV) transite par la banque — même logique que
+// resolve_channel() côté journal de caisse.
+const CASH_MODES = new Set(["caisse_sociale"]);
+
 function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; rows: IRow[]; label?: string }) {
   const planned = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const caisseTotal = rows.reduce((s, r) => s + (CASH_MODES.has(r.payment_mode) ? (parseFloat(r.amount) || 0) : 0), 0);
+  const bankTotal = planned - caisseTotal;
   const ecart = planned - total;
   const overBudget = ecart > 0.005;
   const hasGap = Math.abs(ecart) > 0.005;
@@ -910,6 +917,12 @@ function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; ro
     <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "flex-end", marginTop: 10, fontSize: 12, fontFamily: mono }}>
       <span style={{ color: PAL.muted }}>{label}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(total)}</b></span>
       <span style={{ color: PAL.muted }}>Planifié&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(planned)}</b></span>
+      {planned > 0.005 && (
+        <>
+          <span style={{ color: PAL.muted }} title="Somme des échéances réglées en Caisse comptable.">Dont Caisse&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(caisseTotal)}</b></span>
+          <span style={{ color: PAL.muted }} title="Somme des échéances réglées par chèque ou virement (OV).">Dont Banque&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(bankTotal)}</b></span>
+        </>
+      )}
       {hasGap && (
         <span
           style={{ color: PAL.muted }}
