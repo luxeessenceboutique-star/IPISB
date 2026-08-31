@@ -22,7 +22,9 @@ type Purchase = {
   purchase_number: string;
   title: string;
   supplier_name: string | null;
-  total_incl_vat: number;
+  total_price?: number;    // montant HT (quantité × prix unitaire, livraison incluse si payante)
+  vat_percent?: number;
+  total_incl_vat: number;  // montant TTC
   payment_status: "pending" | "partially_paid" | "paid";
   purchase_date: string;
 };
@@ -149,7 +151,14 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
           Pour l'achat : <strong>{purchase.title}</strong> ({purchase.purchase_number})
         </div>
         {preset?.label && (
-          <div className="chip-c chip-c-blue" style={{ marginBottom: 16 }}>Règlement de l'échéance : {preset.label}</div>
+          <div className="chip-c chip-c-blue" style={{ marginBottom: 8 }}>Règlement de l'échéance : {preset.label}</div>
+        )}
+        {purchase.total_incl_vat != null && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, rowGap: 2, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 12 }}>
+            <span style={{ color: PAL.muted, marginRight: 14 }}>Montant HT&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(purchase.total_price ?? 0)}</b></span>
+            <span style={{ color: PAL.muted, marginRight: 14 }}>TVA{purchase.vat_percent != null ? ` (${purchase.vat_percent}%)` : ""}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(purchase.total_incl_vat - (purchase.total_price ?? 0))}</b></span>
+            <span style={{ color: PAL.muted }}>Total TTC&nbsp;: <b style={{ color: "var(--pal-primary)" }}>{fmtMAD(purchase.total_incl_vat)}</b></span>
+          </div>
         )}
 
         <label style={labelStyle}>Montant (MAD) *</label>
