@@ -82,24 +82,51 @@ ENTITY_CHANNELS: dict[str, tuple[Channel, list[str]]] = {
     "rh.settings": (Channel.V2_ONLY, []),
 
     # ── Comptabilité ────────────────────────────────────────────────────
-    "accounting.suppliers": (Channel.SELF_VALIDATED, ["comptabilite"]),
-    "accounting.categories_budgets": (Channel.SELF_VALIDATED, ["comptabilite"]),
+    # Réponses confirmées par l'utilisateur (questionnaire Comptabilité,
+    # OMAR.xlsx, 70 actions réparties sur 7 domaines) : les 7 lignes
+    # ci-dessous étaient proposées à SELF_VALIDATED par défaut ; l'utilisateur
+    # a répondu Canal 2 pour les actions d'écriture (Créer/Modifier/
+    # Supprimer) de chacune — la lecture (Voir) reste ouverte à V1 sous
+    # Canal 2 aussi, donc aucun conflit avec le reste des réponses "1" sur
+    # les mêmes domaines (Voir seul). Reste à câbler dans chaque router
+    # (aucun effet de bord tant que ce n'est pas fait, cf. docstring).
+    "accounting.suppliers": (Channel.V1_THEN_V2, ["comptabilite"]),          # CPR-03/04
+    "accounting.categories_budgets": (Channel.V1_THEN_V2, ["comptabilite"]), # CPR-01/02/05/06
     "accounting.purchase_requests": (Channel.V1_THEN_V2, ["comptabilite"]),
     "accounting.quotations": (Channel.V1_THEN_V2, ["comptabilite"]),
     "accounting.purchases": (Channel.V1_THEN_V2, ["comptabilite"]),
-    "accounting.receptions": (Channel.SELF_VALIDATED, ["comptabilite"]),
-    "accounting.inventory": (Channel.SELF_VALIDATED, ["comptabilite"]),
-    "accounting.expenses": (Channel.SELF_VALIDATED, ["comptabilite"]),
-    "accounting.revenues": (Channel.SELF_VALIDATED, ["comptabilite"]),
-    "accounting.invoices": (Channel.SELF_VALIDATED, ["comptabilite"]),
+    "accounting.receptions": (Channel.V1_THEN_V2, ["comptabilite"]),         # CPA-19
+    "accounting.inventory": (Channel.V1_THEN_V2, ["comptabilite"]),          # CPA-20/21/22/23
+    "accounting.expenses": (Channel.V1_THEN_V2, ["comptabilite"]),           # CPD-01/02/03
+    "accounting.revenues": (Channel.V1_THEN_V2, ["comptabilite"]),           # CPD-04/05/06
+    "accounting.invoices": (Channel.V1_THEN_V2, ["comptabilite"]),           # CPD-07/08
     "accounting.cash_journal": (Channel.V1_THEN_V2, ["cashier"]),
     "accounting.bank_journal": (Channel.V1_THEN_V2, ["comptabilite"]),
     "accounting.cash_notes": (Channel.V1_THEN_V2, ["cashier"]),
     "accounting.mission_notes": (Channel.V1_THEN_V2, ["cashier"]),
+    # accounting.cheques (CPT2-11/12/13) : NON mis à jour — l'utilisateur n'a
+    # répondu que CPT2-11 (Lister/Stats/Exporter le registre) = Canal 3,
+    # CPT2-12 (Créer/Modifier/Supprimer une entrée) et CPT2-13 (Changer le
+    # statut) restent sans réponse. Changer tout le registre en V2_ONLY sur
+    # la base d'1 réponse sur 3 retirerait l'accès du comptable à la SAISIE
+    # du registre sans confirmation explicite — laissé en l'état, à trancher
+    # une fois CPT2-12/13 répondues.
     "accounting.cheques": (Channel.V1_THEN_V2, ["comptabilite"]),
-    "accounting.payments": (Channel.SELF_VALIDATED, ["comptabilite"]),
+    "accounting.payments": (Channel.V1_THEN_V2, ["comptabilite"]),          # CPT2-14/15/16
+    # accounting.tuition (CPS-04/05/06 = Canal 1) : NON appliqué. Ceci est
+    # littéralement LA validation N+1 déjà en place (caissier → admin) citée
+    # partout comme "l'exemple de référence V1/V2" — la réponse retire cette
+    # validation (paiement de scolarité auto-validé par le caissier, sans
+    # passage admin). Vu l'enjeu (argent réel, workflow déjà construit et
+    # documenté comme référence), laissé inchangé tant que ce n'est pas
+    # confirmé explicitement plutôt qu'appliqué sur la foi d'une case cochée.
     "accounting.tuition": (Channel.V1_THEN_V2, ["cashier"]),
     "accounting.classes_cashier_ops": (Channel.V1_THEN_V2, ["cashier"]),
+    # accounting.dashboard / accounting.analytics (CPX-01..06 = Canal 3) :
+    # PAS ajoutées au registre. Le comptable (CPT) a accès en lecture à ces
+    # tableaux de bord aujourd'hui ; Canal 3 (V2 exclusivement) le lui
+    # retirerait entièrement. Changement visible et potentiellement gênant
+    # au quotidien — à confirmer avant de créer ces entités et de les câbler.
 
     # ── Scolarité ───────────────────────────────────────────────────────
     "academics.courses": (Channel.SELF_VALIDATED, ["professor"]),
