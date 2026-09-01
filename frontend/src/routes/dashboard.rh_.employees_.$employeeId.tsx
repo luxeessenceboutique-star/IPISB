@@ -764,8 +764,8 @@ function ProfilTab({ employee }: { employee: Employee }) {
       {card("Pièce d'identité", <>
         {row("N° CIN", employee.cin)}
         {row("Délivrance CIN", fmtDate(employee.cin_issue_date))}
-        {row("Validité CIN", fmtDate(employee.cin_expiry_date))}
         {row("N° Passeport", employee.passport_number)}
+        {row("Validité passeport", fmtDate(employee.cin_expiry_date))}
       </>)}
 
       {card("Contact d'urgence", <>
