@@ -895,7 +895,12 @@ function InterviewsPanel() {
   const [interviewerPool, setInterviewerPool] = useState<Interviewer[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ candidate_id: "", slot_id: "", type: "rh", meet_link: "", notes: "", interviewer_ids: [] as string[] });
+  const [form, setForm] = useState({
+    candidate_id: "", slot_id: "", type: "rh", meet_link: "", notes: "", interviewer_ids: [] as string[],
+    // « Date libre » : saisir directement une date/heure au lieu de piocher dans un créneau pré-créé.
+    mode: "slot" as "slot" | "custom",
+    date: new Date().toISOString().slice(0, 10), start_time: "09:00", end_time: "09:30",
+  });
   const [busy, setBusy] = useState(false);
   const [reassignFor, setReassignFor] = useState<Interview | null>(null);
   const [reassignIds, setReassignIds] = useState<string[]>([]);
@@ -918,13 +923,20 @@ function InterviewsPanel() {
 
   async function submit() {
     if (!form.candidate_id) { toast.error("Sélectionnez un candidat."); return; }
-    const slot = availableSlots.find(s => s.id === form.slot_id);
-    if (!slot) { toast.error("Sélectionnez un créneau."); return; }
+    let payload: { slot_id?: string; date: string; start_time: string; end_time: string };
+    if (form.mode === "slot") {
+      const slot = availableSlots.find(s => s.id === form.slot_id);
+      if (!slot) { toast.error("Sélectionnez un créneau."); return; }
+      payload = { slot_id: slot.id, date: slot.date, start_time: slot.start_time, end_time: slot.end_time };
+    } else {
+      if (!form.date || !form.start_time || !form.end_time) { toast.error("Renseignez la date et les horaires."); return; }
+      if (form.end_time <= form.start_time) { toast.error("L'heure de fin doit être après l'heure de début."); return; }
+      payload = { date: form.date, start_time: form.start_time, end_time: form.end_time };
+    }
     setBusy(true);
     try {
       await api.post("/api/rh/recruitment/interviews", {
-        candidate_id: form.candidate_id, slot_id: slot.id,
-        date: slot.date, start_time: slot.start_time, end_time: slot.end_time,
+        candidate_id: form.candidate_id, ...payload,
         type: form.type, meet_link: form.meet_link || null, notes: form.notes || null,
         interviewer_ids: form.interviewer_ids,
       });
@@ -981,15 +993,38 @@ function InterviewsPanel() {
             {candidates.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
           </select>
           <label style={labelStyle}>Créneau *</label>
-          {availableSlots.length === 0 ? (
-            <div style={{ ...fieldStyle, color: PAL.muted, fontSize: 12.5, display: "flex", alignItems: "center" }}>
-              Aucun créneau disponible — créez-en un dans l'onglet « Créneaux ».
-            </div>
+          <div style={{ display: "flex", gap: 4, marginTop: 8, marginBottom: 10 }}>
+            {([["slot", "Créneau existant"], ["custom", "Date libre"]] as const).map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setForm(f => ({ ...f, mode: k }))} style={{
+                padding: "5px 12px", borderRadius: 999, border: `1px solid ${form.mode === k ? "var(--pal-primary)" : PAL.line}`,
+                background: form.mode === k ? "var(--pal-pale)" : "transparent", cursor: "pointer",
+                fontFamily: sans, fontSize: 12, fontWeight: 600, color: form.mode === k ? "var(--pal-primary-deep)" : PAL.muted,
+              }}>{l}</button>
+            ))}
+          </div>
+          {form.mode === "slot" ? (
+            availableSlots.length === 0 ? (
+              <div style={{ ...fieldStyle, color: PAL.muted, fontSize: 12.5, display: "flex", alignItems: "center" }}>
+                Aucun créneau disponible — créez-en un dans l'onglet « Créneaux », ou choisissez « Date libre ».
+              </div>
+            ) : (
+              <select value={form.slot_id} onChange={e => setForm(f => ({ ...f, slot_id: e.target.value }))} style={fieldStyle}>
+                <option value="">— Sélectionner un créneau —</option>
+                {availableSlots.map(s => <option key={s.id} value={s.id}>{slotLabel(s)}</option>)}
+              </select>
+            )
           ) : (
-            <select value={form.slot_id} onChange={e => setForm(f => ({ ...f, slot_id: e.target.value }))} style={fieldStyle}>
-              <option value="">— Sélectionner un créneau —</option>
-              {availableSlots.map(s => <option key={s.id} value={s.id}>{slotLabel(s)}</option>)}
-            </select>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+              <div style={{ flex: "1 1 140px" }}>
+                <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} />
+              </div>
+              <div style={{ flex: "1 1 100px" }}>
+                <input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} />
+              </div>
+              <div style={{ flex: "1 1 100px" }}>
+                <input type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} />
+              </div>
+            </div>
           )}
           <label style={labelStyle}>Type</label>
           <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))} style={fieldStyle}>
@@ -1001,7 +1036,7 @@ function InterviewsPanel() {
           <input type="text" value={form.meet_link} onChange={e => setForm(f => ({ ...f, meet_link: e.target.value }))} style={{ ...fieldStyle, marginBottom: 20 }} />
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button onClick={() => setModalOpen(false)} style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer" }}>Annuler</button>
-            <button onClick={submit} disabled={busy || availableSlots.length === 0} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "9px 20px", cursor: (busy || availableSlots.length === 0) ? "not-allowed" : "pointer", opacity: (busy || availableSlots.length === 0) ? .6 : 1 }}>{busy ? "…" : "Planifier"}</button>
+            <button onClick={submit} disabled={busy} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "9px 20px", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>{busy ? "…" : "Planifier"}</button>
           </div>
         </Modal>
       )}
@@ -1020,7 +1055,7 @@ function InterviewsPanel() {
         </Modal>
       )}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <button type="button" onClick={() => setModalOpen(true)} className="btn-c btn-c-primary"><Plus size={15} strokeWidth={1.7} />Nouvel entretien</button>
+        <button type="button" onClick={() => { setForm(f => ({ ...f, mode: availableSlots.length === 0 ? "custom" : "slot" })); setModalOpen(true); }} className="btn-c btn-c-primary"><Plus size={15} strokeWidth={1.7} />Nouvel entretien</button>
       </div>
       {loading ? (
         <div className="dash-card" style={{ padding: 22 }}><div className="shimmer" style={{ height: 16, width: 160, borderRadius: 999 }} /></div>
