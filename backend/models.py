@@ -28,6 +28,12 @@ class AssignmentCreate(BaseModel):
     due_date: Optional[str] = None
     max_grade: float = 20
     course_id: str
+    # Évaluation créée depuis le raccourci "Note directe" (page Notes) plutôt
+    # que le circuit normal Contrôle continu : is_quick_grade=true dispense
+    # l'élève de remise préalable ; quick_grade_category fixe si elle compte
+    # dans devoir_avg ("devoir") ou exam_avg ("exam") — cf. grades.py.
+    is_quick_grade: bool = False
+    quick_grade_category: Optional[str] = None
 
 
 class SubmissionCreate(BaseModel):
@@ -40,9 +46,8 @@ class GradeInput(BaseModel):
     feedback: Optional[str] = None
 
 
-class QuickGradeInput(BaseModel):
-    """Saisie directe des notes d'un cours (page Notes) — {student_id: note}."""
-    course_id: str
+class QuickGradesUpsert(BaseModel):
+    """Saisie directe des notes d'une évaluation (page Notes) — {student_id: note}."""
     grades: dict[str, Optional[float]]
 
 

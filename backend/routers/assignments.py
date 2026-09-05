@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import AssignmentCreate, SubmissionCreate, GradeInput, QuickGradeInput
+from models import AssignmentCreate, SubmissionCreate, GradeInput, QuickGradesUpsert
 from utils.notify import notify_users
 from utils.email import send_email
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
+
+QUICK_GRADE_CATEGORIES = {"devoir", "exam"}
 
 
 def _check_own_course(db: Client, user: CurrentUser, course_id: str) -> None:
@@ -19,55 +21,50 @@ def _check_own_course(db: Client, user: CurrentUser, course_id: str) -> None:
         raise HTTPException(403, "Not your course")
 
 
-@router.get("/quick-grade")
-async def get_quick_grades(
+@router.get("/quick")
+async def list_quick_grade_assignments(
     course_id: str,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    """Notes déjà saisies via le raccourci « Note directe » pour ce cours —
-    {student_id: note}, vide si aucune saisie n'a encore eu lieu."""
+    """Évaluations créées via le raccourci « Note directe » pour ce cours
+    (page Notes) — chacune catégorisée Contrôle continu ou Examen — avec la
+    note de chaque élève déjà saisie."""
     if not user.can_create():
         raise HTTPException(403, "Not authorized")
     _check_own_course(db, user, course_id)
-    assignment = (
-        db.from_("assignments").select("id")
+
+    assignments = (
+        db.from_("assignments").select("id, title, max_grade, quick_grade_category, created_at")
         .eq("course_id", course_id).eq("is_quick_grade", True)
-        .execute().data
+        .order("created_at").execute().data or []
     )
-    if not assignment:
-        return {}
-    subs = db.from_("submissions").select("student_id, grade").eq("assignment_id", assignment[0]["id"]).execute().data or []
-    return {s["student_id"]: s["grade"] for s in subs}
+    if not assignments:
+        return []
+    assignment_ids = [a["id"] for a in assignments]
+    subs = db.from_("submissions").select("assignment_id, student_id, grade").in_("assignment_id", assignment_ids).execute().data or []
+    grades_by_assignment: dict[str, dict[str, float | None]] = {}
+    for s in subs:
+        grades_by_assignment.setdefault(s["assignment_id"], {})[s["student_id"]] = s["grade"]
+    return [{**a, "grades": grades_by_assignment.get(a["id"], {})} for a in assignments]
 
 
-@router.put("/quick-grade")
+@router.put("/{assignment_id}/quick-grades")
 async def set_quick_grades(
-    body: QuickGradeInput,
+    assignment_id: str,
+    body: QuickGradesUpsert,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    """Saisie directe des notes d'un cours (page Notes) : upsert un devoir
-    canonique « Note directe » par cours (créé au premier usage, repéré par
-    is_quick_grade), puis la note de chaque élève dessus — réutilise le
-    pipeline devoir/soumission/notation existant sans exiger de remise
-    préalable de l'élève (contrairement au circuit devoir normal)."""
+    """Saisit la note de chaque élève pour UNE évaluation « Note directe » —
+    upsert des soumissions sans exiger de remise préalable de l'élève
+    (contrairement au circuit devoir normal)."""
     if not user.can_create():
         raise HTTPException(403, "Not authorized")
-    _check_own_course(db, user, body.course_id)
-
-    existing = (
-        db.from_("assignments").select("id")
-        .eq("course_id", body.course_id).eq("is_quick_grade", True)
-        .execute().data
-    )
-    if existing:
-        assignment_id = existing[0]["id"]
-    else:
-        res = db.from_("assignments").insert({
-            "title": "Note directe", "course_id": body.course_id, "max_grade": 20, "is_quick_grade": True,
-        }).execute()
-        assignment_id = res.data[0]["id"]
+    assignment = db.from_("assignments").select("course_id, is_quick_grade").eq("id", assignment_id).execute().data
+    if not assignment or not assignment[0]["is_quick_grade"]:
+        raise HTTPException(404, "Évaluation introuvable")
+    _check_own_course(db, user, assignment[0]["course_id"])
 
     existing_subs = (
         db.from_("submissions").select("id, student_id")
@@ -85,7 +82,7 @@ async def set_quick_grades(
     if to_insert:
         db.from_("submissions").insert(to_insert).execute()
 
-    return {"ok": True, "assignment_id": assignment_id}
+    return {"ok": True}
 
 
 @router.get("")
@@ -165,16 +162,30 @@ async def create_assignment(
         course = db.from_("courses").select("professor_id").eq("id", body.course_id).execute().data
         if not course or course[0]["professor_id"] != user.id:
             raise HTTPException(403, "Not your course")
-    res = db.from_("assignments").insert(
-        {
-            "title": body.title,
-            "description": body.description,
-            "due_date": body.due_date,
-            "max_grade": body.max_grade,
-            "course_id": body.course_id,
-        }
-    ).execute()
+    data = {
+        "title": body.title,
+        "description": body.description,
+        "due_date": body.due_date,
+        "max_grade": body.max_grade,
+        "course_id": body.course_id,
+    }
+    # Champs ajoutés par les migrations l47/l48 : uniquement référencés pour
+    # une évaluation "Note directe" (is_quick_grade=true), jamais pour un
+    # devoir Contrôle continu normal — la création d'un devoir normal reste
+    # donc possible même si l48 n'a pas encore été exécutée côté Supabase.
+    if body.is_quick_grade:
+        if body.quick_grade_category not in QUICK_GRADE_CATEGORIES:
+            raise HTTPException(400, f"quick_grade_category doit être l'un de : {', '.join(QUICK_GRADE_CATEGORIES)}")
+        data["is_quick_grade"] = True
+        data["quick_grade_category"] = body.quick_grade_category
+    res = db.from_("assignments").insert(data).execute()
     new_assignment = res.data[0]
+
+    # Une évaluation « Note directe » (page Notes) n'est pas un vrai devoir à
+    # remettre — aucune notification/email aux élèves, contrairement au
+    # circuit Contrôle continu normal ci-dessous.
+    if body.is_quick_grade:
+        return new_assignment
 
     # Notify all students enrolled in this course
     try:
