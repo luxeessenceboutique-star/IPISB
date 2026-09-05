@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Award, ChevronDown, ChevronRight, Save, Plus, X, Trash2 } from "lucide-react";
+import { Award, ChevronDown, ChevronRight, Save, Plus, X, Trash2, SlidersHorizontal } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/grades")({
@@ -45,6 +45,84 @@ function gradeColor(v: number | null): string {
   return v >= 10 ? "var(--pal-good, #2f8f5b)" : "var(--pal-danger, #c0392b)";
 }
 
+// Pondération Examens/Contrôle continu/Quiz d'un module — même config que
+// dashboard.courses.tsx (GET/PUT /courses/{id}/grade-weights), rendue
+// accessible directement depuis la page Notes pour ne pas obliger le
+// professeur à changer de page pendant la saisie des notes.
+function WeightsModal({ courseId, courseTitle, onClose }: { courseId: string; courseTitle: string; onClose: () => void }) {
+  const [weights, setWeights] = useState({ exam_weight: 50, devoir_weight: 30, quiz_weight: 20 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get(`/api/courses/${courseId}/grade-weights`)
+      .then(d => setWeights({ exam_weight: d.exam_weight, devoir_weight: d.devoir_weight, quiz_weight: d.quiz_weight }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  const total = weights.exam_weight + weights.devoir_weight + weights.quiz_weight;
+
+  async function save() {
+    if (total !== 100) { toast.error(`Les pourcentages doivent totaliser 100 (actuellement ${total}).`); return; }
+    setSaving(true);
+    try {
+      await api.put(`/api/courses/${courseId}/grade-weights`, weights);
+      toast.success("Pondération enregistrée.");
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
+      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 14, padding: 26, width: 400, maxWidth: "94vw", boxShadow: "0 20px 50px rgba(0,0,0,.15)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+          <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 20, fontWeight: 500, color: PAL.ink, margin: 0 }}>Pondération — {courseTitle}</h2>
+          <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, marginTop: 2 }}><X size={17} strokeWidth={1.7} /></button>
+        </div>
+        {loading ? (
+          <div className="shimmer" style={{ height: 16, width: 200, borderRadius: 999, marginTop: 14 }} />
+        ) : (
+          <>
+            <p style={{ fontSize: 12, color: PAL.muted, marginTop: 8, marginBottom: 14, lineHeight: 1.5 }}>
+              Répartition de la note finale entre catégories d'évaluation (doit totaliser 100%). Chaque catégorie sans note aujourd'hui sera automatiquement ignorée dans le calcul.
+            </p>
+            {[
+              { key: "exam_weight" as const, label: "Examens" },
+              { key: "devoir_weight" as const, label: "Contrôle continu" },
+              { key: "quiz_weight" as const, label: "Quiz" },
+            ].map(f => (
+              <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <label style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: PAL.ink }}>{f.label}</label>
+                <input
+                  type="number" min={0} max={100}
+                  value={weights[f.key]}
+                  onChange={e => setWeights(w => ({ ...w, [f.key]: parseInt(e.target.value, 10) || 0 }))}
+                  style={{ ...fieldStyle, width: 80, textAlign: "right" }}
+                />
+                <span style={{ fontSize: 13, color: PAL.muted }}>%</span>
+              </div>
+            ))}
+            <div style={{ textAlign: "right", fontSize: 12, fontWeight: 600, color: total === 100 ? "var(--pal-good, #2f8f5b)" : "var(--pal-danger, #c0392b)", marginBottom: 4 }}>
+              Total : {total}%
+            </div>
+          </>
+        )}
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
+          <button onClick={onClose} className="btn-c btn-c-ghost">Annuler</button>
+          <button onClick={save} disabled={saving || loading} className="btn-c btn-c-primary" style={{ opacity: saving || loading ? 0.6 : 1 }}>
+            {saving ? "…" : "Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GradesPage() {
   const { roles } = useAuth();
   const isAdmin = roles.includes("admin");
@@ -70,6 +148,7 @@ function GradesPage() {
   const [creating, setCreating] = useState(false);
   const [newForm, setNewForm] = useState({ title: "", category: "devoir" as QuickCategory, max_grade: "20" });
   const [creatingBusy, setCreatingBusy] = useState(false);
+  const [showWeights, setShowWeights] = useState(false);
 
   useEffect(() => {
     api.get("/api/classes")
@@ -264,11 +343,16 @@ function GradesPage() {
         <div className="dash-card" style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: creating || assignments.length ? 12 : 0 }}>
             <span style={{ fontFamily: sans, fontSize: 12.5, fontWeight: 700, color: PAL.ink }}>Évaluations du module</span>
-            {!creating && (
-              <button type="button" onClick={() => setCreating(true)} className="btn-c btn-c-soft btn-c-sm">
-                <Plus size={13} strokeWidth={1.8} />Nouvelle évaluation
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => setShowWeights(true)} className="btn-c btn-c-ghost btn-c-sm" title="Répartition Examens / Contrôle continu / Quiz">
+                <SlidersHorizontal size={13} strokeWidth={1.8} />Pondération
               </button>
-            )}
+              {!creating && (
+                <button type="button" onClick={() => setCreating(true)} className="btn-c btn-c-soft btn-c-sm">
+                  <Plus size={13} strokeWidth={1.8} />Nouvelle évaluation
+                </button>
+              )}
+            </div>
           </div>
 
           {creating && (
@@ -422,6 +506,14 @@ function GradesPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {showWeights && moduleId && (
+        <WeightsModal
+          courseId={moduleId}
+          courseTitle={classCourses.find(c => c.id === moduleId)?.title ?? ""}
+          onClose={() => { setShowWeights(false); loadModuleGrades(moduleId, students); }}
+        />
       )}
     </div>
   );
