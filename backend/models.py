@@ -40,6 +40,12 @@ class GradeInput(BaseModel):
     feedback: Optional[str] = None
 
 
+class QuickGradeInput(BaseModel):
+    """Saisie directe des notes d'un cours (page Notes) — {student_id: note}."""
+    course_id: str
+    grades: dict[str, Optional[float]]
+
+
 class QuestionCreate(BaseModel):
     question: str
     options: list[str]

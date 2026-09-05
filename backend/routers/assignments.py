@@ -2,11 +2,90 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import AssignmentCreate, SubmissionCreate, GradeInput
+from models import AssignmentCreate, SubmissionCreate, GradeInput, QuickGradeInput
 from utils.notify import notify_users
 from utils.email import send_email
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
+
+
+def _check_own_course(db: Client, user: CurrentUser, course_id: str) -> None:
+    if user.is_admin():
+        return
+    course = db.from_("courses").select("professor_id").eq("id", course_id).execute().data
+    if not course:
+        raise HTTPException(404, "Cours introuvable")
+    if course[0]["professor_id"] != user.id:
+        raise HTTPException(403, "Not your course")
+
+
+@router.get("/quick-grade")
+async def get_quick_grades(
+    course_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Notes déjà saisies via le raccourci « Note directe » pour ce cours —
+    {student_id: note}, vide si aucune saisie n'a encore eu lieu."""
+    if not user.can_create():
+        raise HTTPException(403, "Not authorized")
+    _check_own_course(db, user, course_id)
+    assignment = (
+        db.from_("assignments").select("id")
+        .eq("course_id", course_id).eq("is_quick_grade", True)
+        .execute().data
+    )
+    if not assignment:
+        return {}
+    subs = db.from_("submissions").select("student_id, grade").eq("assignment_id", assignment[0]["id"]).execute().data or []
+    return {s["student_id"]: s["grade"] for s in subs}
+
+
+@router.put("/quick-grade")
+async def set_quick_grades(
+    body: QuickGradeInput,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Saisie directe des notes d'un cours (page Notes) : upsert un devoir
+    canonique « Note directe » par cours (créé au premier usage, repéré par
+    is_quick_grade), puis la note de chaque élève dessus — réutilise le
+    pipeline devoir/soumission/notation existant sans exiger de remise
+    préalable de l'élève (contrairement au circuit devoir normal)."""
+    if not user.can_create():
+        raise HTTPException(403, "Not authorized")
+    _check_own_course(db, user, body.course_id)
+
+    existing = (
+        db.from_("assignments").select("id")
+        .eq("course_id", body.course_id).eq("is_quick_grade", True)
+        .execute().data
+    )
+    if existing:
+        assignment_id = existing[0]["id"]
+    else:
+        res = db.from_("assignments").insert({
+            "title": "Note directe", "course_id": body.course_id, "max_grade": 20, "is_quick_grade": True,
+        }).execute()
+        assignment_id = res.data[0]["id"]
+
+    existing_subs = (
+        db.from_("submissions").select("id, student_id")
+        .eq("assignment_id", assignment_id).in_("student_id", list(body.grades.keys()))
+        .execute().data or []
+    )
+    sub_by_student = {s["student_id"]: s["id"] for s in existing_subs}
+
+    to_insert = []
+    for student_id, grade in body.grades.items():
+        if student_id in sub_by_student:
+            db.from_("submissions").update({"grade": grade}).eq("id", sub_by_student[student_id]).execute()
+        else:
+            to_insert.append({"assignment_id": assignment_id, "student_id": student_id, "grade": grade})
+    if to_insert:
+        db.from_("submissions").insert(to_insert).execute()
+
+    return {"ok": True, "assignment_id": assignment_id}
 
 
 @router.get("")
