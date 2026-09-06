@@ -156,6 +156,12 @@ async def create_request(
     data["created_by"] = user.id
     # Ne conserver que les critères de conformité connus.
     data["conformity_criteria"] = [c for c in (data.get("conformity_criteria") or []) if c in CONFORMITY_CRITERIA]
+    # category_id (migration l49) : omis du payload quand non renseigné, pour
+    # que la création d'une DA reste possible même si l49 n'a pas encore été
+    # exécutée côté Supabase (contrairement à un category_id explicite, qui
+    # échouera avec une erreur claire tant que la colonne n'existe pas).
+    if data.get("category_id") is None:
+        data.pop("category_id", None)
     res = db.from_("purchase_requests").insert(data).execute()
     pr = res.data[0]
     log_audit(db, user.id, "purchase_request.create", "purchase_request", pr["id"],

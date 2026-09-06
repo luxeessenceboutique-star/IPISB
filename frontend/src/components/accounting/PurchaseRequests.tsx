@@ -28,7 +28,6 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   retournee:       { label: "Retournée",       tone: "chip-c-amber" },
   annulee:         { label: "Annulée",         tone: "chip-c-red" },
 };
-const CAT: Record<string, string> = { consommable: "Consommable", equipement: "Équipement", locaux: "Locaux", service: "Service" };
 // Liste des services de l'établissement (ajustez selon votre organisation)
 const SERVICES = ["Direction", "Scolarité", "Comptabilité", "Ressources humaines", "Informatique", "Économat / Logistique", "Pédagogie", "Communication", "Maintenance"];
 const REQ_TYPE: Record<string, string> = { nouveau_besoin: "Nouveau besoin", renouvellement: "Renouvellement" };
@@ -44,6 +43,7 @@ const CONFORMITY: Record<string, string> = {
 const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", caisse_sociale: "Caisse comptable" };
 
 type Supplier = { id: string; company_name: string };
+type Category = { id: string; name: string };
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
   quote_number: string; quote_date: string | null; expiration_date: string | null;
@@ -81,7 +81,7 @@ type Order = {
 type PR = {
   id: string; request_number: string; company: string | null; service: string | null;
   requester_name: string | null; project: string | null; activity: string | null; justification: string | null;
-  request_type: string; asset_category: string; characteristics: string | null;
+  request_type: string; asset_category: string; category_id: string | null; characteristics: string | null;
   cdc_attachment_name: string | null; cdc_attachment_path: string | null;
   conformity_note: string | null; conformity_criteria: string[] | null;
   article_code: string | null; quantity: number; budget_estimate: number; duration: string | null;
@@ -111,13 +111,13 @@ function H2({ children }: { children: React.ReactNode }) {
 }
 
 // ── Modal de création (formulaire unique : besoin + classement) ──────────────
-function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function CreateModal({ categories, onClose, onSaved }: { categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const { user } = useAuth();
   const ownerName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "";
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     company: "", service: "", requester_name: ownerName, project: "", activity: "", justification: "",
-    request_type: "nouveau_besoin", asset_category: "consommable", characteristics: "", conformity_note: "",
+    request_type: "nouveau_besoin", category_id: "", characteristics: "", conformity_note: "",
     article_code: "", quantity: "1", budget_estimate: "0", duration: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -135,6 +135,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     try {
       const pr = await api.post("/api/accounting/purchase-requests", {
         ...form,
+        category_id: form.category_id || null,
         quantity: parseFloat(form.quantity) || 1,
         budget_estimate: parseFloat(form.budget_estimate) || 0,
         conformity_criteria: criteria,
@@ -186,8 +187,9 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           </div>
           <div>
             <label style={labelStyle}>Catégorie</label>
-            <select className="u-input" style={fieldStyle} value={form.asset_category} onChange={e => set("asset_category", e.target.value)}>
-              {Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            <select className="u-input" style={fieldStyle} value={form.category_id} onChange={e => set("category_id", e.target.value)}>
+              <option value="">— Aucune —</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
@@ -446,8 +448,8 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
 // ressort, au-delà de 10 000 MAD admin exclusivement. Calculé ici (pas en prop)
 // car il dépend du budget_estimate de CETTE demande, connu seulement une fois
 // chargée.
-function DetailModal({ prId, suppliers, onClose, onChanged }: {
-  prId: string; suppliers: Supplier[]; onClose: () => void; onChanged: () => void;
+function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
+  prId: string; suppliers: Supplier[]; categories: Category[]; onClose: () => void; onChanged: () => void;
 }) {
   const { can } = usePermissions();
   const [pr, setPr] = useState<PRDetail | null>(null);
@@ -467,7 +469,7 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
     setEditForm({
       company: p.company ?? "", service: p.service ?? "", requester_name: p.requester_name ?? "",
       project: p.project ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
-      request_type: p.request_type, asset_category: p.asset_category, characteristics: p.characteristics ?? "",
+      request_type: p.request_type, category_id: p.category_id ?? "", characteristics: p.characteristics ?? "",
       conformity_note: p.conformity_note ?? "", article_code: p.article_code ?? "",
       quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0), duration: p.duration ?? "",
     });
@@ -484,6 +486,7 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
     try {
       await api.patch(`/api/accounting/purchase-requests/${prId}`, {
         ...editForm,
+        category_id: editForm.category_id || null,
         quantity: parseFloat(editForm.quantity) || 1,
         budget_estimate: parseFloat(editForm.budget_estimate) || 0,
         conformity_criteria: editCriteria,
@@ -648,8 +651,9 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
               </div>
               <div>
                 <label style={labelStyle}>Catégorie</label>
-                <select className="u-input" style={fieldStyle} value={editForm.asset_category} onChange={e => setEditField("asset_category", e.target.value)}>
-                  {Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                <select className="u-input" style={fieldStyle} value={editForm.category_id} onChange={e => setEditField("category_id", e.target.value)}>
+                  <option value="">— Aucune —</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
             </div>
@@ -684,7 +688,7 @@ function DetailModal({ prId, suppliers, onClose, onChanged }: {
           <SectionLabel>Expression de besoin</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 18px", margin: "8px 0 16px" }}>
             {info("Type", REQ_TYPE[pr.request_type])}
-            {info("Catégorie", CAT[pr.asset_category])}
+            {info("Catégorie", categories.find(c => c.id === pr.category_id)?.name ?? "—")}
             {info("Société", pr.company)} {info("Service", pr.service)}
             {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
             {info("Activité", pr.activity)}
@@ -1070,6 +1074,7 @@ export function AccountingPurchaseRequests() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
 
@@ -1096,13 +1101,14 @@ export function AccountingPurchaseRequests() {
   }
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, statusFilter, page]);
   useEffect(() => { api.get("/api/accounting/suppliers").then((d: Supplier[]) => setSuppliers(d ?? [])).catch(() => {}); }, []);
+  useEffect(() => { api.get("/api/accounting/categories").then((d: Category[]) => setCategories(d ?? [])).catch(() => {}); }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div>
-      {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onSaved={load} />}
-      {detailId && <DetailModal prId={detailId} suppliers={suppliers} onClose={() => setDetailId(null)} onChanged={load} />}
+      {createOpen && <CreateModal categories={categories} onClose={() => setCreateOpen(false)} onSaved={load} />}
+      {detailId && <DetailModal prId={detailId} suppliers={suppliers} categories={categories} onClose={() => setDetailId(null)} onChanged={load} />}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 220px" }}>
@@ -1133,7 +1139,7 @@ export function AccountingPurchaseRequests() {
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{pr.request_number}</div>
                     <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}>
-                      {CAT[pr.asset_category]} · {pr.justification || "—"}
+                      {categories.find(c => c.id === pr.category_id)?.name ?? "—"} · {pr.justification || "—"}
                     </div>
                   </div>
                   <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(pr.budget_estimate)}</span>

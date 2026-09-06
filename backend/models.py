@@ -494,6 +494,7 @@ class PurchaseRequestCreate(BaseModel):
     justification: Optional[str] = None
     request_type: str = "nouveau_besoin"        # 'nouveau_besoin' | 'renouvellement'
     asset_category: str = "consommable"         # 'consommable'|'equipement'|'locaux'|'service'
+    category_id: Optional[str] = None           # accounting_categories — même liste que Dépenses
     characteristics: Optional[str] = None
     conformity_note: Optional[str] = None
     conformity_criteria: list[str] = []
@@ -513,6 +514,7 @@ class PurchaseRequestUpdate(BaseModel):
     justification: Optional[str] = None
     request_type: Optional[str] = None
     asset_category: Optional[str] = None
+    category_id: Optional[str] = None
     characteristics: Optional[str] = None
     conformity_note: Optional[str] = None
     conformity_criteria: Optional[list[str]] = None
