@@ -100,9 +100,22 @@ async def create_payment(
         raise HTTPException(400, f"Un règlement en Caisse comptable ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
 
     # Verify purchase exists
-    purchase_exists = db.from_("purchases").select("id, purchase_request_id").eq("id", body.purchase_id).execute().data
+    purchase_exists = db.from_("purchases").select("id, purchase_request_id, total_incl_vat").eq("id", body.purchase_id).execute().data
     if not purchase_exists:
         raise HTTPException(404, "Purchase not found")
+
+    # Verrouillage du montant : un versement ne peut pas dépasser le solde
+    # restant dû (même règle que côté frontend, revalidée ici).
+    already_paid = sum(
+        float(p.get("amount") or 0)
+        for p in (db.from_("purchase_payments").select("amount").eq("purchase_id", body.purchase_id).execute().data or [])
+    )
+    balance_due = float(purchase_exists[0].get("total_incl_vat") or 0) - already_paid
+    if body.amount > balance_due + 0.01:
+        raise HTTPException(
+            400,
+            f"Le montant ({body.amount:.2f} MAD) dépasse le solde restant dû ({max(balance_due, 0):.2f} MAD).",
+        )
 
     # Échéance planifiée éventuelle → doit appartenir à la DA de ce bon de commande.
     installment = None

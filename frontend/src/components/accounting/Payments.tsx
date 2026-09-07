@@ -84,7 +84,7 @@ const STATUS_TONES: Record<string, string> = {
   paid: "chip-c-green",
 };
 
-function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Purchase; preset?: Preset; onClose: () => void; onSaved: () => void }) {
+function AddPaymentModal({ purchase, preset, balance, onClose, onSaved }: { purchase: Purchase; preset?: Preset; balance: number; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     amount: preset?.amount != null ? String(preset.amount) : "",
     payment_date: new Date().toISOString().slice(0, 10),
@@ -99,6 +99,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
   async function submit() {
     const amt = parseFloat(form.amount);
     if (!amt || amt <= 0) { toast.error("Le montant doit être supérieur à zéro."); return; }
+    if (amt > balance + 0.01) { toast.error(`Le montant (${fmtMAD(amt)}) dépasse le solde restant dû (${fmtMAD(balance)}).`); return; }
     if (form.payment_method === "caisse_sociale" && amt > 4500) { toast.error("Un règlement en Caisse comptable ne peut pas dépasser 4 500 MAD."); return; }
     if (scanFile && scanFile.size > 20 * 1024 * 1024) { toast.error("Le scan dépasse 20 Mo."); return; }
     setBusy(true);
@@ -158,11 +159,13 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
             <span style={{ color: PAL.muted, marginRight: 14 }}>Montant HT&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(purchase.total_price ?? 0)}</b></span>
             <span style={{ color: PAL.muted, marginRight: 14 }}>TVA{purchase.vat_percent != null ? ` (${purchase.vat_percent}%)` : ""}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(purchase.total_incl_vat - (purchase.total_price ?? 0))}</b></span>
             <span style={{ color: PAL.muted }}>Total TTC&nbsp;: <b style={{ color: "var(--pal-primary)" }}>{fmtMAD(purchase.total_incl_vat)}</b></span>
+            <span style={{ color: PAL.muted, marginLeft: 14 }}>Solde restant dû&nbsp;: <b style={{ color: "var(--pal-danger)" }}>{fmtMAD(balance)}</b></span>
           </div>
         )}
 
         <label style={labelStyle}>Montant (MAD) *</label>
-        <input type="number" step="any" placeholder="Ex: 5000" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
+        <input type="number" step="any" min={0} max={balance} placeholder="Ex: 5000" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
+        <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 12 }}>Plafonné au solde restant dû ({fmtMAD(balance)}).</div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
@@ -275,7 +278,7 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
 
   return (
     <div className="dash-card" style={{ flex: "1 1 360px", minWidth: 0, padding: "20px 22px" }}>
-      {payFor && <AddPaymentModal purchase={purchase} preset={modalPreset} onClose={() => setPayFor(null)} onSaved={() => { loadPayments(); onChanged(); }} />}
+      {payFor && <AddPaymentModal purchase={purchase} preset={modalPreset} balance={balance} onClose={() => setPayFor(null)} onSaved={() => { loadPayments(); onChanged(); }} />}
 
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
