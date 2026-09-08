@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Annotated
+from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 
@@ -194,21 +194,52 @@ async def journal(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
     limit: int = 50,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    user_id: Optional[str] = None,
+    op_type: Optional[str] = None,
 ):
-    """Journal comptable = vue chronologique sur audit_log (acteur enrichi)."""
+    """Historique comptable = vue chronologique filtrable sur audit_log (acteur enrichi).
+
+    date_from/date_to : bornes sur created_at (YYYY-MM-DD, date_to inclut
+    toute la journée). user_id : filtre par auteur (profil). op_type :
+    filtre par type d'opération — préfixe de `action` avant le premier point
+    (ex. "category", "purchase_request"), PAS la colonne `entity_type` :
+    celle-ci ne correspond pas au préfixe pour de nombreuses actions (ex.
+    action="category.create" a entity_type="accounting_category")."""
     _require_read(user)
     limit = max(1, min(200, limit))
-    rows = (
-        db.from_("audit_log")
-        .select("id, user_id, action, entity_type, entity_id, meta, created_at")
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-        .data or []
-    )
+    query = db.from_("audit_log").select("id, user_id, action, entity_type, entity_id, meta, created_at")
+    if date_from:
+        query = query.gte("created_at", date_from)
+    if date_to:
+        query = query.lte("created_at", f"{date_to}T23:59:59.999")
+    if user_id:
+        query = query.eq("user_id", user_id)
+    if op_type:
+        query = query.ilike("action", f"{op_type}.%")
+    rows = query.order("created_at", desc=True).limit(limit).execute().data or []
     actor_ids = list({r["user_id"] for r in rows if r.get("user_id")})
     names: dict[str, str] = {}
     if actor_ids:
         profs = db.from_("profiles").select("id, full_name, email").in_("id", actor_ids).execute().data or []
         names = {p["id"]: (p.get("full_name") or p.get("email") or "—") for p in profs}
     return [{**r, "actor_name": names.get(r.get("user_id"))} for r in rows]
+
+
+@router.get("/journal/actors")
+async def journal_actors(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Liste des profils ayant au moins une opération dans l'historique
+    comptable — alimente le filtre « Profil » (page Historique comptable)."""
+    _require_read(user)
+    rows = db.from_("audit_log").select("user_id").not_.is_("user_id", "null").execute().data or []
+    actor_ids = list({r["user_id"] for r in rows if r.get("user_id")})
+    if not actor_ids:
+        return []
+    profs = db.from_("profiles").select("id, full_name, email").in_("id", actor_ids).execute().data or []
+    people = [{"id": p["id"], "name": p.get("full_name") or p.get("email") or "—"} for p in profs]
+    people.sort(key=lambda p: p["name"].lower())
+    return people

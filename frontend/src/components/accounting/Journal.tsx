@@ -114,23 +114,99 @@ function DetailModal({ entry, onClose }: { entry: Entry; onClose: () => void }) 
   );
 }
 
+function ActiveFilterBar({
+  dateFrom, setDateFrom, dateTo, setDateTo, actorId, setActorId, entityType, setEntityType, actors,
+}: {
+  dateFrom: string; setDateFrom: (v: string) => void;
+  dateTo: string; setDateTo: (v: string) => void;
+  actorId: string; setActorId: (v: string) => void;
+  entityType: string; setEntityType: (v: string) => void;
+  actors: { id: string; name: string }[];
+}) {
+  const fieldStyle = { padding: "8px 11px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: PAL.ink, background: PAL.paper, outline: "none" };
+  const labelStyle = { fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL.muted, letterSpacing: ".06em", textTransform: "uppercase" as const, display: "block", marginBottom: 4 };
+  const hasFilters = !!(dateFrom || dateTo || actorId || entityType);
+  return (
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+      <div>
+        <label style={labelStyle}>Du</label>
+        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={fieldStyle} />
+      </div>
+      <div>
+        <label style={labelStyle}>Au</label>
+        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={fieldStyle} />
+      </div>
+      <div>
+        <label style={labelStyle}>Profil</label>
+        <select value={actorId} onChange={e => setActorId(e.target.value)} style={{ ...fieldStyle, minWidth: 160 }}>
+          <option value="">Tous</option>
+          {actors.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label style={labelStyle}>Type d'opération</label>
+        <select value={entityType} onChange={e => setEntityType(e.target.value)} style={{ ...fieldStyle, minWidth: 160 }}>
+          <option value="">Tous</option>
+          {Object.entries(ENTITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+      {hasFilters && (
+        <button
+          type="button"
+          onClick={() => { setDateFrom(""); setDateTo(""); setActorId(""); setEntityType(""); }}
+          className="btn-c btn-c-ghost btn-c-sm"
+        >
+          Réinitialiser
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AccountingJournal() {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [actors, setActors] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Entry | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [actorId, setActorId] = useState("");
+  const [entityType, setEntityType] = useState("");
 
   useEffect(() => {
-    api.get("/api/accounting/dashboard/journal?limit=100")
-      .then((d: Entry[]) => setEntries(d ?? []))
-      .catch((err: any) => toast.error(err?.message ?? "Erreur lors du chargement."))
-      .finally(() => setLoading(false));
+    api.get("/api/accounting/dashboard/journal/actors")
+      .then((d: { id: string; name: string }[]) => setActors(d ?? []))
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setLoading(true);
+      const params = new URLSearchParams({ limit: "100" });
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      if (actorId) params.set("user_id", actorId);
+      if (entityType) params.set("op_type", entityType);
+      api.get(`/api/accounting/dashboard/journal?${params.toString()}`)
+        .then((d: Entry[]) => setEntries(d ?? []))
+        .catch((err: any) => toast.error(err?.message ?? "Erreur lors du chargement."))
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [dateFrom, dateTo, actorId, entityType]);
 
   return (
     <div style={{ fontFamily: sans }}>
       {selected && <DetailModal entry={selected} onClose={() => setSelected(null)} />}
 
-      <SectionLabel>Journal comptable — dernières opérations</SectionLabel>
+      <SectionLabel>Historique comptable</SectionLabel>
+      <ActiveFilterBar
+        dateFrom={dateFrom} setDateFrom={setDateFrom}
+        dateTo={dateTo} setDateTo={setDateTo}
+        actorId={actorId} setActorId={setActorId}
+        entityType={entityType} setEntityType={setEntityType}
+        actors={actors}
+      />
       {loading ? (
         <div className="dash-card" style={{ padding: 26 }}><div className="shimmer" style={{ height: 18, width: 200, borderRadius: 999 }} /></div>
       ) : entries.length === 0 ? (

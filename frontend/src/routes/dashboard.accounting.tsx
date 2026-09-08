@@ -67,7 +67,7 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "cheques",           label: "Chèques & virements", icon: ScrollText   },
   { key: "cash_notes",        label: "Notes de caisse",   icon: NotebookPen  },
   { key: "mission_notes",     label: "Frais de mission",  icon: Plane        },
-  { key: "journal",           label: "Journal comptable", icon: History      },
+  { key: "journal",           label: "Historique comptable", icon: History  },
 ];
 
 // Onglets visibles par rôle.
