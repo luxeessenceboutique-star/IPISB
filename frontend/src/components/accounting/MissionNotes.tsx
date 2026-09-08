@@ -46,12 +46,26 @@ type Note = {
   accompanied_by: string | null; objet: string | null;
   mission_from: string | null; mission_to: string | null; accorded_by: string | null;
   days: string[]; amounts: Record<string, number[]>; total: number;
-  nc: "noir" | "comptable"; comment: string | null; created_by_name: string | null;
+  nc: "noir" | "comptable"; caisse: "caisse_sociale" | "caisse_secondaire"; comment: string | null; created_by_name: string | null;
   status: NoteStatus;
   approved_by_name: string | null; paid_by_name: string | null;
   rejection_reason: string | null; payment_method: string | null; payment_date: string | null;
 };
 type NotesData = { items: Note[]; count: number; total: number };
+
+// Caisse visée par l'avance, choisie à la création — deux caisses physiques,
+// toutes deux comptabilisées (le mode de règlement à l'exécution du paiement
+// en est simplement pré-rempli, il reste modifiable si le contexte change).
+const CAISSE_LABELS: Record<string, string> = { caisse_sociale: "Caisse comptable", caisse_secondaire: "Caisse sociale" };
+
+// Ajoute `delta` jours à une date "AAAA-MM-JJ" ; retourne "" si vide.
+function shiftDate(dateStr: string, delta: number): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
 
 const STATUS_LABELS: Record<NoteStatus, string> = {
   pending: "En attente N+1", approved: "Approuvée", rejected: "Rejetée", paid: "Payée",
@@ -111,6 +125,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     mission_to: (note?.mission_to || "").slice(0, 10),
     accorded_by: note?.accorded_by || "",
     nc: note?.nc || "comptable",
+    caisse: note?.caisse || "caisse_sociale",
     comment: note?.comment || "",
   });
 
@@ -151,8 +166,20 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   const dayTotal = (di: number) => ALL_ARTICLES.reduce((s, a) => s + (parseFloat(cellVal(a.key, di)) || 0), 0);
   const grandTotal = days.reduce((s, _, di) => s + dayTotal(di), 0);
 
+  // Les jours de la grille restent dans ± 1 jour autour de la mission (ex.
+  // mission du 04 au 06/09 → colonnes acceptées du 03 au 07/09).
+  const dayMin = form.mission_from ? shiftDate(form.mission_from, -1) : "";
+  const dayMax = form.mission_to ? shiftDate(form.mission_to, 1) : "";
+
   async function submit() {
     if (!form.beneficiary_name.trim()) { toast.error("Le nom du bénéficiaire est obligatoire."); return; }
+    if (dayMin || dayMax) {
+      const outOfRange = days.find(d => d && ((dayMin && d < dayMin) || (dayMax && d > dayMax)));
+      if (outOfRange) {
+        toast.error(`Les jours de la grille doivent rester entre ${fmtDate(dayMin)} et ${fmtDate(dayMax)} (± 1 jour autour de la mission).`);
+        return;
+      }
+    }
     const payloadAmounts: Record<string, number[]> = {};
     for (const a of ALL_ARTICLES) {
       const row = days.map((_, di) => parseFloat(cellVal(a.key, di)) || 0);
@@ -171,6 +198,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       days: days.map(d => d || ""),
       amounts: payloadAmounts,
       nc: form.nc,
+      caisse: form.caisse,
       comment: form.comment.trim() || null,
     };
     setBusy(true);
@@ -213,6 +241,11 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
           <input value={form.accorded_by} onChange={e => set("accorded_by", e.target.value)} placeholder="Direction / Responsable" className="u-input" style={fieldStyle} />
         </div>
       </div>
+
+      <label style={labelStyle}>Caisse</label>
+      <select value={form.caisse} onChange={e => set("caisse", e.target.value)} className="u-input" style={fieldStyle}>
+        {Object.entries(CAISSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0 14px" }}>
         <div>
@@ -266,7 +299,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                         </button>
                       )}
                     </div>
-                    <input type="date" value={d} onChange={e => setDayDate(di, e.target.value)} style={{ width: 118, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
+                    <input type="date" value={d} min={dayMin || undefined} max={dayMax || undefined} onChange={e => setDayDate(di, e.target.value)} style={{ width: 118, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
                   </div>
                 </th>
               ))}

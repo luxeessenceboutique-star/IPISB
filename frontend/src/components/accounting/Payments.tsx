@@ -65,9 +65,11 @@ const PAYMENT_METHODS: Record<string, string> = {
   cheque: "Chèque",
   caisse_sociale: "Caisse comptable",
 };
-// Notes de caisse uniquement : deux caisses physiques distinctes (comptable /
-// sociale), toutes deux rattachées au journal comptable (aucune n'est hors-comptes).
-const CASH_NOTE_PAYMENT_METHODS: Record<string, string> = {
+// Notes de caisse et frais de mission : deux caisses physiques distinctes
+// (comptable / sociale), toutes deux rattachées au journal comptable (aucune
+// n'est hors-comptes). Le versement d'achat libre (AddPaymentModal) n'a lui
+// que la caisse comptable — reste sur PAYMENT_METHODS.
+const CAISSE_NOTE_PAYMENT_METHODS: Record<string, string> = {
   ...PAYMENT_METHODS,
   caisse_secondaire: "Caisse sociale",
 };
@@ -457,7 +459,7 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
           <div>
             <label style={labelStyle}>Mode de règlement</label>
             <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(CASH_NOTE_PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(CAISSE_NOTE_PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
@@ -585,12 +587,15 @@ type MissionNoteToPay = {
   objet: string | null;
   total: number;
   nc: "noir" | "comptable";
+  caisse?: "caisse_sociale" | "caisse_secondaire";
   approved_by_name: string | null;
 };
 
 function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay; onClose: () => void; onPaid: () => void }) {
   const [form, setForm] = useState({
-    payment_method: "cheque",
+    // Pré-rempli avec la caisse déclarée à la création de la note — reste
+    // modifiable si le règlement se fait finalement autrement.
+    payment_method: note.caisse ?? "cheque",
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
@@ -649,7 +654,7 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
           <div>
             <label style={labelStyle}>Mode de règlement</label>
             <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(CAISSE_NOTE_PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>

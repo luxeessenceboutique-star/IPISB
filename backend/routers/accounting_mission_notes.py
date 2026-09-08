@@ -13,8 +13,15 @@ from utils.uploads import validate_and_read
 router = APIRouter(prefix="/accounting/mission-notes", tags=["accounting"])
 
 NC_VALUES = {"comptable"}  # « noir » (caisse sociale) retiré — toujours rattaché au journal comptable
-# Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat).
-PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
+# Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat,
+# + « caisse_secondaire » = Caisse sociale, comme pour les notes de caisse). Les deux
+# modes caisse restent rattachés au journal comptable (nc='comptable' toujours) — deux
+# caisses physiques distinctes, pas une réintroduction du hors-comptes.
+PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "caisse_secondaire"}
+# Caisse visée par l'avance, choisie dès la création (mêmes 2 clés que les
+# modes caisse ci-dessus — pré-remplit le mode de règlement à l'exécution du
+# paiement, qui reste modifiable si le contexte change).
+CAISSE_VALUES = {"caisse_sociale", "caisse_secondaire"}
 # Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD
 # que les notes de caisse) — ne s'applique pas aux modes bancaires.
 CASH_REGISTER_MAX = 4500
@@ -208,6 +215,8 @@ async def create_note(
     _require_write(user)
     if not (body.beneficiary_name or "").strip():
         raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
+    if body.caisse not in CAISSE_VALUES:
+        raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
     days, amounts, total = _clean_matrix(body.days, body.amounts)
     row = {
         "note_date": body.note_date or _today(),
@@ -222,10 +231,22 @@ async def create_note(
         "amounts": amounts,
         "total": total,
         "nc": "comptable",
+        "caisse": body.caisse,
         "comment": (body.comment or "").strip() or None,
         "created_by": user.id,
     }
-    res = db.from_("mission_notes").insert(row).execute()
+    try:
+        res = db.from_("mission_notes").insert(row).execute()
+    except Exception as e:
+        # Migration l51 (colonne caisse) pas encore exécutée côté Supabase :
+        # on retombe sur la création sans caisse plutôt que de bloquer tout
+        # enregistrement d'une note de frais de mission.
+        msg = str(e)
+        if "caisse" in msg and ("does not exist" in msg or "Could not find" in msg or "schema cache" in msg):
+            row.pop("caisse", None)
+            res = db.from_("mission_notes").insert(row).execute()
+        else:
+            raise
     note = res.data[0] if res.data else row
     # Circuit : la note naît « en attente » d'approbation N+1. AUCUNE ligne de journal
     # n'est créée ici — la comptabilisation n'a lieu qu'à l'exécution du paiement (/pay).
@@ -273,6 +294,10 @@ async def update_note(
         updates["beneficiary_name"] = name
     if "nc" in data:
         updates["nc"] = "comptable"
+    if "caisse" in data:
+        if data["caisse"] not in CAISSE_VALUES:
+            raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
+        updates["caisse"] = data["caisse"]
     if "days" in data or "amounts" in data:
         # Recalcul complet de la matrice : on repart des valeurs fournies, ou des
         # valeurs stockées pour la partie non transmise.
@@ -411,8 +436,8 @@ async def pay_note(
     if body.payment_method not in PAYMENT_METHODS:
         raise HTTPException(400, "Mode de règlement invalide.")
     note = _load_note(db, note_id)
-    if body.payment_method == "caisse_sociale" and float(note.get("total") or 0) > CASH_REGISTER_MAX:
-        raise HTTPException(400, f"Un règlement en Caisse comptable ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
+    if body.payment_method in CAISSE_VALUES and float(note.get("total") or 0) > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Un règlement en caisse ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
     status = note.get("status") or "pending"
     if status == "paid":
         raise HTTPException(400, "Note déjà payée.")

@@ -627,6 +627,7 @@ class MissionNoteCreate(BaseModel):
     days: list[str] = []                             # ["AAAA-MM-JJ", ...] (≤ 7)
     amounts: dict[str, list[float]] = {}             # {article: [montant par jour]}
     nc: str = "comptable"                            # nature journal : 'noir' | 'comptable'
+    caisse: str = "caisse_sociale"                   # caisse visée : caisse_sociale=Comptable | caisse_secondaire=Sociale
     comment: Optional[str] = None
 
 
@@ -643,6 +644,7 @@ class MissionNoteUpdate(BaseModel):
     days: Optional[list[str]] = None
     amounts: Optional[dict[str, list[float]]] = None
     nc: Optional[str] = None                          # 'noir' | 'comptable'
+    caisse: Optional[str] = None                      # caisse_sociale | caisse_secondaire
     comment: Optional[str] = None
 
 
