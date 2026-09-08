@@ -284,9 +284,13 @@ function EditEntryModal({ channel, entry, onClose, onSaved }: { channel: Channel
 }
 
 /** Grille commune aux deux journaux : mêmes colonnes, même solde cumulé.
- *  La 9e colonne porte l'axe propre au journal (n/c en caisse, mode en banque). */
-export function JournalView({ channel }: { channel: Channel }) {
+ *  La 9e colonne porte l'axe propre au journal (n/c en caisse, mode en banque).
+ *  `switchable` affiche un filtre Caisse comptable / Opérations bancaires en
+ *  tête de page, permettant de basculer entre les deux journaux sans changer
+ *  d'onglet (le canal initial reste celui passé en prop). */
+export function JournalView({ channel: initialChannel, switchable = false }: { channel: Channel; switchable?: boolean }) {
   const { roles } = useAuth();
+  const [channel, setChannel] = useState<Channel>(initialChannel);
   const isAdmin = roles.includes("admin");
   const isAccountant = roles.includes("accountant");
   const isCashier = roles.includes("cashier");
@@ -381,6 +385,23 @@ export function JournalView({ channel }: { channel: Channel }) {
         ref={fileInputRef} type="file" accept="application/pdf,image/jpeg,image/png" style={{ display: "none" }}
         onChange={ev => { const f = ev.target.files?.[0]; const t = attachTarget.current; if (f && t) uploadPiece(t, f); ev.target.value = ""; attachTarget.current = null; }}
       />
+
+      {switchable && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <button
+            onClick={() => setChannel("caisse")}
+            className={`btn-c btn-c-sm ${channel === "caisse" ? "btn-c-primary" : "btn-c-ghost"}`}
+          >
+            <Wallet size={14} strokeWidth={1.8} />Caisse comptable
+          </button>
+          <button
+            onClick={() => setChannel("banque")}
+            className={`btn-c btn-c-sm ${channel === "banque" ? "btn-c-primary" : "btn-c-ghost"}`}
+          >
+            <Landmark size={14} strokeWidth={1.8} />Opérations bancaires
+          </button>
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
         <SectionLabel>{copy.section}</SectionLabel>

@@ -4,7 +4,9 @@ import { JournalView } from "./CashJournal";
  *  ponctuels), chèques, versements, prélèvements et carte. Mêmes colonnes et même
  *  solde cumulé que le journal de caisse (grille partagée `JournalView`) ; la
  *  colonne « n/c » y est remplacée par le mode de règlement et sa référence, une
- *  opération bancaire étant déclarée par construction. */
+ *  opération bancaire étant déclarée par construction. `switchable` ajoute un
+ *  filtre Caisse comptable / Opérations bancaires en tête de page pour basculer
+ *  vers le journal de caisse sans changer d'onglet. */
 export function AccountingBankJournal() {
-  return <JournalView channel="banque" />;
+  return <JournalView channel="banque" switchable />;
 }
