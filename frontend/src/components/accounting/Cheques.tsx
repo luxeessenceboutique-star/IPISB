@@ -28,6 +28,12 @@ type Cheque = {
   source_type: string; source_id: string | null;
   review_comment: string | null; comment: string | null;
   status_label: string; source_label: string; direction_label: string; mode_label: string;
+  // N° de commande liée (paiement d'achat uniquement) + signataires de la
+  // double validation (1ère validation ; 2ème = celle qui exécute réellement
+  // le règlement — accounting_cheques.py::_attach_order_and_signatures).
+  purchase_number: string | null;
+  first_signature_name: string | null;
+  second_signature_name: string | null;
   // Libellés des boutons calculés par l'API : le vocabulaire d'une pièce
   // (remettre un chèque / transmettre un ordre) n'est pas redit ici.
   next_actions: { status: Status; label: string }[];
@@ -450,10 +456,10 @@ export function AccountingCheques() {
       </div>
 
       <div className="dash-card anim-rise" style={{ padding: 0, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1160 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1280 }}>
           <thead>
             <tr>
-              {["Réf.", "Nature", "Sens", "N° / réf.", "Émission", "Échéance", "Tiers", "Objet", "Montant", "Origine", "Statut", ""].map((h, i) => (
+              {["Réf.", "Nature", "Sens", "N° / réf.", "Émission", "Échéance", "Tiers", "Objet", "Montant", "Origine", "N° commande", "Statut", ""].map((h, i) => (
                 <th key={i} style={{ ...cell, ...labelStyle, borderBottom: `1px solid ${PAL.line}`, textAlign: i === 8 ? "right" : "left", background: "oklch(97% 0.008 170)" }}>{h}</th>
               ))}
             </tr>
@@ -479,10 +485,16 @@ export function AccountingCheques() {
                 <td style={{ ...cell, whiteSpace: "normal", maxWidth: 230, color: PAL.muted }}>{c.label || "—"}</td>
                 <td style={{ ...cell, textAlign: "right", fontFamily: mono, fontWeight: 700 }}>{fmtMAD(c.amount)}</td>
                 <td style={{ ...cell, fontSize: 12, color: PAL.muted }}>{c.source_label}</td>
+                <td style={{ ...cell, fontFamily: mono, fontSize: 12 }}>{c.purchase_number || "—"}</td>
                 <td style={cell}>
                   <span className={`chip-c ${STATUS_TONES[c.status]}`} title={c.review_comment || undefined}>{c.status_label}</span>
                   {c.remitted_date && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>Déposé le {fmtDate(c.remitted_date)}</div>}
                   {c.cashed_date && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>Encaissé le {fmtDate(c.cashed_date)}</div>}
+                  {c.first_signature_name && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>1ère signature : {c.first_signature_name}</div>}
+                  {c.second_signature_name && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>2ème signature : {c.second_signature_name}</div>}
+                  {c.first_signature_name && !c.second_signature_name && (
+                    <div style={{ fontSize: 11, color: "var(--pal-primary)", marginTop: 2 }}>En attente d'une 2ème signature</div>
+                  )}
                 </td>
                 <td style={{ ...cell, textAlign: "right" }}>
                   {isAdmin && (
