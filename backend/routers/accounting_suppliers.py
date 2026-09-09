@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated, Optional
 from supabase import Client
@@ -6,6 +7,10 @@ from models import SupplierCreate, SupplierUpdate
 from utils.audit import log_audit
 
 router = APIRouter(prefix="/accounting/suppliers", tags=["accounting"])
+
+# Factures « en instance » : ni payées ni annulées — même définition que
+# l'export « Instances fournisseurs » (accounting_invoices.py).
+PENDING_INVOICE_STATUSES = {"pending", "partially_paid"}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -26,8 +31,13 @@ async def list_suppliers(
     suppliers = query.order("company_name").execute().data or []
 
     supplier_ids = [s["id"] for s in suppliers]
+    empty_stats = {
+        "total_purchases": 0, "total_spent": 0.0, "last_purchase": None,
+        "spent_last_12m": 0.0, "pending_invoices_count": 0, "pending_invoices_amount": 0.0,
+    }
     stats_map: dict[str, dict] = {}
     if supplier_ids:
+        cutoff = (datetime.now(timezone.utc).date() - timedelta(days=365)).isoformat()
         purchases = (
             db.from_("purchases")
             .select("supplier_id, total_incl_vat, purchase_date")
@@ -37,16 +47,41 @@ async def list_suppliers(
         )
         for p in purchases:
             sid = p["supplier_id"]
-            entry = stats_map.setdefault(sid, {"total_purchases": 0, "total_spent": 0.0, "last_purchase": None})
+            entry = stats_map.setdefault(sid, dict(empty_stats))
             entry["total_purchases"] += 1
             entry["total_spent"] += p["total_incl_vat"] or 0
+            if (p.get("purchase_date") or "") >= cutoff:
+                entry["spent_last_12m"] += p["total_incl_vat"] or 0
             if entry["last_purchase"] is None or p["purchase_date"] > entry["last_purchase"]:
                 entry["last_purchase"] = p["purchase_date"]
+
+        invoices = (
+            db.from_("invoices")
+            .select("supplier_id, amount, vat_percent, payment_status")
+            .in_("supplier_id", supplier_ids)
+            .in_("payment_status", list(PENDING_INVOICE_STATUSES))
+            .execute()
+            .data or []
+        )
+        for inv in invoices:
+            sid = inv["supplier_id"]
+            entry = stats_map.setdefault(sid, dict(empty_stats))
+            ttc = float(inv.get("amount") or 0) * (1 + float(inv.get("vat_percent") or 0) / 100)
+            entry["pending_invoices_count"] += 1
+            entry["pending_invoices_amount"] += ttc
+
+    def _rounded(stats: dict) -> dict:
+        return {
+            **stats,
+            "total_spent": round(stats["total_spent"], 2),
+            "spent_last_12m": round(stats["spent_last_12m"], 2),
+            "pending_invoices_amount": round(stats["pending_invoices_amount"], 2),
+        }
 
     return [
         {
             **s,
-            **stats_map.get(s["id"], {"total_purchases": 0, "total_spent": 0.0, "last_purchase": None}),
+            **_rounded(stats_map.get(s["id"], empty_stats)),
         }
         for s in suppliers
     ]

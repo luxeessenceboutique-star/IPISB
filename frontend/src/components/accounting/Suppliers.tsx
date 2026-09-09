@@ -30,6 +30,9 @@ type Supplier = {
   total_purchases: number;
   total_spent: number;
   last_purchase: string | null;
+  spent_last_12m: number;
+  pending_invoices_count: number;
+  pending_invoices_amount: number;
 };
 
 const emptyForm = {
@@ -280,7 +283,10 @@ export function AccountingSuppliers() {
               <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
                 <Row label="Total achats" value={String(selected.total_purchases)} />
                 <Row label="Total dépensé" value={fmtMAD(selected.total_spent)} />
+                <Row label="Total dépensé (12 derniers mois)" value={fmtMAD(selected.spent_last_12m)} />
                 <Row label="Dernier achat" value={selected.last_purchase ? new Date(selected.last_purchase).toLocaleDateString("fr-FR") : "—"} />
+                <Row label="Factures en instance" value={String(selected.pending_invoices_count)} />
+                <Row label="Montant total en instance" value={fmtMAD(selected.pending_invoices_amount)} />
               </div>
 
               {selected.notes && (
