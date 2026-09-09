@@ -315,6 +315,26 @@ class TimetableSlotUpdate(BaseModel):
 
 class CategoryCreate(BaseModel):
     name: str
+    code: Optional[str] = None
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+
+
+class CategoryArticleCreate(BaseModel):
+    article: str
+    code_article: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    commentaire: Optional[str] = None
+
+
+class CategoryArticleUpdate(BaseModel):
+    article: Optional[str] = None
+    code_article: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    commentaire: Optional[str] = None
 
 
 class SupplierCreate(BaseModel):
