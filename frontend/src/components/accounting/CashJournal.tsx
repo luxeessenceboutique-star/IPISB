@@ -32,8 +32,17 @@ const BANK_MODES: [string, string][] = [
 const MODE_LABELS: Record<string, string> = {
   virement: "Virement", versement: "Versement", ov_permanent: "OV permanent",
   ov_ponctuel: "OV ponctuel", cheque: "Chèque", prelevement: "Prélèvement",
-  carte: "Carte bancaire", especes: "Espèces", caisse_sociale: "Caisse comptable", autre: "Autre",
+  carte: "Carte bancaire", especes: "Espèces", caisse_sociale: "Caisse comptable",
+  caisse_secondaire: "Caisse sociale", autre: "Autre",
 };
+
+// Registres du Journal de caisse — même paire que les notes de caisse/frais de
+// mission (clés historiques préservées) ; les deux sont intégralement
+// comptabilisés (nc='comptable' forcé côté backend, quel que soit le registre).
+const CASH_REGISTERS: [string, string][] = [
+  ["caisse_sociale", "Caisse comptable"],
+  ["caisse_secondaire", "Caisse sociale"],
+];
 
 const COPY = {
   caisse: {
@@ -98,15 +107,23 @@ function StatTile({ label, value, tone }: { label: string; value: string; tone?:
   );
 }
 
-/** Champs propres au journal : mode + référence bancaire en banque (la caisse
- * est toujours comptabilisée — plus de choix n/c à faire). */
+/** Champs propres au journal : registre (Caisse comptable / Caisse sociale) en
+ * caisse, mode + référence de règlement en banque. Les deux registres de caisse
+ * restent intégralement comptabilisés — seul le nom du registre change. */
 function ChannelFields({ channel, form, set }: {
   channel: Channel;
   form: { nc: string; payment_mode: string; payment_ref: string };
   set: (k: string, v: string) => void;
 }) {
   if (channel === "caisse") {
-    return null;
+    return (
+      <div>
+        <label style={labelStyle}>Caisse</label>
+        <select value={form.payment_mode} onChange={e => set("payment_mode", e.target.value)} className="u-input" style={fieldStyle}>
+          {CASH_REGISTERS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+    );
   }
   return (
     <div>
@@ -180,7 +197,7 @@ function payload(channel: Channel, form: FormState, amount: number) {
     justificatif: form.justificatif || null,
     nc: "comptable",
     channel,
-    payment_mode: channel === "banque" ? form.payment_mode : null,
+    payment_mode: form.payment_mode || null,
     payment_ref: channel === "banque" ? (form.payment_ref || null) : null,
   };
 }
@@ -190,7 +207,7 @@ function ManualEntryModal({ channel, onClose, onSaved }: { channel: Channel; onC
   const [form, setForm] = useState<FormState>({
     type: "sortie", entry_date: new Date().toISOString().slice(0, 10),
     action: "", prestataire: "", amount: "", justificatif: "", nc: "comptable",
-    payment_mode: "virement", payment_ref: "",
+    payment_mode: channel === "banque" ? "virement" : "caisse_sociale", payment_ref: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -242,7 +259,7 @@ function EditEntryModal({ channel, entry, onClose, onSaved }: { channel: Channel
     amount: String(entry.amount ?? ""),
     justificatif: entry.justificatif || "",
     nc: entry.nc,
-    payment_mode: entry.payment_mode || "virement",
+    payment_mode: entry.payment_mode || (channel === "banque" ? "virement" : "caisse_sociale"),
     payment_ref: entry.payment_ref || "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -433,7 +450,7 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
               <thead>
                 <tr>
-                  {["Type", "Date", "Action", "Prestataire", "Montant (DH)", "Justificatif", "Pièce", copy.balanceCol, isBank ? "Mode" : "n/c", ""].map((h, i) => (
+                  {["Type", "Date", "Action", "Prestataire", "Montant (DH)", "Justificatif", "Pièce", copy.balanceCol, isBank ? "Mode" : "Caisse", ""].map((h, i) => (
                     <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 4 || i === 7 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
@@ -479,12 +496,21 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
                             <span className="chip-c chip-c-blue" title="Banque — comptabilisé">{e.payment_mode_label || MODE_LABELS[e.payment_mode || ""] || "—"}</span>
                             {e.payment_ref && <span style={{ fontFamily: mono, fontSize: 11, color: PAL.muted }}>{e.payment_ref}</span>}
                           </div>
-                        ) : (
-                          <span className={`chip-c ${e.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}
-                            title={e.nc === "noir" ? "Caisse sociale (espèces) — non comptabilisé" : "Caisse — comptabilisé"}>
-                            {e.nc === "noir" ? "Caisse sociale" : "Comptabilisé"}
-                          </span>
-                        )}
+                        ) : (() => {
+                          // Registre de caisse : piloté par payment_mode (caisse_sociale /
+                          // caisse_secondaire) depuis cette mise à jour ; les lignes plus
+                          // anciennes sans mode retombent sur l'axe n/c historique pour ne
+                          // pas perdre leur registre d'origine. Les deux registres restent
+                          // intégralement comptabilisés — ce n'est qu'un nom de tiroir-caisse.
+                          const isSociale = e.payment_mode === "caisse_secondaire" || (!e.payment_mode && e.nc === "noir");
+                          const label = MODE_LABELS[e.payment_mode || ""] || (isSociale ? "Caisse sociale" : "Caisse comptable");
+                          return (
+                            <span className={`chip-c ${isSociale ? "chip-c-amber" : "chip-c-blue"}`}
+                              title={isSociale ? "Caisse sociale — comptabilisé" : "Caisse comptable — comptabilisé"}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ ...cell, textAlign: "right" }}>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
