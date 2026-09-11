@@ -422,11 +422,13 @@ class ExpenseUpdate(BaseModel):
     description: Optional[str] = None
 
 
-# ── Budgets (budget prévisionnel par catégorie / année / mois) ───────────────
+# ── Budgets (budget prévisionnel par catégorie / année / mois / plage) ───────
 class BudgetCreate(BaseModel):
     category_id: str
     year: int
-    month: Optional[int] = None             # None = budget annuel
+    month: Optional[int] = None             # None = budget annuel ou plage
+    start_date: Optional[str] = None        # renseignées ensemble = budget « du … au … »
+    end_date: Optional[str] = None
     amount: float = 0
     comment: Optional[str] = None
 
@@ -435,7 +437,10 @@ class BudgetUpdate(BaseModel):
     category_id: Optional[str] = None
     year: Optional[int] = None
     month: Optional[int] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     amount: Optional[float] = None
+    comment: Optional[str] = None
 
 
 # ── Revenues (recettes) ──────────────────────────────────────────────────────
@@ -723,16 +728,27 @@ class InventoryItemCreate(BaseModel):
     quantity: float = 1
     location: Optional[str] = None
     comment: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    unite: Optional[str] = None
+    prix_unitaire_ttc: Optional[float] = None
+    tva_percent: Optional[float] = None
 
 
 class InventoryItemUpdate(BaseModel):
     name: Optional[str] = None
     asset_category: Optional[str] = None
     status: Optional[str] = None
+    initial_value: Optional[float] = None
+    purchase_date: Optional[str] = None
     amortissement_duree_annees: Optional[int] = None
     niveau_alerte: Optional[float] = None
     quantity: Optional[float] = None
     location: Optional[str] = None
+    comment: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    unite: Optional[str] = None
+    prix_unitaire_ttc: Optional[float] = None
+    tva_percent: Optional[float] = None
 
 
 class InventoryMovementCreate(BaseModel):
@@ -740,6 +756,36 @@ class InventoryMovementCreate(BaseModel):
     quantity: float
     movement_date: Optional[str] = None
     description: Optional[str] = None
+    beneficiary: Optional[str] = None   # demandeur, sur les sorties
+
+
+class InventoryAllocationIn(BaseModel):
+    location: str
+    quantity: float = 0
+
+
+class InventoryAllocationsUpdate(BaseModel):
+    allocations: list[InventoryAllocationIn] = []
+
+
+# ── Locaux (référentiel des pièces du bâtiment) ──────────────────────────────
+class LocalCreate(BaseModel):
+    name: str
+    floor: str = "3e"                       # 'rdc'|'1er'|'2e'|'3e'|'4e'|'terrasse'
+    code: Optional[str] = None
+    capacity: Optional[int] = None
+    note: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class LocalUpdate(BaseModel):
+    name: Optional[str] = None
+    floor: Optional[str] = None
+    code: Optional[str] = None
+    capacity: Optional[int] = None
+    note: Optional[str] = None
+    sort_order: Optional[int] = None
+    active: Optional[bool] = None
 
 
 # ── RH — Employees (Ressources humaines) ──────────────────────────────────────

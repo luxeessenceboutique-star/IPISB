@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { LayoutGrid, Truck, Building2, Tags, TrendingUp, Receipt, FileText, PiggyBank, ClipboardList, History, CreditCard, Package, Wallet, ShieldCheck, Inbox, NotebookPen, Plane, Landmark, ScrollText } from "lucide-react";
+import { LayoutGrid, Truck, Building2, Tags, TrendingUp, Receipt, FileText, PiggyBank, ClipboardList, History, CreditCard, Package, Wallet, ShieldCheck, Inbox, NotebookPen, Plane, Landmark, ScrollText, DoorClosed } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { AccountingValidations, MySubmissions } from "@/components/accounting/Approvals";
@@ -22,6 +22,7 @@ import { AccountingCashNotes } from "@/components/accounting/CashNotes";
 import { AccountingMissionNotes } from "@/components/accounting/MissionNotes";
 import { AccountingPayments } from "@/components/accounting/Payments";
 import { AccountingInventory } from "@/components/accounting/Inventory";
+import { AccountingLocaux } from "@/components/accounting/Locaux";
 import { AccountingTuitionTracking } from "@/components/accounting/TuitionTracking";
 
 export const Route = createFileRoute("/dashboard/accounting")({
@@ -41,7 +42,7 @@ export const Route = createFileRoute("/dashboard/accounting")({
 
 const sans = '"Manrope", system-ui, sans-serif';
 
-type Tab = "overview" | "tuition" | "revenues" | "expenses" | "invoices" | "purchase_requests" | "purchases" | "payments" | "inventory" | "budgets" | "suppliers" | "categories" | "cash_journal" | "bank_journal" | "cheques" | "cash_notes" | "mission_notes" | "journal" | "validations" | "mine";
+type Tab = "overview" | "tuition" | "revenues" | "expenses" | "invoices" | "purchase_requests" | "purchases" | "payments" | "inventory" | "locaux" | "budgets" | "suppliers" | "categories" | "cash_journal" | "bank_journal" | "cheques" | "cash_notes" | "mission_notes" | "journal" | "validations" | "mine";
 
 const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "validations",       label: "Validations",      icon: ShieldCheck   },
@@ -55,6 +56,7 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "purchases",         label: "Livraisons",       icon: Truck         },
   { key: "payments",          label: "Paiements",        icon: CreditCard    },
   { key: "inventory",         label: "Inventaire",       icon: Package       },
+  { key: "locaux",            label: "Locaux",           icon: DoorClosed    },
   { key: "budgets",           label: "Budgets",          icon: PiggyBank     },
   { key: "suppliers",         label: "Fournisseurs",     icon: Building2     },
   { key: "categories",        label: "Catégories",       icon: Tags          },
@@ -73,7 +75,7 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
 // Le journal des comptes (trésorerie : virements, OV, chèques) relève de
 // l'administration et de la comptabilité — le caissier tient la caisse espèces.
 const TABS_BY_ROLE: Record<"admin" | "accountant" | "cashier", Tab[]> = {
-  admin: ["validations", "overview", "tuition", "revenues", "expenses", "invoices", "purchase_requests", "purchases", "payments", "inventory", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
+  admin: ["validations", "overview", "tuition", "revenues", "expenses", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
   accountant: ["overview", "tuition", "purchase_requests", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
   cashier: ["tuition", "purchase_requests", "cash_journal", "cash_notes", "mission_notes", "mine"],
 };
@@ -137,6 +139,7 @@ function AccountingPage() {
       {tab === "purchases"         && <AccountingPurchases />}
       {tab === "payments"          && <AccountingPayments />}
       {tab === "inventory"         && <AccountingInventory />}
+      {tab === "locaux"            && <AccountingLocaux />}
       {tab === "budgets"           && <AccountingBudgets />}
       {tab === "suppliers"         && <AccountingSuppliers />}
       {tab === "categories"        && <AccountingCategories />}
