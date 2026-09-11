@@ -381,7 +381,7 @@ def defer_bank_payment(
                  (". Validation requise avant émission." if mode == CHEQUE
                   else ". Validation requise avant exécution.")),
         type="warning",
-        link="/dashboard/accounting",
+        link=f"/dashboard/accounting?tab=validations&focus={op['id']}",
     )
     log_audit(db, user.id, "cheque.submit", "cheque", (cheque or {}).get("id"),
               {"kind": kind, "mode": mode, "amount": amount, "counterparty": counterparty,
@@ -568,12 +568,48 @@ async def list_cheques(
     start = (page - 1) * page_size
     res = query.order("issue_date", desc=True).order("created_at", desc=True) \
                .range(start, start + page_size - 1).execute()
+    rows = res.data or []
+    items = [_shape(r) for r in rows]
+    _attach_order_and_signatures(db, items, rows)
     return {
-        "items": [_shape(r) for r in (res.data or [])],
+        "items": items,
         "total": res.count or 0,
         "page": page,
         "page_size": page_size,
     }
+
+
+def _attach_order_and_signatures(db: Client, items: list[dict], rows: list[dict]) -> None:
+    """Ajoute purchase_number (n° de commande, réutilise _order_numbers — gère
+    déjà achat/note de caisse/frais de mission/scolarité/recette, en attente
+    ou exécuté) + first_signature_name/second_signature_name (1ère et 2ème
+    validation de la double validation, propres aux règlements bancaires)."""
+    numbers = _order_numbers(db, rows)
+
+    op_ids = list({r["pending_op_id"] for r in rows if r.get("pending_op_id")})
+    first_approver_by_op: dict[str, Optional[str]] = {}
+    if op_ids:
+        ops = db.from_("pending_operations").select("id, first_approved_by").in_("id", op_ids).execute().data or []
+        first_approver_by_op = {o["id"]: o.get("first_approved_by") for o in ops}
+
+    person_ids = set()
+    for row in rows:
+        first_id = first_approver_by_op.get(row.get("pending_op_id"))
+        if first_id:
+            person_ids.add(first_id)
+        if row.get("approved_by"):
+            person_ids.add(row["approved_by"])
+    names: dict[str, str] = {}
+    if person_ids:
+        profs = db.from_("profiles").select("id, full_name, email").in_("id", list(person_ids)).execute().data or []
+        names = {p["id"]: (p.get("full_name") or p.get("email") or "—") for p in profs}
+
+    for item, row in zip(items, rows):
+        item["purchase_number"] = numbers.get(row["id"]) or None
+        first_id = first_approver_by_op.get(row.get("pending_op_id"))
+        item["first_signature_name"] = names.get(first_id) if first_id else None
+        second_id = row.get("approved_by")
+        item["second_signature_name"] = names.get(second_id) if second_id else None
 
 
 @router.get("/stats")
@@ -899,7 +935,7 @@ async def set_cheque_status(
                      f"({float(cheque.get('amount') or 0):,.2f} DH) a été rejeté par la banque."
                      ).replace(",", " "),
             type="error",
-            link="/dashboard/accounting",
+            link=f"/dashboard/accounting?tab=cheques&focus={cheque_id}",
         )
     return _shape(res.data[0] if res.data else _load(db, cheque_id))
 

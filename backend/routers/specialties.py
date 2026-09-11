@@ -2,7 +2,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import SpecialtyCreate, SpecialtyUpdate
+from models import SpecialtyCreate, SpecialtyUpdate, SPECIALTY_TYPES
 from utils.audit import log_audit
 
 router = APIRouter(prefix="/specialties", tags=["specialties"])
@@ -31,8 +31,10 @@ async def create_specialty(
     _require_admin(user)
     if not body.name.strip():
         raise HTTPException(400, "name is required")
+    if body.type not in SPECIALTY_TYPES:
+        raise HTTPException(400, f"type invalide (valeurs possibles : {', '.join(sorted(SPECIALTY_TYPES))})")
 
-    res = db.from_("specialties").insert({"name": body.name, "created_by": user.id}).execute()
+    res = db.from_("specialties").insert({"name": body.name, "type": body.type, "created_by": user.id}).execute()
     if not res.data:
         raise HTTPException(400, "Could not create specialty")
 
@@ -52,6 +54,8 @@ async def update_specialty(
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
+    if "type" in updates and updates["type"] not in SPECIALTY_TYPES:
+        raise HTTPException(400, f"type invalide (valeurs possibles : {', '.join(sorted(SPECIALTY_TYPES))})")
 
     res = db.from_("specialties").update(updates).eq("id", specialty_id).execute()
     if not res.data:

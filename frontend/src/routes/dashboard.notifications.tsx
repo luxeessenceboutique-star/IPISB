@@ -42,8 +42,14 @@ function NotificationsPage() {
     load();
     const channel = supabase.channel("notifications-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, payload => {
-        setNotifications(prev => [payload.new as Notification, ...prev]);
-        toast.info((payload.new as Notification).title);
+        const n = payload.new as Notification;
+        setNotifications(prev => [n, ...prev]);
+        toast.info(n.title, n.link ? {
+          action: {
+            label: lang === "fr" ? "Ouvrir" : lang === "ar" ? "فتح" : "Open",
+            onClick: () => { if (!n.read) markRead(n.id); navigate({ href: n.link! }); },
+          },
+        } : undefined);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -108,7 +114,10 @@ function NotificationsPage() {
                 onClick={() => {
                   if (!n.link) return;
                   if (!n.read) markRead(n.id);
-                  navigate({ to: n.link });
+                  // `href` (et non `to`) : TanStack Router découpe la chaîne en
+                  // pathname + search + hash. Indispensable pour les liens du type
+                  // "/dashboard/accounting?tab=validations".
+                  navigate({ href: n.link });
                 }}
               >
                 <span

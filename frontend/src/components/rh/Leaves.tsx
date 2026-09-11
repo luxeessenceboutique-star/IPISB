@@ -3,6 +3,8 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, CalendarClock, Trash2, ChevronLeft, ChevronRight, Check, X, CalendarDays, List, FileText, Paperclip, Ban } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { usePermissions } from "@/lib/permissions";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import type { Employee } from "./Employees";
 
 const PAL = {
@@ -282,6 +284,10 @@ function LeaveCalendar({ leaves }: { leaves: Leave[] }) {
 }
 
 export function RhLeaves() {
+  const { can } = usePermissions();
+  // Canal 2 : RH/assistant_rh créent et consultent ; seul un admin (V2)
+  // approuve/rejette/annule/supprime une demande de congé.
+  const canValidate = can("rh.leaves", "validate_v2");
   const [view, setView] = useState<"list" | "calendar">("list");
   const [leaves, setLeaves] = useState<Leave[]>([]);
   const [calendarLeaves, setCalendarLeaves] = useState<Leave[]>([]);
@@ -294,6 +300,7 @@ export function RhLeaves() {
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<Leave | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   async function load() {
     setLoading(true);
@@ -322,6 +329,15 @@ export function RhLeaves() {
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status, page]);
   useEffect(() => { api.get("/api/rh/employees?page_size=200").then(r => setEmployees(r.items ?? [])).catch(() => {}); }, []);
   useEffect(() => { if (view === "calendar") loadCalendar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [view]);
+
+  // Deep-link depuis un rappel (?focus=<leaveId>) : ouvre d'office le volet de
+  // détail de la demande visée (le défilement + le nettoyage d'URL sont gérés
+  // par attachFocus posé sur la ligne).
+  useEffect(() => {
+    if (!focusId || view !== "list") return;
+    const l = leaves.find(x => x.id === focusId);
+    if (l) setSelected(l);
+  }, [focusId, leaves, view]);
 
   useEffect(() => {
     if (!selected) { setBalance(null); return; }
@@ -442,7 +458,7 @@ export function RhLeaves() {
           <div style={{ flex: "1 1 360px", minWidth: 0 }}>
             <div className="dash-card overflow-hidden">
               {leaves.map(l => (
-                <div key={l.id} className="row-c flex-wrap" onClick={() => setSelected(l)} style={{ cursor: "pointer", background: selected?.id === l.id ? "var(--pal-pale)" : undefined }}>
+                <div key={l.id} ref={l.id === focusId ? attachFocus : undefined} className="row-c flex-wrap" onClick={() => setSelected(l)} style={{ cursor: "pointer", background: selected?.id === l.id ? "var(--pal-pale)" : undefined }}>
                   <span title={displayInfo(l).label} style={{
                     flexShrink: 0, width: 26, height: 26, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center",
                     background: displayInfo(l).color, color: displayInfo(l).text, fontSize: 10, fontWeight: 800, fontFamily: sans,
@@ -460,16 +476,18 @@ export function RhLeaves() {
                   <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, color: statusColor(l.status), background: "var(--pal-pale)" }}>
                     {STATUS_LABEL[l.status] ?? l.status}
                   </span>
-                  {l.status === "pending" && (
+                  {l.status === "pending" && canValidate && (
                     <>
                       <button onClick={(ev) => { ev.stopPropagation(); review(l, "approved"); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-good)" }} title="Approuver"><Check size={16} strokeWidth={2} /></button>
                       <button onClick={(ev) => { ev.stopPropagation(); review(l, "rejected"); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Refuser"><X size={16} strokeWidth={2} /></button>
                     </>
                   )}
-                  {l.status === "approved" && (
+                  {l.status === "approved" && canValidate && (
                     <button onClick={(ev) => { ev.stopPropagation(); cancelLeave(l); }} style={{ background: "none", border: 0, cursor: "pointer", color: CANCELLED_MARKER.color }} title="Annuler ce congé"><Ban size={15} strokeWidth={1.8} /></button>
                   )}
-                  <button onClick={(ev) => { ev.stopPropagation(); remove(l); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                  {canValidate && (
+                    <button onClick={(ev) => { ev.stopPropagation(); remove(l); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                  )}
                 </div>
               ))}
             </div>
@@ -524,7 +542,7 @@ export function RhLeaves() {
                 </label>
               )}
 
-              {selected.status === "approved" && (
+              {selected.status === "approved" && canValidate && (
                 <div style={{ marginTop: 14 }}>
                   <button type="button" onClick={() => cancelLeave(selected)} className="btn-c btn-c-sm" style={{ color: CANCELLED_MARKER.color, border: `1px solid ${CANCELLED_MARKER.color}`, background: "transparent" }}>
                     <Ban size={13} strokeWidth={1.8} />Annuler ce congé

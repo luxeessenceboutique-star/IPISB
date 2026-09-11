@@ -28,6 +28,12 @@ class AssignmentCreate(BaseModel):
     due_date: Optional[str] = None
     max_grade: float = 20
     course_id: str
+    # Évaluation créée depuis le raccourci "Note directe" (page Notes) plutôt
+    # que le circuit normal Contrôle continu : is_quick_grade=true dispense
+    # l'élève de remise préalable ; quick_grade_category fixe si elle compte
+    # dans devoir_avg ("devoir") ou exam_avg ("exam") — cf. grades.py.
+    is_quick_grade: bool = False
+    quick_grade_category: Optional[str] = None
 
 
 class SubmissionCreate(BaseModel):
@@ -38,6 +44,11 @@ class SubmissionCreate(BaseModel):
 class GradeInput(BaseModel):
     grade: Optional[float] = None
     feedback: Optional[str] = None
+
+
+class QuickGradesUpsert(BaseModel):
+    """Saisie directe des notes d'une évaluation (page Notes) — {student_id: note}."""
+    grades: dict[str, Optional[float]]
 
 
 class QuestionCreate(BaseModel):
@@ -239,12 +250,17 @@ class ScheduleUpdate(BaseModel):
 
 
 # ── Specialties (filières) ──────────────────────────────────────────────────
+SPECIALTY_TYPES = {"formation_initiale", "formation_continue"}
+
+
 class SpecialtyCreate(BaseModel):
     name: str
+    type: str = "formation_initiale"
 
 
 class SpecialtyUpdate(BaseModel):
     name: Optional[str] = None
+    type: Optional[str] = None
 
 
 # ── Attendance ───────────────────────────────────────────────────────────────
@@ -299,6 +315,26 @@ class TimetableSlotUpdate(BaseModel):
 
 class CategoryCreate(BaseModel):
     name: str
+    code: Optional[str] = None
+
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+
+
+class CategoryArticleCreate(BaseModel):
+    article: str
+    code_article: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    commentaire: Optional[str] = None
+
+
+class CategoryArticleUpdate(BaseModel):
+    article: Optional[str] = None
+    code_article: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    commentaire: Optional[str] = None
 
 
 class SupplierCreate(BaseModel):
@@ -483,6 +519,7 @@ class PurchaseRequestCreate(BaseModel):
     justification: Optional[str] = None
     request_type: str = "nouveau_besoin"        # 'nouveau_besoin' | 'renouvellement'
     asset_category: str = "consommable"         # 'consommable'|'equipement'|'locaux'|'service'
+    category_id: Optional[str] = None           # accounting_categories — même liste que Dépenses
     characteristics: Optional[str] = None
     conformity_note: Optional[str] = None
     conformity_criteria: list[str] = []
@@ -502,6 +539,7 @@ class PurchaseRequestUpdate(BaseModel):
     justification: Optional[str] = None
     request_type: Optional[str] = None
     asset_category: Optional[str] = None
+    category_id: Optional[str] = None
     characteristics: Optional[str] = None
     conformity_note: Optional[str] = None
     conformity_criteria: Optional[list[str]] = None
@@ -572,6 +610,7 @@ class CashNoteCreate(BaseModel):
     accorded_by: Optional[str] = None               # Accordée par
     items: list[CashNoteItem] = []                  # [{article, prestataire, montant}]
     nc: str = "comptable"                           # nature journal : 'noir' | 'comptable'
+    caisse: str = "caisse_sociale"                  # caisse visée : caisse_sociale=Comptable | caisse_secondaire=Sociale
     comment: Optional[str] = None
 
 
@@ -586,6 +625,7 @@ class CashNoteUpdate(BaseModel):
     accorded_by: Optional[str] = None
     items: Optional[list[CashNoteItem]] = None
     nc: Optional[str] = None                         # 'noir' | 'comptable'
+    caisse: Optional[str] = None                     # caisse_sociale | caisse_secondaire
     comment: Optional[str] = None
 
 
@@ -612,6 +652,7 @@ class MissionNoteCreate(BaseModel):
     days: list[str] = []                             # ["AAAA-MM-JJ", ...] (≤ 7)
     amounts: dict[str, list[float]] = {}             # {article: [montant par jour]}
     nc: str = "comptable"                            # nature journal : 'noir' | 'comptable'
+    caisse: str = "caisse_sociale"                   # caisse visée : caisse_sociale=Comptable | caisse_secondaire=Sociale
     comment: Optional[str] = None
 
 
@@ -628,6 +669,7 @@ class MissionNoteUpdate(BaseModel):
     days: Optional[list[str]] = None
     amounts: Optional[dict[str, list[float]]] = None
     nc: Optional[str] = None                          # 'noir' | 'comptable'
+    caisse: Optional[str] = None                      # caisse_sociale | caisse_secondaire
     comment: Optional[str] = None
 
 
@@ -644,6 +686,7 @@ class QuotationCreate(BaseModel):
     delivery_required: bool = False
     delivery_cost: Optional[float] = None  # None = coût inconnu / à préciser ; 0 = gratuite
     delivery_included: bool = False  # la livraison est-elle déjà comprise dans `amount` ?
+    vat_percent: float = 20  # `amount` reste HT ; total_incl_vat (TTC) est calculé en base
 
 
 class QuotationUpdate(BaseModel):
@@ -658,6 +701,7 @@ class QuotationUpdate(BaseModel):
     delivery_required: Optional[bool] = None
     delivery_cost: Optional[float] = None
     delivery_included: Optional[bool] = None
+    vat_percent: Optional[float] = None
 
 
 class ClassTuitionUpdate(BaseModel):
@@ -1064,7 +1108,7 @@ class CandidatePromote(BaseModel):
 
 class InterviewCreate(BaseModel):
     candidate_id: str
-    recruiter_id: Optional[str] = None
+    interviewer_ids: list[str] = []               # jusqu'à 3 — voir schedule_interview()
     date: str
     start_time: str
     end_time: str
@@ -1080,6 +1124,68 @@ class InterviewUpdate(BaseModel):
     end_time: Optional[str] = None
     type: Optional[str] = None
     meet_link: Optional[str] = None
+    notes: Optional[str] = None
+    interviewer_ids: Optional[list[str]] = None    # None = inchangé ; liste (même vide) = remplace
+
+
+# ── Interview evaluation — digitalise "Grille d'Entretien de Recrutement"
+# et "Fiche d'Entretien d'Embauche" (formulaires RH papier). ──────────────────
+class GrilleRow(BaseModel):
+    score: Optional[int] = None        # 1-5
+    remarque: Optional[str] = None
+
+
+class EvaluationGrille(BaseModel):
+    connaissance_domaine: GrilleRow = GrilleRow()
+    formations: GrilleRow = GrilleRow()
+    experiences_pro: GrilleRow = GrilleRow()
+    competences: GrilleRow = GrilleRow()
+    outils: GrilleRow = GrilleRow()
+    travail_equipe: GrilleRow = GrilleRow()
+    ponctualite_reactivite: GrilleRow = GrilleRow()
+    organisation_autonomie: GrilleRow = GrilleRow()
+    motivation: GrilleRow = GrilleRow()
+    mobilite: GrilleRow = GrilleRow()
+    disponibilite: GrilleRow = GrilleRow()
+    pretentions_salariales: GrilleRow = GrilleRow()
+    observations: Optional[str] = None
+
+
+class CompetenceRating(BaseModel):
+    commentaire: Optional[str] = None
+    niveau: Optional[str] = None       # inti|qualifie|experimente|master (agilites : low|medium|high)
+
+
+class EvaluationFiche(BaseModel):
+    ponctualite: Optional[str] = None
+    maitrise_de_soi: Optional[str] = None
+    facon_de_se_presenter: Optional[str] = None
+    comportement: Optional[str] = None
+    interet_poste: Optional[str] = None
+    competences_corps_metier: CompetenceRating = CompetenceRating()
+    competences_transverses: CompetenceRating = CompetenceRating()
+    agilites: CompetenceRating = CompetenceRating()
+    softskills: dict[str, bool] = {}   # clé = slug de l'affirmation
+    points_forts: Optional[str] = None
+    axes_amelioration: Optional[str] = None
+    appreciation_generale: Optional[str] = None
+
+
+INTERVIEW_DECISIONS = {"negative", "standby", "other_interview", "offer", "other_entity"}
+INTERVIEW_ENTRETIEN_TYPES = {"presentiel", "distance"}
+
+
+class InterviewEvaluationUpsert(BaseModel):
+    grille: Optional[EvaluationGrille] = None
+    fiche: Optional[EvaluationFiche] = None
+    decision: Optional[str] = None
+    decision_detail: Optional[str] = None
+    salary_current: Optional[str] = None
+    salary_expected: Optional[str] = None
+    interviewer_visa: Optional[str] = None
+    entite_affectation: Optional[str] = None
+    type_entretien: Optional[str] = None
+    duree_entretien: Optional[str] = None
     notes: Optional[str] = None
     recruiter_id: Optional[str] = None
 
@@ -1318,4 +1424,96 @@ class TeachingSessionEnd(BaseModel):
 
 class SessionFeedbackSubmit(BaseModel):
     answers: dict[str, int]  # {question_id: 1-5}
+
+
+# ── Gestion des tâches (Task Management) ────────────────────────────────────
+TASK_STATUSES = {"todo", "in_progress", "in_review", "done", "blocked", "cancelled"}
+TASK_PRIORITIES = {"low", "medium", "high", "urgent"}
+TASK_DOMAINS = {"rh", "comptabilite", "scolarite", "general"}
+
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    domain: Optional[str] = None
+    assignee_id: Optional[str] = None
+    due_date: Optional[str] = None
+    linked_entity_type: Optional[str] = None
+    linked_entity_id: Optional[str] = None
+
+
+class TaskUpdate(BaseModel):
+    """PATCH générique — ne touche jamais status ni assignee_id, forcés via
+    les endpoints dédiés /status et /assign (même garde-fou que rh_leaves.py)."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    domain: Optional[str] = None
+    due_date: Optional[str] = None
+    linked_entity_type: Optional[str] = None
+    linked_entity_id: Optional[str] = None
+
+
+class TaskStatusUpdate(BaseModel):
+    status: str
+
+
+class TaskAssign(BaseModel):
+    assignee_id: Optional[str] = None  # None = désassigner (retour au backlog)
+
+
+class TaskCommentCreate(BaseModel):
+    text: str
+
+
+class RosterCreate(BaseModel):
+    academic_year: str = "2025-2026"
+    departement: Optional[str] = None
+    region: Optional[str] = None
+    province: Optional[str] = None
+    milieu: Optional[str] = None
+    etablissement: Optional[str] = None
+    mode_formation: Optional[str] = None
+    niveau_formation: Optional[str] = None
+    secteur: Optional[str] = None
+    filiere: Optional[str] = None
+    annee_formation: Optional[str] = None
+    nom: str
+    prenom: str
+    genre: Optional[str] = None
+    besoins_specifiques: bool = False
+    type_handicap: Optional[str] = None
+    cin: Optional[str] = None
+    id_massar: Optional[str] = None
+    date_naissance: Optional[str] = None
+    nationalite: Optional[str] = None
+    etranger_migrant_refugie: Optional[str] = None
+    pays_origine: Optional[str] = None
+    niveau_scolaire: Optional[str] = None
+    date_dernier_niveau: Optional[str] = None
+
+
+class RosterUpdate(RosterCreate):
+    nom: Optional[str] = None
+    prenom: Optional[str] = None
+    academic_year: Optional[str] = None
+
+
+class RoomCreate(BaseModel):
+    name: str
+    capacity: Optional[int] = None
+    building: Optional[str] = None
+    floor: Optional[str] = None
+    equipment: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    capacity: Optional[int] = None
+    building: Optional[str] = None
+    floor: Optional[str] = None
+    equipment: Optional[str] = None
+    notes: Optional[str] = None
 

@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { ShieldCheck, Check, X, Clock, Inbox, RefreshCw, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 
 const sans = '"Manrope", system-ui, sans-serif';
 
@@ -73,6 +74,7 @@ type InboxItem = {
   reject_url: string | null;
   tab?: string;
   four_eyes: boolean;
+  first_approved_by: string | null;
 };
 
 export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) {
@@ -83,6 +85,7 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
   const [busy, setBusy] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [comment, setComment] = useState("");
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,9 +107,14 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
     if (!it.approve_url) return;
     setBusy(key(it));
     try {
-      await api.post(it.approve_url, {});
-      toast.success("Demande approuvée ✅");
-      setItems(prev => prev.filter(o => key(o) !== key(it)));
+      const res = await api.post(it.approve_url, {});
+      if (res?.pending_second_approval) {
+        toast.success("Première validation enregistrée — en attente d'un second administrateur.");
+        load(); // toujours en attente : on ne retire pas l'item, on rafraîchit son état.
+      } else {
+        toast.success("Demande approuvée ✅");
+        setItems(prev => prev.filter(o => key(o) !== key(it)));
+      }
     } catch (err) {
       toast.error((err as Error)?.message ?? "Échec de l'approbation.");
     } finally {
@@ -171,9 +179,13 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {group.rows.map(it => {
                   const k = key(it);
-                  const blocked = !!me && it.created_by === me && it.four_eyes;
+                  const blockedCreator = !!me && it.created_by === me && it.four_eyes;
+                  const blockedFirstApprover = !!me && it.first_approved_by === me;
+                  const blocked = blockedCreator || blockedFirstApprover;
+                  const awaitingSecond = it.four_eyes && !!it.first_approved_by && !blockedFirstApprover;
+                  const hit = it.id === focusId;
                   return (
-                    <div key={k} className="dash-card" style={{ padding: "16px 20px" }}>
+                    <div key={k} ref={hit ? attachFocus : undefined} className="dash-card" style={{ padding: "16px 20px" }}>
                       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--pal-ink)" }}>{it.label}</span>
@@ -187,9 +199,13 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
                           {it.approve_url ? (
                             <>
                               <button type="button" className="btn-c btn-c-primary btn-c-sm" disabled={busy === k || blocked}
-                                title={blocked ? "Vous avez saisi ce règlement : il doit être validé par un autre administrateur." : undefined}
+                                title={
+                                  blockedCreator ? "Vous avez saisi ce règlement : il doit être validé par un autre administrateur."
+                                  : blockedFirstApprover ? "Vous avez déjà donné la première validation : un second administrateur, différent de vous, doit valider."
+                                  : undefined
+                                }
                                 onClick={() => approve(it)}>
-                                <Check size={14} strokeWidth={2} /> Approuver
+                                <Check size={14} strokeWidth={2} /> {awaitingSecond ? "Valider (2e)" : "Approuver"}
                               </button>
                               <button type="button" className="btn-c btn-c-danger btn-c-sm" disabled={busy === k}
                                 onClick={() => { setRejecting(rejecting === k ? null : k); setComment(""); }}>
@@ -207,7 +223,9 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
                       </div>
                       <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--pal-muted)" }}>
                         Saisi par <strong>{it.created_by_name}</strong> · {fmtDate(it.created_at)}
-                        {blocked && <> · <span style={{ color: "oklch(58% 0.19 25)", fontWeight: 600 }}>votre saisie — un autre administrateur doit la valider</span></>}
+                        {blockedCreator && <> · <span style={{ color: "oklch(58% 0.19 25)", fontWeight: 600 }}>votre saisie — un autre administrateur doit la valider</span></>}
+                        {blockedFirstApprover && <> · <span style={{ color: "oklch(58% 0.19 25)", fontWeight: 600 }}>vous avez déjà validé — en attente d'un second administrateur</span></>}
+                        {awaitingSecond && <> · <span style={{ color: "var(--pal-primary)", fontWeight: 600 }}>1ère validation obtenue — votre validation finalisera le paiement</span></>}
                       </div>
                       {rejecting === k && (
                         <div className="anim-fade" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -241,6 +259,7 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
 export function MySubmissions() {
   const [items, setItems] = useState<PendingOp[]>([]);
   const [loading, setLoading] = useState(true);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -278,7 +297,7 @@ export function MySubmissions() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {items.map(op => (
-            <div key={op.id} className="dash-card" style={{ padding: "16px 20px" }}>
+            <div key={op.id} ref={op.id === focusId ? attachFocus : undefined} className="dash-card" style={{ padding: "16px 20px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                 <OpSummary op={op} />
                 <StatusChip status={op.status} />

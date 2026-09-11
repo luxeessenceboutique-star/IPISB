@@ -7,7 +7,13 @@ import { toast } from "sonner";
 import { Plus, Trash2, Loader2, Users, X, BookOpen, Settings, GraduationCap, User, CalendarDays, Pencil, ArrowLeftRight } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 
+type ClassesSearch = { specialty?: string; manage?: string };
+
 export const Route = createFileRoute("/dashboard/classes")({
+  validateSearch: (search: Record<string, unknown>): ClassesSearch => ({
+    specialty: typeof search.specialty === "string" ? search.specialty : undefined,
+    manage: typeof search.manage === "string" ? search.manage : undefined,
+  }),
   beforeLoad: async () => {
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) throw redirect({ to: "/auth" });
@@ -55,7 +61,8 @@ type ClassItem = {
   duration_months: number | null;
 };
 
-type Specialty = { id: string; name: string };
+type SpecialtyType = "formation_initiale" | "formation_continue";
+type Specialty = { id: string; name: string; type: SpecialtyType };
 
 type Formation = {
   id: string;
@@ -380,10 +387,16 @@ function ModalField({ label, value, onChange, placeholder }: {
 
 // ── Manage specialties modal (admin only) ───────────────────────
 
+const SPECIALTY_TYPE_LABEL: Record<SpecialtyType, string> = {
+  formation_initiale: "Formation initiale",
+  formation_continue: "Formation continue",
+};
+
 function SpecialtiesModal({ specialties, onClose, onChanged }: {
   specialties: Specialty[]; onClose: () => void; onChanged: () => void;
 }) {
   const [name, setName] = useState("");
+  const [type, setType] = useState<SpecialtyType>("formation_initiale");
   const [busy, setBusy] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
 
@@ -391,13 +404,22 @@ function SpecialtiesModal({ specialties, onClose, onChanged }: {
     if (!name.trim()) { toast.error("Le nom est requis"); return; }
     setBusy(true);
     try {
-      await api.post("/api/specialties", { name: name.trim() });
+      await api.post("/api/specialties", { name: name.trim(), type });
       setName("");
       onChanged();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function changeType(s: Specialty, nextType: SpecialtyType) {
+    try {
+      await api.patch(`/api/specialties/${s.id}`, { type: nextType });
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
     }
   }
 
@@ -436,7 +458,7 @@ function SpecialtiesModal({ specialties, onClose, onChanged }: {
           Gérer les spécialités
         </h2>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
             type="text" value={name} onChange={e => setName(e.target.value)}
             placeholder="Nouvelle spécialité…"
@@ -449,15 +471,35 @@ function SpecialtiesModal({ specialties, onClose, onChanged }: {
             <Plus size={13} strokeWidth={1.7} />Ajouter
           </button>
         </div>
+        <select
+          value={type} onChange={e => setType(e.target.value as SpecialtyType)}
+          style={{
+            width: "100%", marginBottom: 18, padding: "8px 12px", background: PAL.cream, border: `1px solid ${PAL.line}`,
+            borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: PAL.ink, outline: "none",
+          }}
+        >
+          <option value="formation_initiale">{SPECIALTY_TYPE_LABEL.formation_initiale}</option>
+          <option value="formation_continue">{SPECIALTY_TYPE_LABEL.formation_continue}</option>
+        </select>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {specialties.map(s => (
             <div key={s.id} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
               padding: "8px 10px", borderRadius: 8, background: PAL.pale, border: `1px solid ${PAL.line}`,
             }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: PAL.ink }}>{s.name}</span>
-              <button type="button" onClick={() => removeSpecialty(s)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.danger }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: PAL.ink, flex: 1, minWidth: 0 }}>{s.name}</span>
+              <select
+                value={s.type} onChange={e => changeType(s, e.target.value as SpecialtyType)}
+                style={{
+                  padding: "4px 8px", background: PAL.paper, border: `1px solid ${PAL.line}`,
+                  borderRadius: 6, fontFamily: sans, fontSize: 11.5, color: PAL.muted, outline: "none",
+                }}
+              >
+                <option value="formation_initiale">{SPECIALTY_TYPE_LABEL.formation_initiale}</option>
+                <option value="formation_continue">{SPECIALTY_TYPE_LABEL.formation_continue}</option>
+              </select>
+              <button type="button" onClick={() => removeSpecialty(s)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.danger, flexShrink: 0 }}>
                 <Trash2 size={13} strokeWidth={1.7} />
               </button>
             </div>
@@ -537,6 +579,8 @@ function TransferModal({ student, fromClass, classes, onClose, onDone }: {
 
 function ClassesPage() {
   const { roles, loading: authLoading } = useAuth();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [classes,      setClasses]      = useState<ClassItem[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [showModal,    setShowModal]    = useState(false);
@@ -612,6 +656,14 @@ function ClassesPage() {
       loadSpecialties();
     }
   }, [authLoading]);
+
+  // Ouverture directe depuis la barre latérale : /dashboard/classes?manage=specialties
+  useEffect(() => {
+    if (search.manage === "specialties") setShowSpecialtiesModal(true);
+  }, [search.manage]);
+
+  const activeSpecialty = search.specialty ? specialties.find(s => s.id === search.specialty) : undefined;
+  const visibleClasses = search.specialty ? classes.filter(c => c.specialty_id === search.specialty) : classes;
 
   async function selectClass(cls: ClassItem) {
     setSelected(cls);
@@ -717,6 +769,20 @@ function ClassesPage() {
         }
       />
 
+      {activeSpecialty && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <span style={{
+            display: "flex", alignItems: "center", gap: 6, fontFamily: sans, fontSize: 12.5, fontWeight: 700,
+            color: PAL.primary, background: PAL.pale, borderRadius: 999, padding: "5px 12px",
+          }}>
+            Filtré par filière : {activeSpecialty.name}
+            <button type="button" onClick={() => navigate({ search: {} })} style={{ background: "none", border: 0, cursor: "pointer", display: "flex", color: PAL.primary }}>
+              <X size={13} strokeWidth={2} />
+            </button>
+          </span>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" as const }}>
 
         {/* ── Left panel: class list ── */}
@@ -726,7 +792,7 @@ function ClassesPage() {
             <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
               <Loader2 style={{ width: 22, height: 22, color: PAL.muted, animation: "spin 1s linear infinite" }} />
             </div>
-          ) : classes.length === 0 ? (
+          ) : visibleClasses.length === 0 ? (
             <div style={{
               textAlign: "center", padding: "48px 24px",
               background: PAL.pale, borderRadius: 16,
@@ -734,11 +800,11 @@ function ClassesPage() {
             }}>
               <BookOpen style={{ width: 36, height: 36, margin: "0 auto 12px", opacity: 0.35 }} />
               <p style={{ fontWeight: 600, marginBottom: 4, color: PAL.text }}>Aucune classe</p>
-              <p>Créez votre première classe pour regrouper vos étudiants.</p>
+              <p>{activeSpecialty ? "Aucune classe pour cette filière pour le moment." : "Créez votre première classe pour regrouper vos étudiants."}</p>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {classes.map(cls => {
+              {visibleClasses.map(cls => {
                 const isSelected = selected?.id === cls.id;
                 const isDeleting = deletingId === cls.id;
                 return (

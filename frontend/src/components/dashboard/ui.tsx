@@ -148,6 +148,31 @@ export function DashAvatar({
   );
 }
 
+/** Full-page "coming soon" placeholder — PageHead + a centered EmptyHint,
+    for sidebar entries that exist in the nav ahead of the feature itself. */
+export function ComingSoonPage({
+  eyebrow,
+  title,
+  sub,
+  icon,
+  note = "Cette section arrive bientôt.",
+}: {
+  eyebrow?: ReactNode;
+  title: ReactNode;
+  sub?: ReactNode;
+  icon?: ReactNode;
+  note?: ReactNode;
+}) {
+  return (
+    <div>
+      <PageHead eyebrow={eyebrow} title={title} sub={sub} />
+      <div className="dash-card" style={{ padding: 0 }}>
+        <EmptyHint icon={icon} text={note} />
+      </div>
+    </div>
+  );
+}
+
 /** Centered muted empty-state hint (icon + message). */
 export function EmptyHint({ icon, text }: { icon?: ReactNode; text: ReactNode }) {
   return (

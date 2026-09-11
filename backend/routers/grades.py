@@ -35,39 +35,58 @@ def compute_course_grade(db: Client, course_id: str, student_id: str) -> dict:
     covers a category the student has no grades in yet, the remaining
     weights are renormalized to 100% rather than capping the achievable
     grade below 20 mid-term.
+
+    Évaluations « Note directe » (page Notes, is_quick_grade=true) : comptent
+    dans devoir_avg comme n'importe quel devoir noté, SAUF celles catégorisées
+    quick_grade_category='exam', qui rejoignent exam_avg aux côtés des vrais
+    examens QCM (exam_responses) — un professeur peut ainsi saisir une note
+    d'examen à la main sans qu'un vrai examen QCM existe.
     """
-    assignments = db.from_("assignments").select("id, max_grade").eq("course_id", course_id).execute().data or []
-    assignment_ids = [a["id"] for a in assignments]
+    try:
+        # is_quick_grade (l47) / quick_grade_category (l48) : si l48 n'a pas
+        # encore été exécutée côté Supabase, on retombe sur le comportement
+        # d'avant ces migrations (tous les devoirs comptent en devoir_avg)
+        # plutôt que de faire planter tout calcul de note en attendant.
+        assignments = db.from_("assignments").select("id, max_grade, is_quick_grade, quick_grade_category").eq("course_id", course_id).execute().data or []
+    except Exception:
+        assignments = db.from_("assignments").select("id, max_grade").eq("course_id", course_id).execute().data or []
     max_grade_map = {a["id"]: a.get("max_grade") or 20 for a in assignments}
-    devoir_items: list[dict] = []
-    if assignment_ids:
+    devoir_assignment_ids = [a["id"] for a in assignments if not (a.get("is_quick_grade") and a.get("quick_grade_category") == "exam")]
+    quick_exam_assignment_ids = [a["id"] for a in assignments if a.get("is_quick_grade") and a.get("quick_grade_category") == "exam"]
+
+    def _submission_items(assignment_ids: list[str]) -> list[dict]:
+        if not assignment_ids:
+            return []
         subs = (
             db.from_("submissions").select("assignment_id, grade")
             .eq("student_id", student_id).in_("assignment_id", assignment_ids)
             .execute().data or []
         )
-        devoir_items = [
+        return [
             {"score": s["grade"], "max": max_grade_map.get(s["assignment_id"], 20)}
             for s in subs if s.get("grade") is not None
         ]
+
+    devoir_items = _submission_items(devoir_assignment_ids)
+    quick_exam_items = _submission_items(quick_exam_assignment_ids)
     devoir_avg = _category_average(devoir_items)
 
     exams = db.from_("exams").select("id, type").eq("course_id", course_id).execute().data or []
     exam_ids = [e["id"] for e in exams if e.get("type", "examen") == "examen"]
     quiz_ids = [e["id"] for e in exams if e.get("type") == "quiz"]
 
-    def _exam_category_avg(exam_ids_: list[str]) -> Optional[float]:
-        if not exam_ids_:
-            return None
-        responses = (
-            db.from_("exam_responses").select("exam_id, score, total")
-            .eq("student_id", student_id).in_("exam_id", exam_ids_)
-            .execute().data or []
-        )
-        items = [{"score": r["score"], "max": r["total"]} for r in responses if r.get("total")]
-        return _category_average(items)
+    def _exam_category_avg(exam_ids_: list[str], extra_items: Optional[list[dict]] = None) -> Optional[float]:
+        items = list(extra_items or [])
+        if exam_ids_:
+            responses = (
+                db.from_("exam_responses").select("exam_id, score, total")
+                .eq("student_id", student_id).in_("exam_id", exam_ids_)
+                .execute().data or []
+            )
+            items += [{"score": r["score"], "max": r["total"]} for r in responses if r.get("total")]
+        return _category_average(items) if items else None
 
-    exam_avg = _exam_category_avg(exam_ids)
+    exam_avg = _exam_category_avg(exam_ids, quick_exam_items)
     quiz_avg = _exam_category_avg(quiz_ids)
 
     category_avgs = {"exam": exam_avg, "devoir": devoir_avg, "quiz": quiz_avg}

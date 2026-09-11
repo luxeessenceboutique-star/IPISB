@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { Video, Plus, Clock, User as UserIcon, Trash2, X } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 
 export const Route = createFileRoute("/dashboard/meetings")({
   beforeLoad: async () => {
@@ -120,6 +121,7 @@ function MeetingsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating,   setCreating]   = useState(false);
   const [form, setForm] = useState({ title: "", description: "", course_id: "", class_id: "", scheduled_at: "", duration_minutes: "60" });
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   async function load() {
     setLoading(true);
@@ -257,7 +259,7 @@ function MeetingsPage() {
     const isHost = m.created_by === user!.id;
     const canDelete = !isStudent && canCreate && (isHost || isAdmin) && !inHistory;
     return (
-      <div key={m.id} className="row-c flex-wrap" style={inHistory ? { opacity: 0.72 } : undefined}>
+      <div key={m.id} ref={m.id === focusId ? attachFocus : undefined} className="row-c flex-wrap" style={inHistory ? { opacity: 0.72 } : undefined}>
         <span className="flex shrink-0" style={{ color: inHistory ? "var(--pal-muted)" : "var(--pal-primary)" }}>
           <Video size={20} strokeWidth={1.7} />
         </span>

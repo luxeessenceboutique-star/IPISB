@@ -12,11 +12,11 @@ const sans = '"Manrope", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 const titleFont = '"Cormorant Garamond", Georgia, serif';
 
-// ── Deux journaux, une même grille (migration l36) — TROIS natures ───────────
-//  1. Caisse comptabilisée   : channel='caisse', nc='comptable'  → comptabilisé
-//  2. Caisse sociale (noir)  : channel='caisse', nc='noir'       → NON comptabilisé
-//  3. Banque (virement/OV/chèque) : channel='banque'             → comptabilisé
-//     (le backend force nc='comptable' : pas de banque non déclarée)
+// ── Deux journaux, une même grille (migration l36) — toujours comptabilisés ──
+//  Caisse (espèces) et Banque (virement/OV/chèque) sont désormais tous deux
+//  nc='comptable' — l'ancienne distinction « caisse sociale (noir) » a été
+//  retirée (le backend force nc='comptable' à l'écriture, quel que soit le
+//  registre).
 export type Channel = "caisse" | "banque";
 
 // Modes de règlement du journal des comptes (clés partagées avec le backend).
@@ -32,8 +32,17 @@ const BANK_MODES: [string, string][] = [
 const MODE_LABELS: Record<string, string> = {
   virement: "Virement", versement: "Versement", ov_permanent: "OV permanent",
   ov_ponctuel: "OV ponctuel", cheque: "Chèque", prelevement: "Prélèvement",
-  carte: "Carte bancaire", especes: "Espèces", caisse_sociale: "Caisse sociale", autre: "Autre",
+  carte: "Carte bancaire", especes: "Espèces", caisse_sociale: "Caisse comptable",
+  caisse_secondaire: "Caisse sociale", autre: "Autre",
 };
+
+// Registres du Journal de caisse — même paire que les notes de caisse/frais de
+// mission (clés historiques préservées) ; les deux sont intégralement
+// comptabilisés (nc='comptable' forcé côté backend, quel que soit le registre).
+const CASH_REGISTERS: [string, string][] = [
+  ["caisse_sociale", "Caisse comptable"],
+  ["caisse_secondaire", "Caisse sociale"],
+];
 
 const COPY = {
   caisse: {
@@ -98,7 +107,9 @@ function StatTile({ label, value, tone }: { label: string; value: string; tone?:
   );
 }
 
-/** Champs propres au journal : n/c en caisse, mode + référence bancaire en banque. */
+/** Champs propres au journal : registre (Caisse comptable / Caisse sociale) en
+ * caisse, mode + référence de règlement en banque. Les deux registres de caisse
+ * restent intégralement comptabilisés — seul le nom du registre change. */
 function ChannelFields({ channel, form, set }: {
   channel: Channel;
   form: { nc: string; payment_mode: string; payment_ref: string };
@@ -107,10 +118,9 @@ function ChannelFields({ channel, form, set }: {
   if (channel === "caisse") {
     return (
       <div>
-        <label style={labelStyle}>n/c</label>
-        <select value={form.nc} onChange={e => set("nc", e.target.value)} className="u-input" style={fieldStyle}>
-          <option value="comptable">Caisse comptabilisée</option>
-          <option value="noir">Caisse sociale — non comptabilisée</option>
+        <label style={labelStyle}>Caisse</label>
+        <select value={form.payment_mode} onChange={e => set("payment_mode", e.target.value)} className="u-input" style={fieldStyle}>
+          {CASH_REGISTERS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
     );
@@ -185,9 +195,9 @@ function payload(channel: Channel, form: FormState, amount: number) {
     type: form.type, entry_date: form.entry_date, action: form.action.trim(),
     prestataire: form.prestataire || null, amount,
     justificatif: form.justificatif || null,
-    nc: channel === "banque" ? "comptable" : form.nc,
+    nc: "comptable",
     channel,
-    payment_mode: channel === "banque" ? form.payment_mode : null,
+    payment_mode: form.payment_mode || null,
     payment_ref: channel === "banque" ? (form.payment_ref || null) : null,
   };
 }
@@ -197,7 +207,7 @@ function ManualEntryModal({ channel, onClose, onSaved }: { channel: Channel; onC
   const [form, setForm] = useState<FormState>({
     type: "sortie", entry_date: new Date().toISOString().slice(0, 10),
     action: "", prestataire: "", amount: "", justificatif: "", nc: "comptable",
-    payment_mode: "virement", payment_ref: "",
+    payment_mode: channel === "banque" ? "virement" : "caisse_sociale", payment_ref: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -205,6 +215,7 @@ function ManualEntryModal({ channel, onClose, onSaved }: { channel: Channel; onC
     if (!form.action.trim()) { toast.error("L'action est obligatoire."); return; }
     const amount = parseFloat(form.amount);
     if (!(amount > 0)) { toast.error("Le montant doit être positif."); return; }
+    if (channel === "caisse" && amount > 4500) { toast.error("Une transaction en Journal de caisse ne peut pas dépasser 4 500 MAD."); return; }
     setBusy(true);
     try {
       const res: any = await api.post("/api/accounting/cash-journal", payload(channel, form, amount));
@@ -248,7 +259,7 @@ function EditEntryModal({ channel, entry, onClose, onSaved }: { channel: Channel
     amount: String(entry.amount ?? ""),
     justificatif: entry.justificatif || "",
     nc: entry.nc,
-    payment_mode: entry.payment_mode || "virement",
+    payment_mode: entry.payment_mode || (channel === "banque" ? "virement" : "caisse_sociale"),
     payment_ref: entry.payment_ref || "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -257,6 +268,7 @@ function EditEntryModal({ channel, entry, onClose, onSaved }: { channel: Channel
     if (!form.action.trim()) { toast.error("L'action est obligatoire."); return; }
     const amount = parseFloat(form.amount);
     if (!(amount > 0)) { toast.error("Le montant doit être positif."); return; }
+    if (channel === "caisse" && amount > 4500) { toast.error("Une transaction en Journal de caisse ne peut pas dépasser 4 500 MAD."); return; }
     setBusy(true);
     try {
       const res: any = await api.patch(`/api/accounting/cash-journal/${entry.id}`, payload(channel, form, amount));
@@ -289,9 +301,13 @@ function EditEntryModal({ channel, entry, onClose, onSaved }: { channel: Channel
 }
 
 /** Grille commune aux deux journaux : mêmes colonnes, même solde cumulé.
- *  La 9e colonne porte l'axe propre au journal (n/c en caisse, mode en banque). */
-export function JournalView({ channel }: { channel: Channel }) {
+ *  La 9e colonne porte l'axe propre au journal (n/c en caisse, mode en banque).
+ *  `switchable` affiche un filtre Caisse comptable / Opérations bancaires en
+ *  tête de page, permettant de basculer entre les deux journaux sans changer
+ *  d'onglet (le canal initial reste celui passé en prop). */
+export function JournalView({ channel: initialChannel, switchable = false }: { channel: Channel; switchable?: boolean }) {
   const { roles } = useAuth();
+  const [channel, setChannel] = useState<Channel>(initialChannel);
   const isAdmin = roles.includes("admin");
   const isAccountant = roles.includes("accountant");
   const isCashier = roles.includes("cashier");
@@ -387,6 +403,23 @@ export function JournalView({ channel }: { channel: Channel }) {
         onChange={ev => { const f = ev.target.files?.[0]; const t = attachTarget.current; if (f && t) uploadPiece(t, f); ev.target.value = ""; attachTarget.current = null; }}
       />
 
+      {switchable && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <button
+            onClick={() => setChannel("caisse")}
+            className={`btn-c btn-c-sm ${channel === "caisse" ? "btn-c-primary" : "btn-c-ghost"}`}
+          >
+            <Wallet size={14} strokeWidth={1.8} />Caisse comptable
+          </button>
+          <button
+            onClick={() => setChannel("banque")}
+            className={`btn-c btn-c-sm ${channel === "banque" ? "btn-c-primary" : "btn-c-ghost"}`}
+          >
+            <Landmark size={14} strokeWidth={1.8} />Opérations bancaires
+          </button>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
         <SectionLabel>{copy.section}</SectionLabel>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -417,7 +450,7 @@ export function JournalView({ channel }: { channel: Channel }) {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
               <thead>
                 <tr>
-                  {["Type", "Date", "Action", "Prestataire", "Montant (DH)", "Justificatif", "Pièce", copy.balanceCol, isBank ? "Mode" : "n/c", ""].map((h, i) => (
+                  {["Type", "Date", "Action", "Prestataire", "Montant (DH)", "Justificatif", "Pièce", copy.balanceCol, isBank ? "Mode" : "Caisse", ""].map((h, i) => (
                     <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 4 || i === 7 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
@@ -463,12 +496,21 @@ export function JournalView({ channel }: { channel: Channel }) {
                             <span className="chip-c chip-c-blue" title="Banque — comptabilisé">{e.payment_mode_label || MODE_LABELS[e.payment_mode || ""] || "—"}</span>
                             {e.payment_ref && <span style={{ fontFamily: mono, fontSize: 11, color: PAL.muted }}>{e.payment_ref}</span>}
                           </div>
-                        ) : (
-                          <span className={`chip-c ${e.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}
-                            title={e.nc === "noir" ? "Caisse sociale (espèces) — non comptabilisé" : "Caisse — comptabilisé"}>
-                            {e.nc === "noir" ? "Caisse sociale" : "Comptabilisé"}
-                          </span>
-                        )}
+                        ) : (() => {
+                          // Registre de caisse : piloté par payment_mode (caisse_sociale /
+                          // caisse_secondaire) depuis cette mise à jour ; les lignes plus
+                          // anciennes sans mode retombent sur l'axe n/c historique pour ne
+                          // pas perdre leur registre d'origine. Les deux registres restent
+                          // intégralement comptabilisés — ce n'est qu'un nom de tiroir-caisse.
+                          const isSociale = e.payment_mode === "caisse_secondaire" || (!e.payment_mode && e.nc === "noir");
+                          const label = MODE_LABELS[e.payment_mode || ""] || (isSociale ? "Caisse sociale" : "Caisse comptable");
+                          return (
+                            <span className={`chip-c ${isSociale ? "chip-c-amber" : "chip-c-blue"}`}
+                              title={isSociale ? "Caisse sociale — comptabilisé" : "Caisse comptable — comptabilisé"}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ ...cell, textAlign: "right" }}>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>

@@ -8,7 +8,10 @@ import {
   CalendarClock, Pencil, Download,
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { usePermissions } from "@/lib/permissions";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
+import { SupplierFormModal } from "./Suppliers";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -25,7 +28,6 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   retournee:       { label: "Retournée",       tone: "chip-c-amber" },
   annulee:         { label: "Annulée",         tone: "chip-c-red" },
 };
-const CAT: Record<string, string> = { consommable: "Consommable", equipement: "Équipement", locaux: "Locaux", service: "Service" };
 // Liste des services de l'établissement (ajustez selon votre organisation)
 const SERVICES = ["Direction", "Scolarité", "Comptabilité", "Ressources humaines", "Informatique", "Économat / Logistique", "Pédagogie", "Communication", "Maintenance"];
 const REQ_TYPE: Record<string, string> = { nouveau_besoin: "Nouveau besoin", renouvellement: "Renouvellement" };
@@ -38,15 +40,17 @@ const CONFORMITY: Record<string, string> = {
   certificat: "Certificat / norme de conformité",
   qhse: "Contrôle QHSE effectué",
 };
-const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", caisse_sociale: "Caisse sociale" };
+const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponctuel: "OV ponctuel", cheque: "Chèque", caisse_sociale: "Caisse comptable" };
 
 type Supplier = { id: string; company_name: string };
+type Category = { id: string; name: string };
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
   quote_number: string; quote_date: string | null; expiration_date: string | null;
   amount: number; currency: string; rank: number; retenu: boolean;
   comment: string | null; attachment_name: string | null; attachment_path: string | null;
   delivery_required: boolean; delivery_cost: number | null; delivery_included: boolean;
+  vat_percent: number; total_incl_vat: number;
 };
 // Formatage nombre SANS suffixe (fmtMAD ajoute déjà « MAD » → évite le doublon).
 const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n);
@@ -61,6 +65,15 @@ function quoteAmountLabel(q: Quote): string {
   }
   return `${base} ${cur}`;
 }
+// Total RÉELLEMENT dû (TTC), calculé côté base (colonne générée
+// total_incl_vat = (amount + livraison éventuelle) × (1 + vat_percent/100))
+// — contrairement à quoteAmountLabel, qui ne fait qu'afficher la
+// décomposition HT « 4 800 + 50 » sans additionner ni appliquer la TVA. À
+// utiliser partout où un montant chiffré/comparable est requis (échéancier,
+// écarts, commande).
+function quoteTrueTotal(q: Quote): number {
+  return q.total_incl_vat;
+}
 type Order = {
   id: string; purchase_number: string; supplier_name: string | null; total_incl_vat: number;
   valide_responsable_at: string | null; valide_comptable_at: string | null; payment_status: string;
@@ -68,7 +81,8 @@ type Order = {
 type PR = {
   id: string; request_number: string; company: string | null; service: string | null;
   requester_name: string | null; project: string | null; activity: string | null; justification: string | null;
-  request_type: string; asset_category: string; characteristics: string | null;
+  request_type: string; asset_category: string; category_id: string | null; characteristics: string | null;
+  cdc_attachment_name: string | null; cdc_attachment_path: string | null;
   conformity_note: string | null; conformity_criteria: string[] | null;
   article_code: string | null; quantity: number; budget_estimate: number; duration: string | null;
   need_decision: string; need_decision_comment: string | null;
@@ -97,19 +111,20 @@ function H2({ children }: { children: React.ReactNode }) {
 }
 
 // ── Modal de création (formulaire unique : besoin + classement) ──────────────
-function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function CreateModal({ categories, onClose, onSaved }: { categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const { user } = useAuth();
   const ownerName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "";
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     company: "", service: "", requester_name: ownerName, project: "", activity: "", justification: "",
-    request_type: "nouveau_besoin", asset_category: "consommable", characteristics: "", conformity_note: "",
+    request_type: "nouveau_besoin", category_id: "", characteristics: "", conformity_note: "",
     article_code: "", quantity: "1", budget_estimate: "0", duration: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
   const [criteria, setCriteria] = useState<string[]>([]);
   const toggleCriterion = (k: string) =>
     setCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
+  const [cdcFile, setCdcFile] = useState<File | null>(null);
 
   // Le demandeur est toujours le propriétaire du compte connecté.
   useEffect(() => { setForm(f => ({ ...f, requester_name: ownerName })); }, [ownerName]);
@@ -118,12 +133,19 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     if (!form.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
     setBusy(true);
     try {
-      await api.post("/api/accounting/purchase-requests", {
+      const pr = await api.post("/api/accounting/purchase-requests", {
         ...form,
+        category_id: form.category_id || null,
         quantity: parseFloat(form.quantity) || 1,
         budget_estimate: parseFloat(form.budget_estimate) || 0,
         conformity_criteria: criteria,
       });
+      // Cahier des charges (optionnel) — envoyé une fois la DA créée.
+      if (cdcFile && pr?.id) {
+        const fd = new FormData();
+        fd.append("file", cdcFile);
+        await api.uploadFile(`/api/accounting/purchase-requests/${pr.id}/cdc`, fd);
+      }
       toast.success("Demande d'achat créée !");
       onSaved(); onClose();
     } catch (err: any) {
@@ -165,13 +187,17 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
           </div>
           <div>
             <label style={labelStyle}>Catégorie</label>
-            <select className="u-input" style={fieldStyle} value={form.asset_category} onChange={e => set("asset_category", e.target.value)}>
-              {Object.entries(CAT).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            <select className="u-input" style={fieldStyle} value={form.category_id} onChange={e => set("category_id", e.target.value)}>
+              <option value="">— Aucune —</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
         <label style={labelStyle}>Caractéristiques / CDC</label>
         <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
+        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}><Paperclip size={12} /> Cahier des charges (fichier, facultatif)</label>
+        <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={e => setCdcFile(e.target.files?.[0] ?? null)} style={{ ...fieldStyle, padding: "9px 10px" }} className="u-input" />
+        <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 14 }}>Formats acceptés : PDF, JPG ou PNG.{cdcFile ? ` Sélectionné : ${cdcFile.name}` : ""}</div>
       </div>
 
       <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
@@ -209,30 +235,33 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
 }) {
   const [busy, setBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [newSupplierName, setNewSupplierName] = useState("");
+  // Création d'un fournisseur à la volée : ouvre le vrai formulaire Fournisseur
+  // (SupplierFormModal, réutilisé depuis Suppliers.tsx) par-dessus ce modal,
+  // au lieu d'un simple champ nom — puis le sélectionne une fois créé.
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [extraSupplier, setExtraSupplier] = useState<Supplier | null>(null);
   // Livraison : « none » (non concernée), « free » (gratuite), « paid » (payante).
   const [deliveryMode, setDeliveryMode] = useState<"none" | "free" | "paid">("none");
   const [deliveryIncluded, setDeliveryIncluded] = useState(false);  // livraison comprise dans le total du devis ?
   const [form, setForm] = useState({
     supplier_id: "", quote_number: "", quote_date: new Date().toISOString().slice(0, 10),
-    expiration_date: "", amount: "0", currency: "MAD", comment: "", delivery_cost: "",
+    expiration_date: "", amount: "0", currency: "MAD", comment: "", delivery_cost: "", vat_percent: "20",
   });
   const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
 
+  // Aperçu TTC en direct (même formule que la colonne générée total_incl_vat
+  // en base) — purement visuel, la valeur enregistrée reste calculée côté DB.
+  const previewDeliveryExtra = deliveryMode === "paid" && !deliveryIncluded ? (parseFloat(form.delivery_cost) || 0) : 0;
+  const previewHt = (parseFloat(form.amount) || 0) + previewDeliveryExtra;
+  const previewTtc = previewHt * (1 + (parseFloat(form.vat_percent) || 0) / 100);
+
   async function submit() {
     if (!form.quote_number.trim()) { toast.error("Le numéro de devis est requis."); return; }
-    if (form.supplier_id === "__new__" && !newSupplierName.trim()) { toast.error("Nom du fournisseur requis."); return; }
     setBusy(true);
     try {
-      // Création à la volée du fournisseur → enregistré dans la base fournisseurs.
-      let supplierId: string | null = form.supplier_id || null;
-      if (form.supplier_id === "__new__") {
-        const sup = await api.post("/api/accounting/suppliers", { company_name: newSupplierName.trim() });
-        supplierId = sup?.id ?? null;
-      }
       const quote = await api.post("/api/accounting/quotations", {
         purchase_request_id: prId,
-        supplier_id: supplierId,
+        supplier_id: form.supplier_id || null,
         quote_number: form.quote_number,
         quote_date: form.quote_date || null,
         expiration_date: form.expiration_date || null,
@@ -240,6 +269,7 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
         currency: form.currency,
         rank: nextRank,
         comment: form.comment.trim() || null,
+        vat_percent: parseFloat(form.vat_percent) || 0,
         delivery_required: deliveryMode !== "none",
         delivery_cost:
           deliveryMode === "free" ? 0
@@ -282,25 +312,53 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
         {/* Fournisseur (pleine largeur) */}
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={labelStyle}>Fournisseur</label>
-          <select className="u-input" style={cellInput} value={form.supplier_id} onChange={e => set("supplier_id", e.target.value)}>
+          <select
+            className="u-input" style={cellInput} value={form.supplier_id}
+            onChange={e => {
+              if (e.target.value === "__new__") { setShowSupplierForm(true); return; }
+              set("supplier_id", e.target.value);
+            }}
+          >
             <option value="">— Aucun —</option>
             {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
+            {extraSupplier && !suppliers.some(s => s.id === extraSupplier.id) && (
+              <option value={extraSupplier.id}>{extraSupplier.company_name}</option>
+            )}
             <option value="__new__">➕ Créer un fournisseur…</option>
           </select>
-          {form.supplier_id === "__new__" && (
-            <input className="u-input" style={{ ...cellInput, marginTop: 8 }} placeholder="Nom du nouveau fournisseur *" value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)} />
-          )}
         </div>
+        {showSupplierForm && (
+          <SupplierFormModal
+            zIndex={400}
+            onClose={() => setShowSupplierForm(false)}
+            onSaved={sup => {
+              if (sup) { setExtraSupplier(sup); set("supplier_id", sup.id); }
+              setShowSupplierForm(false);
+            }}
+          />
+        )}
 
-        {/* N° devis | Montant */}
+        {/* N° devis | Montant HT */}
         <div><label style={labelStyle}>N° devis{req}</label><input className="u-input" style={cellInput} placeholder="ex. DV-2026-014" value={form.quote_number} onChange={e => set("quote_number", e.target.value)} /></div>
         <div>
-          <label style={labelStyle}>Montant du devis</label>
+          <label style={labelStyle}>Montant du devis (HT, sans taxes)</label>
           <div style={{ ...segWrap, marginTop: 6 }}>
             <input type="number" min="0" step="any" style={segInput} value={form.amount} onChange={e => set("amount", e.target.value)} />
             <select style={segSelect} value={form.currency} onChange={e => set("currency", e.target.value)}>
               <option value="MAD">MAD</option><option value="EUR">EUR</option><option value="USD">USD</option>
             </select>
+          </div>
+        </div>
+
+        {/* TVA (%) | Montant TTC (calculé, lecture seule) */}
+        <div>
+          <label style={labelStyle}>TVA (%)</label>
+          <input type="number" min="0" max="100" step="any" className="u-input" style={cellInput} value={form.vat_percent} onChange={e => set("vat_percent", e.target.value)} />
+        </div>
+        <div>
+          <label style={labelStyle}>Montant du devis (TTC)</label>
+          <div style={{ ...cellInput, display: "flex", alignItems: "center", background: "var(--pal-pale)", fontWeight: 700, color: PAL.ink }}>
+            {fmtNum(previewTtc)} {form.currency}
           </div>
         </div>
 
@@ -385,20 +443,60 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
 }
 
 // ── Modal détail (décisions + devis + commande) ──────────────────────────────
-// canDecide : réservé à l'admin. Les autres utilisateurs voient leur DA en
-// lecture seule (consultation + PDF), sans boutons de décision.
-function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
-  prId: string; suppliers: Supplier[]; canDecide: boolean; onClose: () => void; onChanged: () => void;
+// canDecide : barème par montant (permissions.ts, "accounting.purchase_requests")
+// — ≤500 MAD comptabilite décide seule, 500–10 000 MAD admin décide en dernier
+// ressort, au-delà de 10 000 MAD admin exclusivement. Calculé ici (pas en prop)
+// car il dépend du budget_estimate de CETTE demande, connu seulement une fois
+// chargée.
+function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
+  prId: string; suppliers: Supplier[]; categories: Category[]; onClose: () => void; onChanged: () => void;
 }) {
+  const { can } = usePermissions();
   const [pr, setPr] = useState<PRDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [quoteForm, setQuoteForm] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editCriteria, setEditCriteria] = useState<string[]>([]);
 
   async function load() {
     try { setPr(await api.get(`/api/accounting/purchase-requests/${prId}`)); }
     catch (err: any) { toast.error(err?.message ?? "Erreur de chargement."); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [prId]);
+
+  function startEdit(p: PR) {
+    setEditForm({
+      company: p.company ?? "", service: p.service ?? "", requester_name: p.requester_name ?? "",
+      project: p.project ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
+      request_type: p.request_type, category_id: p.category_id ?? "", characteristics: p.characteristics ?? "",
+      conformity_note: p.conformity_note ?? "", article_code: p.article_code ?? "",
+      quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0), duration: p.duration ?? "",
+    });
+    setEditCriteria(p.conformity_criteria ?? []);
+    setEditing(true);
+  }
+  const setEditField = (k: string, v: string) => setEditForm(f => ({ ...f, [k]: v }));
+  const toggleEditCriterion = (k: string) =>
+    setEditCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
+
+  async function saveEdit() {
+    if (!editForm.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/api/accounting/purchase-requests/${prId}`, {
+        ...editForm,
+        category_id: editForm.category_id || null,
+        quantity: parseFloat(editForm.quantity) || 1,
+        budget_estimate: parseFloat(editForm.budget_estimate) || 0,
+        conformity_criteria: editCriteria,
+      });
+      toast.success("Demande mise à jour.");
+      setEditing(false);
+      await load(); onChanged();
+    } catch (err: any) { toast.error(err?.message ?? "Erreur lors de l'enregistrement."); }
+    finally { setBusy(false); }
+  }
 
   async function act(fn: () => Promise<any>, ok: string) {
     setBusy(true);
@@ -430,6 +528,10 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
   function createOrder() {
     act(() => api.post(`/api/accounting/purchase-requests/${prId}/create-order`, {}), "Commande créée.");
   }
+  function revertRequest() {
+    if (!window.confirm("Revenir à l'étape précédente ? La décision actuelle sera annulée.")) return;
+    act(() => api.post(`/api/accounting/purchase-requests/${prId}/revert`, {}), "Retour à l'étape précédente.");
+  }
   function deleteQuote(q: Quote) {
     if (!window.confirm(`Supprimer le devis ${q.quote_number} ?`)) return;
     act(() => api.delete(`/api/accounting/quotations/${q.id}`), "Devis supprimé.");
@@ -440,6 +542,23 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
       if (res?.signed_url) window.open(res.signed_url, "_blank", "noopener");
     } catch (err: any) { toast.error(err?.message ?? "Pièce jointe indisponible."); }
   }
+  async function openCdcAttachment() {
+    try {
+      const res = await api.get(`/api/accounting/purchase-requests/${prId}/cdc`);
+      if (res?.signed_url) window.open(res.signed_url, "_blank", "noopener");
+    } catch (err: any) { toast.error(err?.message ?? "Cahier des charges indisponible."); }
+  }
+  async function uploadCdc(file: File) {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.uploadFile(`/api/accounting/purchase-requests/${prId}/cdc`, fd);
+      toast.success("Cahier des charges joint.");
+      await load(); onChanged();
+    } catch (err: any) { toast.error(err?.message ?? "Erreur lors de l'envoi."); }
+    finally { setBusy(false); }
+  }
   function validateOrder() {
     if (!pr?.order) return;
     act(() => api.post(`/api/accounting/purchases/${pr.order!.id}/validate-order`, {}),
@@ -449,16 +568,26 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
   if (!pr) return <Backdrop width={720}><div style={{ padding: 20, color: PAL.muted }}>Chargement…</div></Backdrop>;
 
   const st = STATUS[pr.status];
+  // Miroir de LOCKED_STATUSES (backend) : la DA n'accepte plus d'écriture —
+  // ni pièce jointe CDC, ni modification des champs saisis (bouton Modifier).
+  const locked = pr.status === "commande_emise" || pr.status === "annulee";
+  const canDecide = can("accounting.purchase_requests", "validate_v2", pr.budget_estimate);
   const canDecideNeed = canDecide && (pr.status === "brouillon" || pr.status === "retournee");
   const inQuoteStage = pr.status === "besoin_valide" || pr.status === "en_consultation";
   // Saisie des devis : ouverte au demandeur (il ne voit que ses DA) ET à l'admin.
   const canAddQuote = inQuoteStage;
   // Décisions sur les devis (retenir / retourner / annuler) : admin uniquement.
   const canDecideQuote = canDecide && inQuoteStage;
+  // Revenir à l'étape précédente — même autorité que la décision annulée.
+  // Besoin validé → brouillon (uniquement sans devis saisi) ; devis retenu → consultation.
+  const canRevertNeed = canDecide && inQuoteStage && pr.quotations.length === 0;
+  const canRevertQuote = canDecide && pr.status === "devis_valide";
   // Mode/échéancier de paiement : défini APRÈS le choix du devis (devis retenu), avant/à la commande.
   const canPlanPayment = pr.status === "devis_valide" || !!pr.order;
   const retainedQuote = pr.quotations.find(q => q.retenu);
-  const schedTotal = pr.order?.total_incl_vat ?? retainedQuote?.amount ?? pr.budget_estimate ?? 0;
+  // Livraison payante non incluse dans le devis → à ajouter au total réel
+  // (quoteTrueTotal), pas seulement affichée en décomposé (quoteAmountLabel).
+  const schedTotal = pr.order?.total_incl_vat ?? (retainedQuote ? quoteTrueTotal(retainedQuote) : null) ?? pr.budget_estimate ?? 0;
   const schedLabel = pr.order ? "Commande" : retainedQuote ? "Devis retenu" : "Budget estimé";
   const nextRank = ([1, 2, 3, 4, 5].find(r => !pr.quotations.some(q => q.rank === r))) ?? pr.quotations.length + 1;
   const info = (l: string, v: any) => v ? <div style={{ fontSize: 12.5 }}><span style={{ color: PAL.muted }}>{l} : </span><strong style={{ color: PAL.ink }}>{v}</strong></div> : null;
@@ -470,50 +599,156 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
         <H2>{pr.request_number}</H2>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={() => api.download(`/api/accounting/purchase-requests/${prId}/pdf`, `Demande_achat_${pr.request_number ?? prId}.pdf`).catch((e: any) => toast.error(e?.message ?? "Erreur lors du téléchargement."))} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }}>
-            Télécharger PDF
-          </button>
-          <span className={`chip-c ${st?.tone}`}>{st?.label ?? pr.status}</span>
-        </div>
-      </div>
-
-      {/* Expression de besoin */}
-      <SectionLabel>Expression de besoin</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 18px", margin: "8px 0 16px" }}>
-        {info("Type", REQ_TYPE[pr.request_type])}
-        {info("Catégorie", CAT[pr.asset_category])}
-        {info("Société", pr.company)} {info("Service", pr.service)}
-        {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
-        {info("Activité", pr.activity)}
-        {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
-        {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
-      </div>
-      {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
-      {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 14 }}>{pr.characteristics}</div>}
-
-      {(pr.conformity_note || (pr.conformity_criteria && pr.conformity_criteria.length > 0)) && (
-        <div style={{ marginBottom: 14 }}>
-          <SectionLabel>Conformité</SectionLabel>
-          {pr.conformity_note && <div style={{ fontSize: 12.5, color: PAL.ink, margin: "8px 0" }}>{pr.conformity_note}</div>}
-          {pr.conformity_criteria && pr.conformity_criteria.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-              {pr.conformity_criteria.map(c => <span key={c} className="chip-c chip-c-blue">{CONFORMITY[c] ?? c}</span>)}
-            </div>
+          {!editing ? (
+            <>
+              <button onClick={() => api.download(`/api/accounting/purchase-requests/${prId}/pdf`, `Demande_achat_${pr.request_number ?? prId}.pdf`).catch((e: any) => toast.error(e?.message ?? "Erreur lors du téléchargement."))} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }}>
+                Télécharger PDF
+              </button>
+              {!locked && (
+                <button onClick={() => startEdit(pr)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11 }}>
+                  <Pencil size={12} />Modifier
+                </button>
+              )}
+              <span className={`chip-c ${st?.tone}`}>{st?.label ?? pr.status}</span>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setEditing(false)} disabled={busy} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+              <button onClick={saveEdit} disabled={busy} className="btn-c btn-c-sm btn-c-primary"><Check size={13} />{busy ? "Enregistrement…" : "Enregistrer"}</button>
+            </>
           )}
         </div>
+      </div>
+
+      {editing ? (
+        <>
+          {/* Formulaire d'édition — exactement les champs saisis à la création,
+              modifiables tant que la DA n'est pas verrouillée. */}
+          <SectionLabel>Expression de besoin</SectionLabel>
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div><label style={labelStyle}>Société</label><input className="u-input" style={fieldStyle} value={editForm.company} onChange={e => setEditField("company", e.target.value)} /></div>
+              <div>
+                <label style={labelStyle}>Service</label>
+                <select className="u-input" style={fieldStyle} value={editForm.service} onChange={e => setEditField("service", e.target.value)}>
+                  <option value="">— Choisir un service —</option>
+                  {SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div><label style={labelStyle}>Demandeur</label><input className="u-input" style={fieldStyle} value={editForm.requester_name} onChange={e => setEditField("requester_name", e.target.value)} /></div>
+              <div><label style={labelStyle}>Projet</label><input className="u-input" style={fieldStyle} value={editForm.project} onChange={e => setEditField("project", e.target.value)} /></div>
+            </div>
+            <label style={labelStyle}>Activité</label>
+            <input className="u-input" style={fieldStyle} value={editForm.activity} onChange={e => setEditField("activity", e.target.value)} />
+            <label style={labelStyle}>Justification du besoin *</label>
+            <textarea className="u-input" style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }} value={editForm.justification} onChange={e => setEditField("justification", e.target.value)} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Type du besoin</label>
+                <select className="u-input" style={fieldStyle} value={editForm.request_type} onChange={e => setEditField("request_type", e.target.value)}>
+                  {Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Catégorie</label>
+                <select className="u-input" style={fieldStyle} value={editForm.category_id} onChange={e => setEditField("category_id", e.target.value)}>
+                  <option value="">— Aucune —</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <label style={labelStyle}>Caractéristiques / CDC</label>
+            <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={editForm.characteristics} onChange={e => setEditField("characteristics", e.target.value)} />
+          </div>
+
+          <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
+          <label style={{ ...labelStyle, display: "block", marginTop: 12 }}>Exigences (texte libre)</label>
+          <textarea className="u-input" style={{ ...fieldStyle, minHeight: 52, resize: "vertical" }} placeholder="ex. bœuf congelé, produit frais du jour…" value={editForm.conformity_note} onChange={e => setEditField("conformity_note", e.target.value)} />
+          <label style={{ ...labelStyle, display: "block" }}>Critères standard</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8 }}>
+            {Object.entries(CONFORMITY).map(([k, v]) => (
+              <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer" }}>
+                <input type="checkbox" checked={editCriteria.includes(k)} onChange={() => toggleEditCriterion(k)} style={{ width: 16, height: 16, accentColor: "var(--pal-primary)" }} />
+                {v}
+              </label>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 16 }}>
+            <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
+            <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} /></div>
+            <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.budget_estimate} onChange={e => setEditField("budget_estimate", e.target.value)} /></div>
+            <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} /></div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Expression de besoin */}
+          <SectionLabel>Expression de besoin</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 18px", margin: "8px 0 16px" }}>
+            {info("Type", REQ_TYPE[pr.request_type])}
+            {info("Catégorie", categories.find(c => c.id === pr.category_id)?.name ?? "—")}
+            {info("Société", pr.company)} {info("Service", pr.service)}
+            {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
+            {info("Activité", pr.activity)}
+            {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
+            {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
+          </div>
+          {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
+          {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 8 }}>{pr.characteristics}</div>}
+          {(pr.cdc_attachment_name || !locked) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              {pr.cdc_attachment_name ? (
+                <button onClick={openCdcAttachment} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={pr.cdc_attachment_name}>
+                  <FileText size={12} />Cahier des charges
+                </button>
+              ) : (
+                <span style={{ fontSize: 11.5, color: PAL.muted }}>Aucun cahier des charges joint.</span>
+              )}
+              {!locked && (
+                <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
+                  <Paperclip size={12} />{pr.cdc_attachment_name ? "Remplacer" : "Joindre le CDC"}
+                  <input
+                    type="file" accept="application/pdf,image/jpeg,image/png" disabled={busy}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadCdc(f); e.target.value = ""; }}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              )}
+            </div>
+          )}
+
+          {(pr.conformity_note || (pr.conformity_criteria && pr.conformity_criteria.length > 0)) && (
+            <div style={{ marginBottom: 14 }}>
+              <SectionLabel>Conformité</SectionLabel>
+              {pr.conformity_note && <div style={{ fontSize: 12.5, color: PAL.ink, margin: "8px 0" }}>{pr.conformity_note}</div>}
+              {pr.conformity_criteria && pr.conformity_criteria.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                  {pr.conformity_criteria.map(c => <span key={c} className="chip-c chip-c-blue">{CONFORMITY[c] ?? c}</span>)}
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
       {pr.need_decision_comment && <div style={{ fontSize: 12.5, color: "var(--pal-danger)", marginBottom: 10 }}>Commentaire décision : {pr.need_decision_comment}</div>}
 
-      {canDecideNeed && (
+      {!editing && canDecideNeed && (
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <button disabled={busy} onClick={() => needDecision("validation")} className="btn-c btn-c-primary"><Check size={15} />Valider le besoin</button>
           <button disabled={busy} onClick={() => needDecision("retour")} className="btn-c btn-c-soft"><RotateCcw size={14} />Retourner</button>
           <button disabled={busy} onClick={() => needDecision("annulation")} className="btn-c btn-c-danger"><X size={15} />Annuler</button>
         </div>
       )}
+      {!editing && canRevertNeed && (
+        <div style={{ marginBottom: 20 }}>
+          <button disabled={busy} onClick={revertRequest} className="btn-c btn-c-sm btn-c-ghost"><RotateCcw size={13} />Revenir à l'étape précédente (annuler la validation du besoin)</button>
+        </div>
+      )}
 
       {/* Consultation / devis */}
-      {(canAddQuote || pr.quotations.length > 0) && (
+      {!editing && (canAddQuote || pr.quotations.length > 0) && (
         <>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
             <SectionLabel>Consultation — devis ({pr.quotations.length}/5)</SectionLabel>
@@ -537,7 +772,8 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
                 <tbody>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={cell}>{q.supplier_name || "—"}</td>)}</tr>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, color: PAL.muted }}>{q.quote_number}</td>)}</tr>
-                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}>{quoteAmountLabel(q)}</td>)}</tr>
+                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}><span style={{ color: PAL.muted, fontWeight: 400, fontSize: 10.5 }}>HT </span>{quoteAmountLabel(q)}</td>)}</tr>
+                  <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, fontFamily: mono, fontWeight: 700 }}><span style={{ color: PAL.muted, fontWeight: 400, fontSize: 10.5 }}>TTC ({q.vat_percent}%) </span>{fmtNum(q.total_incl_vat)} {q.currency || "MAD"}</td>)}</tr>
                   <tr>{pr.quotations.map(q => <td key={q.id} style={{ ...cell, color: PAL.muted, fontSize: 11.5 }}>{q.expiration_date ? `échéance ${new Date(q.expiration_date).toLocaleDateString("fr-FR")}` : ""}</td>)}</tr>
                   <tr>{pr.quotations.map(q => (
                     <td key={q.id} style={{ ...cell, fontSize: 11.5 }}>
@@ -579,11 +815,16 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
               <button disabled={busy} onClick={() => quoteDecision("annulation")} className="btn-c btn-c-sm btn-c-danger"><X size={14} />Annuler la DA</button>
             </div>
           )}
+          {canRevertQuote && (
+            <div style={{ marginBottom: 18 }}>
+              <button disabled={busy} onClick={revertRequest} className="btn-c btn-c-sm btn-c-ghost"><RotateCcw size={13} />Revenir à l'étape précédente (annuler le devis retenu)</button>
+            </div>
+          )}
         </>
       )}
 
       {/* Mode & échéancier de paiement — après le choix du devis retenu */}
-      {canPlanPayment && (
+      {!editing && canPlanPayment && (
         <div style={{ marginBottom: 18 }}>
           <SectionLabel>Mode &amp; échéancier de paiement</SectionLabel>
           <div className="dash-card" style={{ padding: 16, margin: "8px 0 4px" }}>
@@ -596,7 +837,7 @@ function DetailModal({ prId, suppliers, canDecide, onClose, onChanged }: {
       )}
 
       {/* Commande */}
-      {((canDecide && pr.status === "devis_valide") || pr.order) && (
+      {!editing && ((canDecide && pr.status === "devis_valide") || pr.order) && (
         <>
           <SectionLabel>Commande</SectionLabel>
           {!pr.order ? (
@@ -650,33 +891,48 @@ const cell: React.CSSProperties = { padding: "7px 12px", borderBottom: `1px soli
 
 // ── Échéancier de paiement (prévisionnel) ────────────────────────────────────
 // Bloc autonome du bon de commande : plan de versements échelonnés (jalon +
-// montant + mode + date). Total LIBRE — la somme peut différer du total TTC
-// (ex. avance « en noir » hors facture). N'alimente pas le journal de caisse
+// montant + mode + date). Le total planifié ne peut pas dépasser le devis
+// retenu/la commande (voir save() ci-dessous) — un total inférieur reste
+// permis (échéancier encore incomplet). N'alimente pas le journal de caisse
 // (phase 1 : planification uniquement).
 type IRow = { label: string; amount: string; payment_mode: string; due_date: string };
-const IMODES: Record<string, string> = { ...PAY_MODE, autre: "Autre" };
-const isNoir = (m: string) => m === "caisse_sociale";
-const JALON_SUGGESTIONS = ["Avance", "À la commande", "À la livraison", "Après contrôle qualité", "Après montage", "Pourboire livreur", "Mensualité 1", "Mensualité 2", "Mensualité 3", "Solde"];
+// Tous les modes de règlement (dont Caisse comptable) sont rattachés au
+// journal comptable — plus de distinction « caisse sociale/comptable ».
+const IMODES: Record<string, string> = PAY_MODE;
+const JALON_SUGGESTIONS = ["Avance", "À la commande", "À la livraison", "Après contrôle qualité", "Après montage", "Mensualité 1", "Mensualité 2", "Mensualité 3", "Solde"];
 const mapRows = (data: any): IRow[] => (data ?? []).map((d: any) => ({
   label: d.label ?? "", amount: String(d.amount ?? 0),
   payment_mode: d.payment_mode ?? "cheque", due_date: d.due_date ?? "",
 }));
 
+// Ventilation par registre : « Caisse comptable » sort de la caisse physique,
+// tout autre mode (chèque, OV) transite par la banque — même logique que
+// resolve_channel() côté journal de caisse.
+const CASH_MODES = new Set(["caisse_sociale"]);
+
 function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; rows: IRow[]; label?: string }) {
   const planned = rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
-  // Chaque ligne est comptabilisée selon SA propre nature : ventilation, pas d'agrégat « dépassement ».
-  const social = rows.reduce((s, r) => s + (isNoir(r.payment_mode) ? (parseFloat(r.amount) || 0) : 0), 0);
-  const comptable = planned - social;
+  const caisseTotal = rows.reduce((s, r) => s + (CASH_MODES.has(r.payment_mode) ? (parseFloat(r.amount) || 0) : 0), 0);
+  const bankTotal = planned - caisseTotal;
   const ecart = planned - total;
+  const overBudget = ecart > 0.005;
+  const hasGap = Math.abs(ecart) > 0.005;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "flex-end", marginTop: 10, fontSize: 12, fontFamily: mono }}>
       <span style={{ color: PAL.muted }}>{label}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(total)}</b></span>
       <span style={{ color: PAL.muted }}>Planifié&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(planned)}</b></span>
-      <span style={{ color: PAL.muted }}>Caisse sociale&nbsp;: <b style={{ color: "var(--pal-amber, #b45309)" }}>{fmtMAD(social)}</b></span>
-      <span style={{ color: PAL.muted }}>Comptable&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(comptable)}</b></span>
-      {Math.abs(ecart) > 0.005 && (
-        <span style={{ color: PAL.muted }} title="Écart entre le total planifié et le devis retenu. Chaque ligne est comptabilisée selon sa propre nature, il n'y a pas de « dépassement » global.">
-          Écart&nbsp;: <b style={{ color: PAL.ink }}>{ecart > 0 ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
+      {planned > 0.005 && (
+        <>
+          <span style={{ color: PAL.muted }} title="Somme des échéances réglées en Caisse comptable.">Dont Caisse&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(caisseTotal)}</b></span>
+          <span style={{ color: PAL.muted }} title="Somme des échéances réglées par chèque ou virement (OV).">Dont Banque&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(bankTotal)}</b></span>
+        </>
+      )}
+      {hasGap && (
+        <span
+          style={{ color: PAL.muted }}
+          title={overBudget ? "Le total planifié dépasse le devis retenu — l'enregistrement est bloqué tant que l'écart n'est pas résorbé." : "Le total planifié est inférieur au devis retenu — l'enregistrement est bloqué tant que l'écart n'est pas résorbé."}
+        >
+          Écart&nbsp;: <b style={{ color: "var(--pal-danger)" }}>{overBudget ? "+" : "−"}{fmtMAD(Math.abs(ecart))}</b>
         </span>
       )}
     </div>
@@ -707,14 +963,27 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
   const delRow = (i: number) => setRows(rs => rs.filter((_, j) => j !== i));
 
   async function save() {
+    const items = rows
+      .filter(r => (parseFloat(r.amount) || 0) > 0 || r.label.trim())
+      .map(r => ({ label: r.label.trim() || null, amount: parseFloat(r.amount) || 0, payment_mode: r.payment_mode, due_date: r.due_date || null }));
+    const planned = items.reduce((s, r) => s + r.amount, 0);
+    // Échéancier vide = réinitialisation, toujours permis. Dès qu'une échéance
+    // est saisie, le total doit coller exactement à la référence — ni écart
+    // positif ni négatif.
+    if (items.length > 0 && Math.abs(planned - total) > 0.01) {
+      const ecart = planned - total;
+      const verbe = ecart > 0 ? "dépasse" : "est inférieur à";
+      toast.error(`Le total planifié (${fmtMAD(planned)}) ${verbe} ${totalLabel === "Commande" ? "la commande" : totalLabel.toLowerCase()} (${fmtMAD(total)}) — écart de ${fmtMAD(Math.abs(ecart))}. L'échéancier doit couvrir l'intégralité du montant, ni plus ni moins.`);
+      return;
+    }
+    const overCash = items.find(r => r.payment_mode === "caisse_sociale" && r.amount > 4500);
+    if (overCash) {
+      toast.error(`« ${overCash.label || "Échéance"} » (${fmtMAD(overCash.amount)}) dépasse le plafond de 4 500 MAD pour un règlement en Caisse comptable.`);
+      return;
+    }
     setBusy(true);
     try {
-      const payload = {
-        installments: rows
-          .filter(r => (parseFloat(r.amount) || 0) > 0 || r.label.trim())
-          .map(r => ({ label: r.label.trim() || null, amount: parseFloat(r.amount) || 0, payment_mode: r.payment_mode, due_date: r.due_date || null })),
-      };
-      const data = await api.put(`/api/accounting/purchase-requests/${prId}/installments`, payload);
+      const data = await api.put(`/api/accounting/purchase-requests/${prId}/installments`, { installments: items });
       setSaved(mapRows(data));
       setEditing(false);
       toast.success("Échéancier enregistré.");
@@ -747,14 +1016,13 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
-                  <th style={th}>Jalon</th><th style={th}>Règlement</th><th style={th}>Nature</th><th style={th}>Date prévue</th><th style={{ ...th, textAlign: "right", paddingRight: 0 }}>Montant</th>
+                  <th style={th}>Jalon</th><th style={th}>Règlement</th><th style={th}>Date prévue</th><th style={{ ...th, textAlign: "right", paddingRight: 0 }}>Montant</th>
                 </tr></thead>
                 <tbody>
                   {saved.map((r, i) => (
                     <tr key={i}>
                       <td style={td}>{r.label || "—"}</td>
                       <td style={{ ...td, color: PAL.muted }}>{IMODES[r.payment_mode] ?? r.payment_mode}</td>
-                      <td style={td}><span className={`chip-c ${isNoir(r.payment_mode) ? "chip-c-amber" : "chip-c-blue"}`}>{isNoir(r.payment_mode) ? "Caisse sociale" : "Comptable"}</span></td>
                       <td style={{ ...td, color: PAL.muted, fontFamily: mono }}>{r.due_date ? r.due_date.slice(0, 10).split("-").reverse().join("/") : "—"}</td>
                       <td style={{ ...td, padding: "5px 0 5px 8px", textAlign: "right", fontFamily: mono, fontWeight: 700 }}>{fmtMAD(parseFloat(r.amount) || 0)}</td>
                     </tr>
@@ -794,10 +1062,10 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
 }
 
 // ── Écran principal ──────────────────────────────────────────────────────────
-// canDecide : l'admin peut décider (valider besoin/devis, émettre commande).
-// Les autres utilisateurs créent et suivent leurs propres demandes (lecture seule
-// sur les décisions).
-export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: boolean }) {
+// La décision (valider besoin/devis, émettre commande) suit le barème par
+// montant de "accounting.purchase_requests" (voir DetailModal) — plus un
+// simple booléen admin/non-admin passé en prop.
+export function AccountingPurchaseRequests() {
   const [items, setItems] = useState<PR[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -806,8 +1074,19 @@ export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: b
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+
+  // Deep-link depuis une notification (?focus=<id>) — ouvre directement la
+  // fiche visée, indépendamment de la page/du filtre courant (le détail se
+  // recharge lui-même par id, pas besoin que l'item soit dans `items`).
+  const { focusId, clearFocus } = useDeepLinkFocus();
+  useEffect(() => {
+    if (!focusId) return;
+    setDetailId(focusId);
+    clearFocus();
+  }, [focusId, clearFocus]);
 
   async function load() {
     setLoading(true);
@@ -822,13 +1101,14 @@ export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: b
   }
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, statusFilter, page]);
   useEffect(() => { api.get("/api/accounting/suppliers").then((d: Supplier[]) => setSuppliers(d ?? [])).catch(() => {}); }, []);
+  useEffect(() => { api.get("/api/accounting/categories").then((d: Category[]) => setCategories(d ?? [])).catch(() => {}); }, []);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div>
-      {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onSaved={load} />}
-      {detailId && <DetailModal prId={detailId} suppliers={suppliers} canDecide={canDecide} onClose={() => setDetailId(null)} onChanged={load} />}
+      {createOpen && <CreateModal categories={categories} onClose={() => setCreateOpen(false)} onSaved={load} />}
+      {detailId && <DetailModal prId={detailId} suppliers={suppliers} categories={categories} onClose={() => setDetailId(null)} onChanged={load} />}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 220px" }}>
@@ -859,7 +1139,7 @@ export function AccountingPurchaseRequests({ canDecide = true }: { canDecide?: b
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{pr.request_number}</div>
                     <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}>
-                      {CAT[pr.asset_category]} · {pr.justification || "—"}
+                      {categories.find(c => c.id === pr.category_id)?.name ?? "—"} · {pr.justification || "—"}
                     </div>
                   </div>
                   <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(pr.budget_estimate)}</span>

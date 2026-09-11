@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { CalendarDays, Plus, Loader2, Trash2, Pencil } from "lucide-react";
 import { ListSkeleton } from "@/components/Skeletons";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 
 export const Route = createFileRoute("/dashboard/agenda")({
   beforeLoad: async () => {
@@ -59,7 +60,10 @@ function AgendaPage() {
   const [courses,    setCourses]    = useState<Course[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [selected,   setSelected]   = useState<Date>(new Date());
-  const [view,       setView]       = useState<"week" | "month" | "list">("week");
+  // Deep-link depuis une notification (?focus=<id>) : la vue liste est la seule
+  // où une ligne se surligne/défile proprement — on l'ouvre d'office.
+  const { focusId, attachFocus } = useDeepLinkFocus();
+  const [view,       setView]       = useState<"week" | "month" | "list">(focusId ? "list" : "week");
   const [weekStart,  setWeekStart]  = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -400,7 +404,7 @@ function AgendaPage() {
         ) : (
           <div className="dash-card card-pop overflow-hidden">
             {listEvents.map(ev => (
-              <div key={ev.id} className="row-c">
+              <div key={ev.id} ref={ev.id === focusId ? attachFocus : undefined} className="row-c">
                 <span className="shrink-0" style={{ width: 10, height: 10, borderRadius: 3, background: TYPE_BAR[ev.event_type] ?? "var(--pal-mid)" }} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate" style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-ink)" }}>{ev.title}</p>

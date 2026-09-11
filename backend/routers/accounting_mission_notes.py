@@ -1,22 +1,39 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, Form
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import MissionNoteCreate, MissionNoteUpdate, CashNotePay, ApprovalReject
 from utils.audit import log_audit
 from utils.notify import notify_users
 from utils.pdf_generators import render_mission_note_pdf, MISSION_CATALOG
+from utils.uploads import validate_and_read
 
 router = APIRouter(prefix="/accounting/mission-notes", tags=["accounting"])
 
-NC_VALUES = {"noir", "comptable"}
-# Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat).
-PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
+NC_VALUES = {"comptable"}  # « noir » (caisse sociale) retiré — toujours rattaché au journal comptable
+# Modes de règlement à l'exécution du paiement (mêmes valeurs que les paiements d'achat,
+# + « caisse_secondaire » = Caisse sociale, comme pour les notes de caisse). Les deux
+# modes caisse restent rattachés au journal comptable (nc='comptable' toujours) — deux
+# caisses physiques distinctes, pas une réintroduction du hors-comptes.
+PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "caisse_secondaire"}
+# Caisse visée par l'avance, choisie dès la création (mêmes 2 clés que les
+# modes caisse ci-dessus — pré-remplit le mode de règlement à l'exécution du
+# paiement, qui reste modifiable si le contexte change).
+CAISSE_VALUES = {"caisse_sociale", "caisse_secondaire"}
+# Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD
+# que les notes de caisse) — ne s'applique pas aux modes bancaires.
+CASH_REGISTER_MAX = 4500
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.
 CASH_SOURCE = "mission_note"
+
+# ── Pièce jointe au règlement (facture/reçu/autre + numéro) ─────────────────
+BUCKET = "accounting"
+SIGNED_URL_TTL = 60 * 60  # 1 heure
+ATTACHMENT_KINDS = {"invoice", "receipt", "document"}
 # Nombre maximal de colonnes-jour (le modèle bébleo en prévoit 7 : J1..J7).
 MAX_DAYS = 7
 # Clés d'article valides, dans l'ordre du modèle (dérivées du catalogue partagé).
@@ -106,15 +123,14 @@ def _admin_ids(db: Client) -> list[str]:
 def _cash_entry_fields(note: dict) -> dict:
     """Champs de la ligne de journal (sortie) dérivés d'une note de frais de mission.
     Le registre découle du MODE de règlement : chèque / OV → Journal des comptes,
-    caisse sociale ou autre → Journal de caisse (cf. migration l36)."""
-    from routers.accounting_cash_journal import resolve_channel, BANK
+    caisse comptable ou autre → Journal de caisse (cf. migration l36)."""
+    from routers.accounting_cash_journal import resolve_channel
 
     presta = note.get("beneficiary_name") or None
     objet = (note.get("objet") or "").strip()
     action = f"Frais de mission — {presta}" if presta else "Frais de mission"
     if objet:
         action = f"{action} · {objet}"
-    nc = note.get("nc") if note.get("nc") in NC_VALUES else "comptable"
     channel, mode = resolve_channel(note.get("payment_method"))
     return {
         # Comptabilisée à la date effective du décaissement (défaut : date de la note).
@@ -124,8 +140,7 @@ def _cash_entry_fields(note: dict) -> dict:
         "prestataire": presta,
         "amount": float(note.get("total") or 0),
         "justificatif": note.get("reference"),
-        # Une opération bancaire est déclarée par construction.
-        "nc": "comptable" if channel == BANK else nc,
+        "nc": "comptable",
         "channel": channel,
         "payment_mode": mode,
         "payment_ref": note.get("payment_reference"),
@@ -200,8 +215,8 @@ async def create_note(
     _require_write(user)
     if not (body.beneficiary_name or "").strip():
         raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
-    if body.nc not in NC_VALUES:
-        raise HTTPException(400, "n/c invalide (noir | comptable)")
+    if body.caisse not in CAISSE_VALUES:
+        raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
     days, amounts, total = _clean_matrix(body.days, body.amounts)
     row = {
         "note_date": body.note_date or _today(),
@@ -215,11 +230,23 @@ async def create_note(
         "days": days,
         "amounts": amounts,
         "total": total,
-        "nc": body.nc,
+        "nc": "comptable",
+        "caisse": body.caisse,
         "comment": (body.comment or "").strip() or None,
         "created_by": user.id,
     }
-    res = db.from_("mission_notes").insert(row).execute()
+    try:
+        res = db.from_("mission_notes").insert(row).execute()
+    except Exception as e:
+        # Migration l51 (colonne caisse) pas encore exécutée côté Supabase :
+        # on retombe sur la création sans caisse plutôt que de bloquer tout
+        # enregistrement d'une note de frais de mission.
+        msg = str(e)
+        if "caisse" in msg and ("does not exist" in msg or "Could not find" in msg or "schema cache" in msg):
+            row.pop("caisse", None)
+            res = db.from_("mission_notes").insert(row).execute()
+        else:
+            raise
     note = res.data[0] if res.data else row
     # Circuit : la note naît « en attente » d'approbation N+1. AUCUNE ligne de journal
     # n'est créée ici — la comptabilisation n'a lieu qu'à l'exécution du paiement (/pay).
@@ -230,10 +257,10 @@ async def create_note(
         title="Frais de mission à approuver 🧳",
         message=f"{note.get('reference') or 'Note'} — {row['beneficiary_name']} · {amount_str} en attente de validation N+1.",
         type="info",
-        link="/dashboard/accounting",
+        link=f"/dashboard/accounting?tab=validations&focus={note.get('id')}",
     )
     log_audit(db, user.id, "mission_note.create", "mission_note", note.get("id"),
-              {"reference": note.get("reference"), "total": total, "nc": body.nc, "status": "pending"})
+              {"reference": note.get("reference"), "total": total, "status": "pending"})
     return note
 
 
@@ -266,9 +293,11 @@ async def update_note(
             raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
         updates["beneficiary_name"] = name
     if "nc" in data:
-        if data["nc"] not in NC_VALUES:
-            raise HTTPException(400, "n/c invalide (noir | comptable)")
-        updates["nc"] = data["nc"]
+        updates["nc"] = "comptable"
+    if "caisse" in data:
+        if data["caisse"] not in CAISSE_VALUES:
+            raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
+        updates["caisse"] = data["caisse"]
     if "days" in data or "amounts" in data:
         # Recalcul complet de la matrice : on repart des valeurs fournies, ou des
         # valeurs stockées pour la partie non transmise.
@@ -351,7 +380,7 @@ async def approve_note(
             title="Frais de mission approuvés ✅",
             message=f"{note.get('reference') or 'Votre note de frais'} a été validée. Elle peut être réglée.",
             type="success",
-            link="/dashboard/accounting",
+            link=f"/dashboard/accounting?tab=mission_notes&focus={note_id}",
         )
     log_audit(db, user.id, "mission_note.approve", "mission_note", note_id, {"reference": note.get("reference")})
     return res.data[0] if res.data else {"id": note_id, **updates}
@@ -387,7 +416,7 @@ async def reject_note(
             title="Frais de mission rejetés ⛔",
             message=f"{note.get('reference') or 'Votre note de frais'} a été rejetée. Motif : {comment}",
             type="error",
-            link="/dashboard/accounting",
+            link=f"/dashboard/accounting?tab=mission_notes&focus={note_id}",
         )
     log_audit(db, user.id, "mission_note.reject", "mission_note", note_id, {"comment": comment})
     return res.data[0] if res.data else {"id": note_id, **updates}
@@ -407,6 +436,8 @@ async def pay_note(
     if body.payment_method not in PAYMENT_METHODS:
         raise HTTPException(400, "Mode de règlement invalide.")
     note = _load_note(db, note_id)
+    if body.payment_method in CAISSE_VALUES and float(note.get("total") or 0) > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Un règlement en caisse ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
     status = note.get("status") or "pending"
     if status == "paid":
         raise HTTPException(400, "Note déjà payée.")
@@ -461,7 +492,7 @@ def commit_note_payment(db: Client, note_id: str, updates: dict, user_id: str) -
             title="Frais de mission payés 💸",
             message=f"{note.get('reference') or 'Votre note de frais'} a été réglée et comptabilisée.",
             type="success",
-            link="/dashboard/accounting",
+            link=f"/dashboard/accounting?tab=mission_notes&focus={note_id}",
         )
     log_audit(db, user_id, "mission_note.pay", "mission_note", note_id,
               {"reference": note.get("reference"), "method": updates.get("payment_method"),
@@ -488,3 +519,103 @@ async def export_note_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
+
+
+# ── Pièces justificatives (scan) de l'avance ─────────────────────────────────
+@router.get("/{note_id}/attachments")
+async def list_note_attachments(
+    note_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_read(user)
+    rows = (
+        db.from_("accounting_attachments")
+        .select("id, kind, reference_number, file_name, file_type, file_size, created_at")
+        .eq("entity_type", CASH_SOURCE).eq("entity_id", note_id)
+        .order("created_at", desc=True).execute().data or []
+    )
+    return rows
+
+
+@router.post("/{note_id}/attachments")
+async def upload_note_attachment(
+    note_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    file: UploadFile,
+    kind: Annotated[str, Form()] = "receipt",
+    reference_number: Annotated[Optional[str], Form()] = None,
+):
+    _require_write(user)
+    if kind not in ATTACHMENT_KINDS:
+        raise HTTPException(400, f"Invalid kind. Use one of: {', '.join(ATTACHMENT_KINDS)}")
+    _load_note(db, note_id)
+
+    data, ext = await validate_and_read(file)
+    file_path = f"{CASH_SOURCE}/{note_id}/{uuid.uuid4().hex}.{ext}"
+    try:
+        db.storage.from_(BUCKET).upload(file_path, data, {"content-type": file.content_type})
+    except Exception as e:
+        raise HTTPException(500, f"Failed to store file: {str(e)}")
+
+    res = db.from_("accounting_attachments").insert({
+        "entity_type": CASH_SOURCE,
+        "entity_id": note_id,
+        "kind": kind,
+        "reference_number": (reference_number or "").strip() or None,
+        "file_path": file_path,
+        "file_name": file.filename or "document",
+        "file_type": file.content_type,
+        "file_size": len(data),
+        "uploaded_by": user.id,
+    }).execute()
+    new_attachment = res.data[0]
+    log_audit(db, user.id, "mission_note.attachment.upload", "mission_note", note_id,
+              {"kind": kind, "file_name": file.filename, "reference_number": reference_number})
+    from routers.accounting_cash_journal import sync_source_piece
+    sync_source_piece(db, source_type=CASH_SOURCE, source_id=note_id, update_nc=False)
+    return new_attachment
+
+
+@router.get("/attachments/{attachment_id}/download")
+async def download_note_attachment(
+    attachment_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_read(user)
+    rows = (
+        db.from_("accounting_attachments").select("*")
+        .eq("id", attachment_id).eq("entity_type", CASH_SOURCE)
+        .execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Not found")
+    signed = db.storage.from_(BUCKET).create_signed_url(rows[0]["file_path"], SIGNED_URL_TTL)
+    return {"signed_url": signed.get("signedURL") or signed.get("signed_url"), "file_name": rows[0]["file_name"]}
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_note_attachment(
+    attachment_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_write(user)
+    rows = (
+        db.from_("accounting_attachments").select("*")
+        .eq("id", attachment_id).eq("entity_type", CASH_SOURCE)
+        .execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Not found")
+    try:
+        db.storage.from_(BUCKET).remove([rows[0]["file_path"]])
+    except Exception:
+        pass
+    db.from_("accounting_attachments").delete().eq("id", attachment_id).execute()
+    log_audit(db, user.id, "mission_note.attachment.delete", "mission_note", rows[0]["entity_id"])
+    from routers.accounting_cash_journal import sync_source_piece
+    sync_source_piece(db, source_type=CASH_SOURCE, source_id=rows[0]["entity_id"], update_nc=False)
+    return {"ok": True}

@@ -10,7 +10,10 @@ from utils.uploads import validate_and_read
 
 router = APIRouter(prefix="/accounting/payments", tags=["accounting"])
 
-PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "autre"}
+PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
+# Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD
+# que les notes de caisse) — ne s'applique pas aux modes bancaires.
+CASH_REGISTER_MAX = 4500
 
 # ── Pièces justificatives (scan) du paiement ──────────────────────────────
 ENTITY_TYPE = "purchase_payment"
@@ -93,11 +96,26 @@ async def create_payment(
         raise HTTPException(400, "Invalid payment_method")
     if body.amount <= 0:
         raise HTTPException(400, "Amount must be greater than zero")
+    if body.payment_method == "caisse_sociale" and body.amount > CASH_REGISTER_MAX:
+        raise HTTPException(400, f"Un règlement en Caisse comptable ne peut pas dépasser {CASH_REGISTER_MAX} MAD.")
 
     # Verify purchase exists
-    purchase_exists = db.from_("purchases").select("id, purchase_request_id").eq("id", body.purchase_id).execute().data
+    purchase_exists = db.from_("purchases").select("id, purchase_request_id, total_incl_vat").eq("id", body.purchase_id).execute().data
     if not purchase_exists:
         raise HTTPException(404, "Purchase not found")
+
+    # Verrouillage du montant : un versement ne peut pas dépasser le solde
+    # restant dû (même règle que côté frontend, revalidée ici).
+    already_paid = sum(
+        float(p.get("amount") or 0)
+        for p in (db.from_("purchase_payments").select("amount").eq("purchase_id", body.purchase_id).execute().data or [])
+    )
+    balance_due = float(purchase_exists[0].get("total_incl_vat") or 0) - already_paid
+    if body.amount > balance_due + 0.01:
+        raise HTTPException(
+            400,
+            f"Le montant ({body.amount:.2f} MAD) dépasse le solde restant dû ({max(balance_due, 0):.2f} MAD).",
+        )
 
     # Échéance planifiée éventuelle → doit appartenir à la DA de ce bon de commande.
     installment = None
@@ -171,10 +189,8 @@ async def commit_payment(db: Client, data: dict, user_id: str) -> dict:
     })
 
     # Journal : décaissement RÉEL (une ligne par paiement), ventilé selon le MODE de
-    # règlement — chèque / OV → Journal des comptes (banque), caisse sociale ou autre
-    # → Journal de caisse. La NATURE (n/c) en découle : 'caisse_sociale' → 'noir'
-    # (caisse sociale), sinon 'comptable'. Le scan éventuel ne change que le
-    # justificatif, jamais la nature (cf. sync_source_piece(..., update_nc=False)).
+    # règlement — chèque / OV → Journal des comptes (banque), caisse comptable ou
+    # autre → Journal de caisse. Toujours nc='comptable' (create_cash_entry).
     try:
         from routers.accounting_cash_journal import create_cash_entry
         reference = new_payment.get("recu_number") or new_payment.get("reference")
@@ -192,7 +208,7 @@ async def commit_payment(db: Client, data: dict, user_id: str) -> dict:
             prestataire=prestataire,
             action="Paiement achat" + (f" — {detail}" if detail else ""),
             justificatif="Sans pièce",   # aucun scan à la création ; justificatif re-synchronisé à l'upload
-            nc="noir" if payment_method == "caisse_sociale" else "comptable",
+            nc="comptable",
             source_type="purchase_payment",
             source_id=new_payment["id"],
             payment_method=payment_method,
@@ -246,7 +262,7 @@ async def list_attachments(
     _require_admin(user)
     rows = (
         db.from_("accounting_attachments")
-        .select("id, kind, file_name, file_type, file_size, created_at")
+        .select("id, kind, reference_number, file_name, file_type, file_size, created_at")
         .eq("entity_type", ENTITY_TYPE).eq("entity_id", payment_id)
         .order("created_at", desc=True).execute().data or []
     )
@@ -260,6 +276,7 @@ async def upload_attachment(
     db: Annotated[Client, Depends(get_db)],
     file: UploadFile,
     kind: Annotated[str, Form()] = "receipt",
+    reference_number: Annotated[Optional[str], Form()] = None,
 ):
     _require_admin(user)
     if kind not in ATTACHMENT_KINDS:
@@ -281,6 +298,7 @@ async def upload_attachment(
         "entity_type": ENTITY_TYPE,
         "entity_id": payment_id,
         "kind": kind,
+        "reference_number": (reference_number or "").strip() or None,
         "file_path": file_path,
         "file_name": file.filename or "document",
         "file_type": file.content_type,
@@ -289,7 +307,7 @@ async def upload_attachment(
     }).execute()
     new_attachment = res.data[0]
     log_audit(db, user.id, "purchase_payment.attachment.upload", "purchase_payment", payment_id,
-              {"kind": kind, "file_name": file.filename})
+              {"kind": kind, "file_name": file.filename, "reference_number": reference_number})
     # Journal de caisse : le paiement a désormais un scan → comptable + type de pièce.
     try:
         from routers.accounting_cash_journal import sync_source_piece
@@ -339,7 +357,7 @@ async def delete_attachment(
         pass
     db.from_("accounting_attachments").delete().eq("id", attachment_id).execute()
     log_audit(db, user.id, "purchase_payment.attachment.delete", "purchase_payment", rows[0]["entity_id"])
-    # Journal de caisse : re-synchronise (repasse en 'noir' s'il ne reste plus de scan).
+    # Journal de caisse : re-synchronise le justificatif (nc reste 'comptable').
     try:
         from routers.accounting_cash_journal import sync_source_piece
         sync_source_piece(db, source_type=ENTITY_TYPE, source_id=rows[0]["entity_id"], update_nc=False)

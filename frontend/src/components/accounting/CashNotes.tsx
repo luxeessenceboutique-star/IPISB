@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { NotebookPen, Plus, Trash2, X, FileDown, Pencil, Check, Ban } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
@@ -17,12 +18,18 @@ type Note = {
   id: string; reference: string | null; note_date: string;
   beneficiary_name: string; beneficiary_cin: string | null; objet: string | null;
   period_from: string | null; period_to: string | null; accorded_by: string | null;
-  items: Item[]; total: number; nc: "noir" | "comptable"; comment: string | null; created_by_name: string | null;
+  items: Item[]; total: number; nc: "noir" | "comptable";
+  caisse: "caisse_sociale" | "caisse_secondaire"; comment: string | null; created_by_name: string | null;
   status: NoteStatus;
   approved_by_name: string | null; paid_by_name: string | null;
   rejection_reason: string | null; payment_method: string | null; payment_date: string | null;
 };
 type NotesData = { items: Note[]; count: number; total: number };
+
+// Caisse visée par l'avance, choisie à la création — deux caisses physiques,
+// toutes deux comptabilisées (le mode de règlement à l'exécution du paiement
+// en est simplement pré-rempli, il reste modifiable si le contexte change).
+const CAISSE_LABELS: Record<string, string> = { caisse_sociale: "Caisse comptable", caisse_secondaire: "Caisse sociale" };
 
 const STATUS_LABELS: Record<NoteStatus, string> = {
   pending: "En attente N+1", approved: "Approuvée", rejected: "Rejetée", paid: "Payée",
@@ -66,6 +73,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 type FormItem = { article: string; prestataire: string; montant: string };
 const EMPTY_ROW: FormItem = { article: "", prestataire: "", montant: "" };
+const MAX_AMOUNT = 4500; // plafond réglementaire d'une note de caisse (MAD)
 
 function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () => void; onSaved: () => void }) {
   const editing = !!note;
@@ -79,6 +87,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     period_to: (note?.period_to || "").slice(0, 10),
     accorded_by: note?.accorded_by || "",
     nc: note?.nc || "comptable",
+    caisse: note?.caisse || "caisse_sociale",
     comment: note?.comment || "",
   });
   const [items, setItems] = useState<FormItem[]>(
@@ -92,6 +101,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   const removeRow = (i: number) => setItems(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows);
 
   const total = items.reduce((s, r) => s + (parseFloat(r.montant) || 0), 0);
+  const overCap = total > MAX_AMOUNT;
 
   async function submit() {
     if (!form.beneficiary_name.trim()) { toast.error("Le nom du bénéficiaire est obligatoire."); return; }
@@ -99,6 +109,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       .map(r => ({ article: r.article.trim() || null, prestataire: r.prestataire.trim() || null, montant: parseFloat(r.montant) || 0 }))
       .filter(r => r.article || r.prestataire || r.montant);
     if (!payloadItems.length) { toast.error("Ajoutez au moins une ligne au tableau."); return; }
+    if (overCap) { toast.error(`Le montant total (${fmtMAD(total)}) dépasse le plafond des notes de caisse (${fmtMAD(MAX_AMOUNT)}).`); return; }
     const payload = {
       note_date: form.note_date,
       beneficiary_name: form.beneficiary_name.trim(),
@@ -109,6 +120,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       accorded_by: form.accorded_by.trim() || null,
       items: payloadItems,
       nc: form.nc,
+      caisse: form.caisse,
       comment: form.comment.trim() || null,
     };
     setBusy(true);
@@ -148,6 +160,11 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         </div>
       </div>
 
+      <label style={labelStyle}>Caisse</label>
+      <select value={form.caisse} onChange={e => set("caisse", e.target.value)} className="u-input" style={fieldStyle}>
+        {Object.entries(CAISSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
+
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0 14px" }}>
         <div>
           <label style={labelStyle}>Nom et Prénom (bénéficiaire) *</label>
@@ -173,17 +190,8 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", alignItems: "center" }}>
-        <div>
-          <label style={labelStyle}>Nature (journal de caisse)</label>
-          <select value={form.nc} onChange={e => set("nc", e.target.value)} className="u-input" style={fieldStyle}>
-            <option value="comptable">Comptable (déclaré)</option>
-            <option value="noir">Caisse sociale (espèces)</option>
-          </select>
-        </div>
-        <div style={{ fontSize: 12, color: PAL.muted, marginTop: 8 }}>
-          Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total, cette nature) n'est comptabilisée qu'au paiement.
-        </div>
+      <div style={{ fontSize: 12, color: PAL.muted, marginTop: 4, marginBottom: 4 }}>
+        Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total) n'est comptabilisée qu'au paiement.
       </div>
 
       {/* Tableau dynamique Article / Prestataire / Montant */}
@@ -224,11 +232,16 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
           <tfoot>
             <tr>
               <td colSpan={2} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: PAL.muted, fontFamily: sans, fontSize: 13 }}>Total Global</td>
-              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: mono, fontWeight: 700, color: "var(--pal-primary)" }}>{fmtMAD(total)}</td>
+              <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: mono, fontWeight: 700, color: overCap ? "var(--pal-danger)" : "var(--pal-primary)" }}>{fmtMAD(total)}</td>
               <td />
             </tr>
           </tfoot>
         </table>
+        {overCap && (
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--pal-danger)", fontFamily: sans }}>
+            Le montant dépasse le plafond des notes de caisse ({fmtMAD(MAX_AMOUNT)}).
+          </div>
+        )}
       </div>
 
       <label style={labelStyle}>Commentaire (interne, optionnel)</label>
@@ -252,6 +265,7 @@ export function AccountingCashNotes() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   function load() {
     setLoading(true);
@@ -331,14 +345,14 @@ export function AccountingCashNotes() {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
               <thead>
                 <tr>
-                  {["N°", "Date", "Bénéficiaire", "CIN", "Objet", "Période", "Total (DH)", "n/c", "Statut", ""].map((h, i) => (
+                  {["N°", "Date", "Bénéficiaire", "CIN", "Objet", "Période", "Total (DH)", "Statut", ""].map((h, i) => (
                     <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 6 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {items.map(n => (
-                  <tr key={n.id}>
+                  <tr key={n.id} ref={n.id === focusId ? attachFocus : undefined}>
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>{n.reference ?? "—"}</td>
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>{fmtDate(n.note_date)}</td>
                     <td style={{ ...cell, whiteSpace: "normal", minWidth: 150 }}>{n.beneficiary_name}</td>
@@ -348,9 +362,6 @@ export function AccountingCashNotes() {
                       {n.period_from || n.period_to ? `${fmtDate(n.period_from)} → ${fmtDate(n.period_to)}` : "—"}
                     </td>
                     <td style={{ ...cell, fontFamily: mono, fontWeight: 700, textAlign: "right" }}>{fmtMAD(n.total)}</td>
-                    <td style={cell}>
-                      <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
-                    </td>
                     <td style={cell}>
                       <span className={`chip-c ${STATUS_TONES[n.status] ?? "chip-c-amber"}`} title={n.status === "rejected" && n.rejection_reason ? `Motif : ${n.rejection_reason}` : n.status === "paid" && n.payment_date ? `Payée le ${fmtDate(n.payment_date)}${n.paid_by_name ? ` · ${n.paid_by_name}` : ""}` : undefined}>
                         {STATUS_LABELS[n.status] ?? n.status}

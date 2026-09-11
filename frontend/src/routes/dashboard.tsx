@@ -1,15 +1,18 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  Home, BookOpen, ClipboardList, GraduationCap, CalendarDays, Video, Bell,
-  Layers, Users, LogOut, X, IdCard, FileText, CalendarClock, Megaphone, Wallet, ShoppingCart,
-  UserCog, CalendarRange, Library, Presentation,
+  Home, ClipboardList, GraduationCap, Bell, Compass,
+  Layers, Users, LogOut, X, FileText, Wallet,
+  UserCog, LayoutGrid, History, ScrollText,
+  User, RefreshCw, Briefcase, Landmark, MessageCircle,
+  ChevronDown, Plus,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
 import { PlatformCopilot } from "@/components/PlatformCopilot";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useBreakpoint } from "@/lib/useBreakpoint";
 
@@ -33,18 +36,29 @@ export const Route = createFileRoute("/dashboard")({
   component: DashboardLayout,
 });
 
-type NavItem = { key: string; to: string; icon: typeof Home; exact?: boolean; badge?: boolean };
+type NavLeaf = {
+  type: "leaf"; key: string; to: string; icon: typeof Home;
+  exact?: boolean; badge?: boolean; label?: string; search?: Record<string, string>;
+};
+type NavGroup = {
+  type: "group"; key: string; icon: typeof Home; homeTo?: string; exact?: boolean; label?: string; children: NavEntry[];
+};
+type NavEntry = NavLeaf | NavGroup;
 
-// Order follows the IPISB Connect redesign handoff
-const SIDE_ITEMS: NavItem[] = [
-  { key: "dash.overview",      to: "/dashboard",               icon: Home,          exact: true },
-  { key: "dash.courses",       to: "/dashboard/courses",       icon: BookOpen                   },
-  { key: "dash.assignments",   to: "/dashboard/assignments",   icon: ClipboardList              },
-  { key: "dash.exams",         to: "/dashboard/exams",         icon: GraduationCap              },
-  { key: "dash.agenda",        to: "/dashboard/agenda",        icon: CalendarDays               },
-  { key: "dash.meetings",      to: "/dashboard/meetings",      icon: Video                      },
-  { key: "dash.notifications", to: "/dashboard/notifications", icon: Bell,          badge: true },
-];
+function entryMatchesPath(entry: NavEntry, pathname: string): boolean {
+  return entry.type === "leaf"
+    ? pathname.startsWith(entry.to)
+    : entry.children.some(c => entryMatchesPath(c, pathname));
+}
+
+function leaf(partial: Omit<NavLeaf, "type">): NavLeaf {
+  return { type: "leaf", ...partial };
+}
+function group(partial: Omit<NavGroup, "type">): NavGroup {
+  return { type: "group", ...partial };
+}
+
+type Specialty = { id: string; name: string; type: "formation_initiale" | "formation_continue" };
 
 function DashboardLayout() {
   const { user, roles, signOut } = useAuth();
@@ -55,6 +69,14 @@ function DashboardLayout() {
   const pathname = routerState.location.pathname;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  function toggleGroup(key: string) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   // Close drawer on navigation
   useEffect(() => { setDrawerOpen(false); }, [pathname]);
@@ -91,9 +113,17 @@ function DashboardLayout() {
   const isAssistantRh = roles.includes("assistant_rh");
   const hasFinanceRole = isCashier || isAccountant || isComptabilite;
   const hasHrRole = isRh || isAssistantRh;
-  // Personnel non-académique (finance et/ou RH) SANS être admin ni prof :
-  // accès limité aux seules sections dont il dispose (pas de cours / classes).
-  const isRestrictedStaff = (hasFinanceRole || hasHrRole) && !isAdmin && !isProf;
+  const canManageClasses = isAdmin || isProf || isCashier;
+
+  // Filières (specialties), pour peupler Formation initiale / Formation
+  // continue dans la barre latérale — un seul appel léger, uniquement pour
+  // les rôles qui gèrent des classes.
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  useEffect(() => {
+    if (!user || !canManageClasses) { setSpecialties([]); return; }
+    api.get("/api/specialties").then(setSpecialties).catch(() => setSpecialties([]));
+  }, [user, canManageClasses]);
+
   const roleLabel = isAdmin ? t("dash.role.admin")
     : isProf ? t("dash.role.professor")
     : isRh ? t("dash.role.rh")
@@ -107,45 +137,151 @@ function DashboardLayout() {
     ? `Espace ${roleLabel.toLowerCase()}`
     : lang === "ar" ? `فضاء ${roleLabel}` : `${roleLabel} space`;
 
-  // Personnel non-académique : Comptabilité et/ou RH + Notifications, selon
-  // les rôles réellement détenus. Le caissier gère aussi les classes
-  // (création + inscription/transfert → validation N+1).
-  const restrictedItems: NavItem[] = [
-    { key: "dash.overview",      to: "/dashboard",               icon: Home, exact: true },
-    ...(hasFinanceRole ? [{ key: "dash.accounting", to: "/dashboard/accounting", icon: Wallet }] : []),
-    ...(hasHrRole ? [{ key: "dash.rh", to: "/dashboard/rh", icon: UserCog }] : []),
-    ...(isCashier ? [{ key: "dash.classes", to: "/dashboard/classes", icon: Layers }] : []),
-    { key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true },
+  // Visibilité par rubrique — un seul calcul, partagé par tous les rôles.
+  const showRh = isAdmin || hasHrRole;
+  const showAccounting = isAdmin || hasFinanceRole;
+  const showDocuments = isAdmin;
+  const showUsers = isAdmin || isProf;
+
+  // Comptable externe (le cabinet ne fait pas partie de l'équipe) : aucun
+  // autre rôle métier — sa barre latérale se réduit à son seul espace,
+  // sans Aperçu/Pédagogique/Gestion qui ne le concernent pas.
+  const isAccountantOnly = isAccountant && !isAdmin && !isProf && !isRh && !isAssistantRh && !isCashier && !isComptabilite;
+
+  function filiereChildren(filiereType: Specialty["type"], addLabel: string): NavLeaf[] {
+    const items: NavLeaf[] = specialties
+      .filter(s => s.type === filiereType)
+      .map(s => leaf({
+        key: s.id, label: s.name, to: "/dashboard/classes", icon: Layers,
+        search: { specialty: s.id },
+      }));
+    if (isAdmin) {
+      items.push(leaf({
+        key: `add-${filiereType}`, label: addLabel, to: "/dashboard/classes", icon: Plus,
+        search: { manage: "specialties" },
+      }));
+    }
+    return items;
+  }
+
+  const navEntries: NavEntry[] = isAccountantOnly ? [
+    // Espace comptable exclusif — comptable externe, aucune autre rubrique.
+    leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
+    leaf({ key: "dash.accountingSpace", to: "/dashboard/accounting", icon: Wallet, label: spaceLabel, search: { tab: "overview" } }),
+  ] : [
+    // Notifications en tout premier, visible par tous.
+    leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
+
+    // Aperçu — page unique : Vue d'ensemble, Agenda formation, KPIs et Agenda
+    // de gestion y sont tous réunis en onglets internes (dashboard.index.tsx)
+    // plutôt qu'en sous-liens de barre latérale séparés.
+    leaf({ key: "dash.overview", to: "/dashboard", icon: Home, exact: true }),
+
+    // Pédagogique — hub centralisant tout ce qui est devenu difficile à
+    // trouver depuis la réorganisation de la barre latérale (Cours, Élèves,
+    // Séances… + RH/Comptabilité en raccourci).
+    leaf({ key: "dash.pedagogique", to: "/dashboard/pedagogique", icon: Compass }),
+
+    // Formation initiale / continue — filières dynamiques (Classes → Filières).
+    ...(canManageClasses ? [
+      group({ key: "dash.formationInitiale", icon: User, children: filiereChildren("formation_initiale", t("dash.addFiliere")) }),
+      group({ key: "dash.formationContinue", icon: RefreshCw, children: filiereChildren("formation_continue", t("dash.addFiliere")) }),
+    ] : []),
+
+    // Gestion — RH, Comptabilité (sous-menu vers ses propres onglets),
+    // Communication, Réunions/instances, Documents.
+    group({
+      key: "dash.gestion", icon: Briefcase,
+      children: [
+        ...(showRh ? [leaf({ key: "dash.rh", to: "/dashboard/rh", icon: UserCog })] : []),
+        ...(showAccounting ? [
+          group({
+            key: "dash.accounting", icon: Wallet,
+            children: [
+              leaf({ key: "dash.accounting.overview", to: "/dashboard/accounting", icon: LayoutGrid, search: { tab: "overview" } }),
+              leaf({ key: "dash.accounting.purchaseRequests", to: "/dashboard/accounting", icon: ClipboardList, search: { tab: "purchase_requests" } }),
+              leaf({ key: "dash.accounting.revenuesEcole", to: "/dashboard/accounting", icon: GraduationCap, search: { tab: "revenues", scope: "formation_initiale" } }),
+              leaf({ key: "dash.accounting.revenuesFC", to: "/dashboard/accounting", icon: RefreshCw, search: { tab: "revenues", scope: "formation_continue" } }),
+              leaf({ key: "dash.accounting.journal", to: "/dashboard/accounting", icon: History, search: { tab: "journal" } }),
+              leaf({ key: "dash.accounting.cheques", to: "/dashboard/accounting", icon: ScrollText, search: { tab: "cheques" } }),
+            ],
+          }),
+        ] : []),
+        ...(isAdmin ? [
+          leaf({ key: "dash.communication", to: "/dashboard/communication", icon: MessageCircle }),
+          leaf({ key: "dash.reunionsInstances", to: "/dashboard/reunions-instances", icon: Landmark }),
+        ] : []),
+        ...(showDocuments ? [leaf({ key: "dash.documents", to: "/dashboard/documents", icon: FileText })] : []),
+      ],
+    }),
+
+    // Utilisateurs — au même niveau que Gestion, pas dedans.
+    ...(showUsers ? [leaf({ key: "dash.users", to: "/dashboard/users", icon: Users })] : []),
   ];
 
-  const allItems: NavItem[] = isRestrictedStaff ? restrictedItems : [
-    ...SIDE_ITEMS,
-    ...((isAdmin || isProf) ? [
-      { key: "dash.teachingSessions", to: "/dashboard/teaching-sessions", icon: Presentation },
-      { key: "dash.classes",    to: "/dashboard/classes",    icon: Layers },
-      { key: "dash.users",      to: "/dashboard/users",      icon: Users  },
-      { key: "dash.timetables", to: "/dashboard/timetables", icon: CalendarRange },
-      { key: "dash.library",    to: "/dashboard/library",    icon: Library },
-    ] : []),
-    // L2 Gestion Administrative — admin only
-    ...(isAdmin ? [
-      { key: "dash.students",      to: "/dashboard/students",      icon: IdCard        },
-      { key: "dash.documents",     to: "/dashboard/documents",     icon: FileText      },
-      { key: "dash.schedules",     to: "/dashboard/schedules",     icon: CalendarClock },
-      { key: "dash.announcements", to: "/dashboard/announcements", icon: Megaphone     },
-      { key: "dash.accounting",    to: "/dashboard/accounting",    icon: Wallet        },
-      { key: "dash.rh",            to: "/dashboard/rh",            icon: UserCog       },
-    ] : []),
-    // Demandes d'achat : ouvert à tous. L'admin y accède via la Comptabilité ;
-    // les autres (élèves, professeurs) via cette entrée dédiée.
-    ...(!isAdmin ? [
-      { key: "dash.purchase_requests", to: "/dashboard/purchase-requests", icon: ShoppingCart },
-    ] : []),
-  ];
+  // Un groupe sans enfant disparaît ; un groupe avec un seul enfant ET une
+  // destination propre (homeTo) se réduit à un simple lien — c'est le cas
+  // "Aperçu" pour un étudiant ou un membre du personnel restreint.
+  const visibleEntries: NavEntry[] = navEntries.flatMap((it): NavEntry[] => {
+    if (it.type === "leaf") return [it];
+    if (it.children.length === 0) return [];
+    if (it.children.length === 1 && it.homeTo) {
+      return [leaf({ key: it.key, to: it.homeTo, icon: it.icon, exact: it.exact })];
+    }
+    return [it];
+  });
 
   async function handleLogout() {
     await signOut();
     navigate({ to: "/" });
+  }
+
+  // Rendu récursif : un groupe (ex. Comptabilité) peut lui-même contenir des
+  // groupes — chaque niveau d'imbrication ajoute son propre repli/dépli et
+  // un retrait supplémentaire.
+  function renderNavEntry(it: NavEntry, depth: number): React.ReactNode {
+    const nested = depth > 0 ? { paddingInlineStart: 34 + (depth - 1) * 18, fontSize: 13 } : {};
+    const iconSize = depth > 0 ? 15 : 17;
+
+    if (it.type === "leaf") {
+      const isActive = it.exact ? pathname === it.to : pathname.startsWith(it.to);
+      const I = it.icon;
+      return (
+        <Link key={it.key} to={it.to as "/dashboard"} search={it.search}
+          className={isActive ? "side-link is-active" : "side-link"}
+          style={{ textDecoration: "none", fontFamily: sans, ...nested }}>
+          <I size={iconSize} strokeWidth={1.7} />
+          {it.label ?? t(it.key)}
+          {it.badge && unread > 0 && (
+            <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 800, color: PAL.paper, background: PAL.danger, padding: "2px 7px", borderRadius: 999 }}>{unread}</span>
+          )}
+        </Link>
+      );
+    }
+
+    const GI = it.icon;
+    const isGroupActive = it.children.some(c => entryMatchesPath(c, pathname));
+    const isCollapsed = collapsedGroups.has(it.key);
+    return (
+      <div key={it.key}>
+        <button
+          type="button"
+          onClick={() => toggleGroup(it.key)}
+          className={isGroupActive ? "side-link is-active" : "side-link"}
+          style={{ textDecoration: "none", fontFamily: sans, width: "100%", border: 0, background: "transparent", cursor: "pointer", textAlign: "start", ...nested }}
+        >
+          <GI size={iconSize} strokeWidth={1.7} />
+          {it.label ?? t(it.key)}
+          <ChevronDown size={14} strokeWidth={2}
+            style={{ marginInlineStart: "auto", transition: "transform .15s ease", transform: isCollapsed ? "rotate(-90deg)" : "none", opacity: .6 }} />
+        </button>
+        {!isCollapsed && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
+            {it.children.map(c => renderNavEntry(c, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   }
 
   const Sidebar = (
@@ -171,21 +307,7 @@ function DashboardLayout() {
 
       <nav className="scroll-y" style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0 }}>
         <span className="eyebrow" style={{ padding: "2px 12px 8px", fontSize: 9.5 }}>{spaceLabel}</span>
-        {allItems.map((it) => {
-          const isActive = it.exact ? pathname === it.to : pathname.startsWith(it.to);
-          const I = it.icon;
-          return (
-            <Link key={it.to} to={it.to as "/dashboard"}
-              className={isActive ? "side-link is-active" : "side-link"}
-              style={{ textDecoration: "none", fontFamily: sans }}>
-              <I size={17} strokeWidth={1.7} />
-              {t(it.key)}
-              {it.badge && unread > 0 && (
-                <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 800, color: PAL.paper, background: PAL.danger, padding: "2px 7px", borderRadius: 999 }}>{unread}</span>
-              )}
-            </Link>
-          );
-        })}
+        {visibleEntries.map((it) => renderNavEntry(it, 0))}
       </nav>
 
       <div style={{ height: 1, background: PAL.lineSoft }} />

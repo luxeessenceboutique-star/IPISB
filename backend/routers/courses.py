@@ -48,11 +48,18 @@ def _build_course_list(courses: list, db: Client, user: CurrentUser) -> list:
         profs = db.from_("profiles").select("id, full_name").in_("id", prof_ids).execute().data or []
         prof_map = {p["id"]: (p["full_name"] or "—") for p in profs}
 
+    # Module count (content volume) per course.
+    module_count: dict[str, int] = {}
+    mod_rows = db.from_("course_modules").select("course_id").in_("course_id", course_ids).execute().data or []
+    for r in mod_rows:
+        module_count[r["course_id"]] = module_count.get(r["course_id"], 0) + 1
+
     return [
         {
             **c,
             "professor_name": prof_map.get(c.get("professor_id", ""), "—") if c.get("professor_id") else "—",
             "enrollment_count": enrollment_count.get(c["id"], 0),
+            "module_count": module_count.get(c["id"], 0),
             "is_enrolled": True,
             "assigned_classes": [
                 {"id": cid, "name": class_name_map.get(cid, "?")}

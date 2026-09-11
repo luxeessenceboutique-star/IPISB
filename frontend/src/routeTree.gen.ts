@@ -24,20 +24,30 @@ import { Route as VerifyCodeRouteImport } from './routes/verify.$code'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardTimetablesRouteImport } from './routes/dashboard.timetables'
 import { Route as DashboardTeachingSessionsRouteImport } from './routes/dashboard.teaching-sessions'
+import { Route as DashboardTasksRouteImport } from './routes/dashboard.tasks'
 import { Route as DashboardStudentsRouteImport } from './routes/dashboard.students'
 import { Route as DashboardSchedulesRouteImport } from './routes/dashboard.schedules'
+import { Route as DashboardRosterRouteImport } from './routes/dashboard.roster'
 import { Route as DashboardRhRouteImport } from './routes/dashboard.rh'
+import { Route as DashboardReunionsInstancesRouteImport } from './routes/dashboard.reunions-instances'
 import { Route as DashboardPurchaseRequestsRouteImport } from './routes/dashboard.purchase-requests'
 import { Route as DashboardProfileRouteImport } from './routes/dashboard.profile'
+import { Route as DashboardPerformanceRouteImport } from './routes/dashboard.performance'
+import { Route as DashboardPedagogiqueRouteImport } from './routes/dashboard.pedagogique'
 import { Route as DashboardNotificationsRouteImport } from './routes/dashboard.notifications'
 import { Route as DashboardMeetingsRouteImport } from './routes/dashboard.meetings'
 import { Route as DashboardLibraryRouteImport } from './routes/dashboard.library'
+import { Route as DashboardKpisProductionRouteImport } from './routes/dashboard.kpis-production'
+import { Route as DashboardGradesRouteImport } from './routes/dashboard.grades'
 import { Route as DashboardExamsRouteImport } from './routes/dashboard.exams'
 import { Route as DashboardDocumentsRouteImport } from './routes/dashboard.documents'
 import { Route as DashboardCoursesRouteImport } from './routes/dashboard.courses'
+import { Route as DashboardCommunicationRouteImport } from './routes/dashboard.communication'
 import { Route as DashboardClassesRouteImport } from './routes/dashboard.classes'
 import { Route as DashboardAssignmentsRouteImport } from './routes/dashboard.assignments'
 import { Route as DashboardAnnouncementsRouteImport } from './routes/dashboard.announcements'
+import { Route as DashboardAgendaGestionRouteImport } from './routes/dashboard.agenda-gestion'
+import { Route as DashboardAgendaFormationRouteImport } from './routes/dashboard.agenda-formation'
 import { Route as DashboardAgendaRouteImport } from './routes/dashboard.agenda'
 import { Route as DashboardAccountingRouteImport } from './routes/dashboard.accounting'
 import { Route as ApplyAdIdRouteImport } from './routes/apply.$adId'
@@ -46,6 +56,7 @@ import { Route as DashboardSessionFeedbackSessionIdRouteImport } from './routes/
 import { Route as DashboardExamsNewRouteImport } from './routes/dashboard.exams_.new'
 import { Route as DashboardCoursesCourseIdRouteImport } from './routes/dashboard.courses_.$courseId'
 import { Route as DashboardRhEmployeesEmployeeIdRouteImport } from './routes/dashboard.rh_.employees_.$employeeId'
+import { Route as DashboardRhCandidatesCandidateIdRouteImport } from './routes/dashboard.rh_.candidates_.$candidateId'
 import { Route as DashboardExamsExamIdEditorRouteImport } from './routes/dashboard.exams_.$examId_.editor'
 import { Route as DashboardCoursesCourseIdEditorModuleIdRouteImport } from './routes/dashboard.courses_.$courseId_.editor.$moduleId'
 
@@ -125,6 +136,11 @@ const DashboardTeachingSessionsRoute =
     path: '/teaching-sessions',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardTasksRoute = DashboardTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardStudentsRoute = DashboardStudentsRouteImport.update({
   id: '/students',
   path: '/students',
@@ -135,11 +151,22 @@ const DashboardSchedulesRoute = DashboardSchedulesRouteImport.update({
   path: '/schedules',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardRosterRoute = DashboardRosterRouteImport.update({
+  id: '/roster',
+  path: '/roster',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardRhRoute = DashboardRhRouteImport.update({
   id: '/rh',
   path: '/rh',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardReunionsInstancesRoute =
+  DashboardReunionsInstancesRouteImport.update({
+    id: '/reunions-instances',
+    path: '/reunions-instances',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardPurchaseRequestsRoute =
   DashboardPurchaseRequestsRouteImport.update({
     id: '/purchase-requests',
@@ -149,6 +176,16 @@ const DashboardPurchaseRequestsRoute =
 const DashboardProfileRoute = DashboardProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPerformanceRoute = DashboardPerformanceRouteImport.update({
+  id: '/performance',
+  path: '/performance',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPedagogiqueRoute = DashboardPedagogiqueRouteImport.update({
+  id: '/pedagogique',
+  path: '/pedagogique',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardNotificationsRoute = DashboardNotificationsRouteImport.update({
@@ -166,6 +203,16 @@ const DashboardLibraryRoute = DashboardLibraryRouteImport.update({
   path: '/library',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardKpisProductionRoute = DashboardKpisProductionRouteImport.update({
+  id: '/kpis-production',
+  path: '/kpis-production',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardGradesRoute = DashboardGradesRouteImport.update({
+  id: '/grades',
+  path: '/grades',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardExamsRoute = DashboardExamsRouteImport.update({
   id: '/exams',
   path: '/exams',
@@ -179,6 +226,11 @@ const DashboardDocumentsRoute = DashboardDocumentsRouteImport.update({
 const DashboardCoursesRoute = DashboardCoursesRouteImport.update({
   id: '/courses',
   path: '/courses',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardCommunicationRoute = DashboardCommunicationRouteImport.update({
+  id: '/communication',
+  path: '/communication',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardClassesRoute = DashboardClassesRouteImport.update({
@@ -196,6 +248,17 @@ const DashboardAnnouncementsRoute = DashboardAnnouncementsRouteImport.update({
   path: '/announcements',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAgendaGestionRoute = DashboardAgendaGestionRouteImport.update({
+  id: '/agenda-gestion',
+  path: '/agenda-gestion',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardAgendaFormationRoute =
+  DashboardAgendaFormationRouteImport.update({
+    id: '/agenda-formation',
+    path: '/agenda-formation',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardAgendaRoute = DashboardAgendaRouteImport.update({
   id: '/agenda',
   path: '/agenda',
@@ -240,6 +303,12 @@ const DashboardRhEmployeesEmployeeIdRoute =
     path: '/rh/employees/$employeeId',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardRhCandidatesCandidateIdRoute =
+  DashboardRhCandidatesCandidateIdRouteImport.update({
+    id: '/rh_/candidates_/$candidateId',
+    path: '/rh/candidates/$candidateId',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardExamsExamIdEditorRoute =
   DashboardExamsExamIdEditorRouteImport.update({
     id: '/exams_/$examId_/editor',
@@ -267,20 +336,30 @@ export interface FileRoutesByFullPath {
   '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
+  '/dashboard/agenda-formation': typeof DashboardAgendaFormationRoute
+  '/dashboard/agenda-gestion': typeof DashboardAgendaGestionRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
   '/dashboard/classes': typeof DashboardClassesRoute
+  '/dashboard/communication': typeof DashboardCommunicationRoute
   '/dashboard/courses': typeof DashboardCoursesRoute
   '/dashboard/documents': typeof DashboardDocumentsRoute
   '/dashboard/exams': typeof DashboardExamsRoute
+  '/dashboard/grades': typeof DashboardGradesRoute
+  '/dashboard/kpis-production': typeof DashboardKpisProductionRoute
   '/dashboard/library': typeof DashboardLibraryRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/pedagogique': typeof DashboardPedagogiqueRoute
+  '/dashboard/performance': typeof DashboardPerformanceRoute
   '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
+  '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
+  '/dashboard/roster': typeof DashboardRosterRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
+  '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/teaching-sessions': typeof DashboardTeachingSessionsRoute
   '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
@@ -291,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/session-feedback/$sessionId': typeof DashboardSessionFeedbackSessionIdRoute
   '/dashboard/students/$studentId': typeof DashboardStudentsStudentIdRoute
   '/dashboard/exams/$examId/editor': typeof DashboardExamsExamIdEditorRoute
+  '/dashboard/rh/candidates/$candidateId': typeof DashboardRhCandidatesCandidateIdRoute
   '/dashboard/rh/employees/$employeeId': typeof DashboardRhEmployeesEmployeeIdRoute
   '/dashboard/courses/$courseId/editor/$moduleId': typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
@@ -307,20 +387,30 @@ export interface FileRoutesByTo {
   '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
+  '/dashboard/agenda-formation': typeof DashboardAgendaFormationRoute
+  '/dashboard/agenda-gestion': typeof DashboardAgendaGestionRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
   '/dashboard/classes': typeof DashboardClassesRoute
+  '/dashboard/communication': typeof DashboardCommunicationRoute
   '/dashboard/courses': typeof DashboardCoursesRoute
   '/dashboard/documents': typeof DashboardDocumentsRoute
   '/dashboard/exams': typeof DashboardExamsRoute
+  '/dashboard/grades': typeof DashboardGradesRoute
+  '/dashboard/kpis-production': typeof DashboardKpisProductionRoute
   '/dashboard/library': typeof DashboardLibraryRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/pedagogique': typeof DashboardPedagogiqueRoute
+  '/dashboard/performance': typeof DashboardPerformanceRoute
   '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
+  '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
+  '/dashboard/roster': typeof DashboardRosterRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
+  '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/teaching-sessions': typeof DashboardTeachingSessionsRoute
   '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
@@ -331,6 +421,7 @@ export interface FileRoutesByTo {
   '/dashboard/session-feedback/$sessionId': typeof DashboardSessionFeedbackSessionIdRoute
   '/dashboard/students/$studentId': typeof DashboardStudentsStudentIdRoute
   '/dashboard/exams/$examId/editor': typeof DashboardExamsExamIdEditorRoute
+  '/dashboard/rh/candidates/$candidateId': typeof DashboardRhCandidatesCandidateIdRoute
   '/dashboard/rh/employees/$employeeId': typeof DashboardRhEmployeesEmployeeIdRoute
   '/dashboard/courses/$courseId/editor/$moduleId': typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
@@ -349,20 +440,30 @@ export interface FileRoutesById {
   '/apply/$adId': typeof ApplyAdIdRoute
   '/dashboard/accounting': typeof DashboardAccountingRoute
   '/dashboard/agenda': typeof DashboardAgendaRoute
+  '/dashboard/agenda-formation': typeof DashboardAgendaFormationRoute
+  '/dashboard/agenda-gestion': typeof DashboardAgendaGestionRoute
   '/dashboard/announcements': typeof DashboardAnnouncementsRoute
   '/dashboard/assignments': typeof DashboardAssignmentsRoute
   '/dashboard/classes': typeof DashboardClassesRoute
+  '/dashboard/communication': typeof DashboardCommunicationRoute
   '/dashboard/courses': typeof DashboardCoursesRoute
   '/dashboard/documents': typeof DashboardDocumentsRoute
   '/dashboard/exams': typeof DashboardExamsRoute
+  '/dashboard/grades': typeof DashboardGradesRoute
+  '/dashboard/kpis-production': typeof DashboardKpisProductionRoute
   '/dashboard/library': typeof DashboardLibraryRoute
   '/dashboard/meetings': typeof DashboardMeetingsRoute
   '/dashboard/notifications': typeof DashboardNotificationsRoute
+  '/dashboard/pedagogique': typeof DashboardPedagogiqueRoute
+  '/dashboard/performance': typeof DashboardPerformanceRoute
   '/dashboard/profile': typeof DashboardProfileRoute
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
+  '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
+  '/dashboard/roster': typeof DashboardRosterRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
+  '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/teaching-sessions': typeof DashboardTeachingSessionsRoute
   '/dashboard/timetables': typeof DashboardTimetablesRoute
   '/dashboard/users': typeof DashboardUsersRoute
@@ -373,6 +474,7 @@ export interface FileRoutesById {
   '/dashboard/session-feedback/$sessionId': typeof DashboardSessionFeedbackSessionIdRoute
   '/dashboard/students_/$studentId': typeof DashboardStudentsStudentIdRoute
   '/dashboard/exams_/$examId_/editor': typeof DashboardExamsExamIdEditorRoute
+  '/dashboard/rh_/candidates_/$candidateId': typeof DashboardRhCandidatesCandidateIdRoute
   '/dashboard/rh_/employees_/$employeeId': typeof DashboardRhEmployeesEmployeeIdRoute
   '/dashboard/courses_/$courseId_/editor/$moduleId': typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
@@ -392,20 +494,30 @@ export interface FileRouteTypes {
     | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
+    | '/dashboard/agenda-formation'
+    | '/dashboard/agenda-gestion'
     | '/dashboard/announcements'
     | '/dashboard/assignments'
     | '/dashboard/classes'
+    | '/dashboard/communication'
     | '/dashboard/courses'
     | '/dashboard/documents'
     | '/dashboard/exams'
+    | '/dashboard/grades'
+    | '/dashboard/kpis-production'
     | '/dashboard/library'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/pedagogique'
+    | '/dashboard/performance'
     | '/dashboard/profile'
     | '/dashboard/purchase-requests'
+    | '/dashboard/reunions-instances'
     | '/dashboard/rh'
+    | '/dashboard/roster'
     | '/dashboard/schedules'
     | '/dashboard/students'
+    | '/dashboard/tasks'
     | '/dashboard/teaching-sessions'
     | '/dashboard/timetables'
     | '/dashboard/users'
@@ -416,6 +528,7 @@ export interface FileRouteTypes {
     | '/dashboard/session-feedback/$sessionId'
     | '/dashboard/students/$studentId'
     | '/dashboard/exams/$examId/editor'
+    | '/dashboard/rh/candidates/$candidateId'
     | '/dashboard/rh/employees/$employeeId'
     | '/dashboard/courses/$courseId/editor/$moduleId'
   fileRoutesByTo: FileRoutesByTo
@@ -432,20 +545,30 @@ export interface FileRouteTypes {
     | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
+    | '/dashboard/agenda-formation'
+    | '/dashboard/agenda-gestion'
     | '/dashboard/announcements'
     | '/dashboard/assignments'
     | '/dashboard/classes'
+    | '/dashboard/communication'
     | '/dashboard/courses'
     | '/dashboard/documents'
     | '/dashboard/exams'
+    | '/dashboard/grades'
+    | '/dashboard/kpis-production'
     | '/dashboard/library'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/pedagogique'
+    | '/dashboard/performance'
     | '/dashboard/profile'
     | '/dashboard/purchase-requests'
+    | '/dashboard/reunions-instances'
     | '/dashboard/rh'
+    | '/dashboard/roster'
     | '/dashboard/schedules'
     | '/dashboard/students'
+    | '/dashboard/tasks'
     | '/dashboard/teaching-sessions'
     | '/dashboard/timetables'
     | '/dashboard/users'
@@ -456,6 +579,7 @@ export interface FileRouteTypes {
     | '/dashboard/session-feedback/$sessionId'
     | '/dashboard/students/$studentId'
     | '/dashboard/exams/$examId/editor'
+    | '/dashboard/rh/candidates/$candidateId'
     | '/dashboard/rh/employees/$employeeId'
     | '/dashboard/courses/$courseId/editor/$moduleId'
   id:
@@ -473,20 +597,30 @@ export interface FileRouteTypes {
     | '/apply/$adId'
     | '/dashboard/accounting'
     | '/dashboard/agenda'
+    | '/dashboard/agenda-formation'
+    | '/dashboard/agenda-gestion'
     | '/dashboard/announcements'
     | '/dashboard/assignments'
     | '/dashboard/classes'
+    | '/dashboard/communication'
     | '/dashboard/courses'
     | '/dashboard/documents'
     | '/dashboard/exams'
+    | '/dashboard/grades'
+    | '/dashboard/kpis-production'
     | '/dashboard/library'
     | '/dashboard/meetings'
     | '/dashboard/notifications'
+    | '/dashboard/pedagogique'
+    | '/dashboard/performance'
     | '/dashboard/profile'
     | '/dashboard/purchase-requests'
+    | '/dashboard/reunions-instances'
     | '/dashboard/rh'
+    | '/dashboard/roster'
     | '/dashboard/schedules'
     | '/dashboard/students'
+    | '/dashboard/tasks'
     | '/dashboard/teaching-sessions'
     | '/dashboard/timetables'
     | '/dashboard/users'
@@ -497,6 +631,7 @@ export interface FileRouteTypes {
     | '/dashboard/session-feedback/$sessionId'
     | '/dashboard/students_/$studentId'
     | '/dashboard/exams_/$examId_/editor'
+    | '/dashboard/rh_/candidates_/$candidateId'
     | '/dashboard/rh_/employees_/$employeeId'
     | '/dashboard/courses_/$courseId_/editor/$moduleId'
   fileRoutesById: FileRoutesById
@@ -623,6 +758,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardTeachingSessionsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/tasks': {
+      id: '/dashboard/tasks'
+      path: '/tasks'
+      fullPath: '/dashboard/tasks'
+      preLoaderRoute: typeof DashboardTasksRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/students': {
       id: '/dashboard/students'
       path: '/students'
@@ -637,11 +779,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSchedulesRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/roster': {
+      id: '/dashboard/roster'
+      path: '/roster'
+      fullPath: '/dashboard/roster'
+      preLoaderRoute: typeof DashboardRosterRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/rh': {
       id: '/dashboard/rh'
       path: '/rh'
       fullPath: '/dashboard/rh'
       preLoaderRoute: typeof DashboardRhRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/reunions-instances': {
+      id: '/dashboard/reunions-instances'
+      path: '/reunions-instances'
+      fullPath: '/dashboard/reunions-instances'
+      preLoaderRoute: typeof DashboardReunionsInstancesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/purchase-requests': {
@@ -656,6 +812,20 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/dashboard/profile'
       preLoaderRoute: typeof DashboardProfileRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/performance': {
+      id: '/dashboard/performance'
+      path: '/performance'
+      fullPath: '/dashboard/performance'
+      preLoaderRoute: typeof DashboardPerformanceRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pedagogique': {
+      id: '/dashboard/pedagogique'
+      path: '/pedagogique'
+      fullPath: '/dashboard/pedagogique'
+      preLoaderRoute: typeof DashboardPedagogiqueRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/notifications': {
@@ -679,6 +849,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardLibraryRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/kpis-production': {
+      id: '/dashboard/kpis-production'
+      path: '/kpis-production'
+      fullPath: '/dashboard/kpis-production'
+      preLoaderRoute: typeof DashboardKpisProductionRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/grades': {
+      id: '/dashboard/grades'
+      path: '/grades'
+      fullPath: '/dashboard/grades'
+      preLoaderRoute: typeof DashboardGradesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/exams': {
       id: '/dashboard/exams'
       path: '/exams'
@@ -700,6 +884,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardCoursesRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/communication': {
+      id: '/dashboard/communication'
+      path: '/communication'
+      fullPath: '/dashboard/communication'
+      preLoaderRoute: typeof DashboardCommunicationRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/classes': {
       id: '/dashboard/classes'
       path: '/classes'
@@ -719,6 +910,20 @@ declare module '@tanstack/react-router' {
       path: '/announcements'
       fullPath: '/dashboard/announcements'
       preLoaderRoute: typeof DashboardAnnouncementsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/agenda-gestion': {
+      id: '/dashboard/agenda-gestion'
+      path: '/agenda-gestion'
+      fullPath: '/dashboard/agenda-gestion'
+      preLoaderRoute: typeof DashboardAgendaGestionRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/agenda-formation': {
+      id: '/dashboard/agenda-formation'
+      path: '/agenda-formation'
+      fullPath: '/dashboard/agenda-formation'
+      preLoaderRoute: typeof DashboardAgendaFormationRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/agenda': {
@@ -777,6 +982,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRhEmployeesEmployeeIdRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/rh_/candidates_/$candidateId': {
+      id: '/dashboard/rh_/candidates_/$candidateId'
+      path: '/rh/candidates/$candidateId'
+      fullPath: '/dashboard/rh/candidates/$candidateId'
+      preLoaderRoute: typeof DashboardRhCandidatesCandidateIdRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/exams_/$examId_/editor': {
       id: '/dashboard/exams_/$examId_/editor'
       path: '/exams/$examId/editor'
@@ -797,20 +1009,30 @@ declare module '@tanstack/react-router' {
 interface DashboardRouteChildren {
   DashboardAccountingRoute: typeof DashboardAccountingRoute
   DashboardAgendaRoute: typeof DashboardAgendaRoute
+  DashboardAgendaFormationRoute: typeof DashboardAgendaFormationRoute
+  DashboardAgendaGestionRoute: typeof DashboardAgendaGestionRoute
   DashboardAnnouncementsRoute: typeof DashboardAnnouncementsRoute
   DashboardAssignmentsRoute: typeof DashboardAssignmentsRoute
   DashboardClassesRoute: typeof DashboardClassesRoute
+  DashboardCommunicationRoute: typeof DashboardCommunicationRoute
   DashboardCoursesRoute: typeof DashboardCoursesRoute
   DashboardDocumentsRoute: typeof DashboardDocumentsRoute
   DashboardExamsRoute: typeof DashboardExamsRoute
+  DashboardGradesRoute: typeof DashboardGradesRoute
+  DashboardKpisProductionRoute: typeof DashboardKpisProductionRoute
   DashboardLibraryRoute: typeof DashboardLibraryRoute
   DashboardMeetingsRoute: typeof DashboardMeetingsRoute
   DashboardNotificationsRoute: typeof DashboardNotificationsRoute
+  DashboardPedagogiqueRoute: typeof DashboardPedagogiqueRoute
+  DashboardPerformanceRoute: typeof DashboardPerformanceRoute
   DashboardProfileRoute: typeof DashboardProfileRoute
   DashboardPurchaseRequestsRoute: typeof DashboardPurchaseRequestsRoute
+  DashboardReunionsInstancesRoute: typeof DashboardReunionsInstancesRoute
   DashboardRhRoute: typeof DashboardRhRoute
+  DashboardRosterRoute: typeof DashboardRosterRoute
   DashboardSchedulesRoute: typeof DashboardSchedulesRoute
   DashboardStudentsRoute: typeof DashboardStudentsRoute
+  DashboardTasksRoute: typeof DashboardTasksRoute
   DashboardTeachingSessionsRoute: typeof DashboardTeachingSessionsRoute
   DashboardTimetablesRoute: typeof DashboardTimetablesRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
@@ -820,6 +1042,7 @@ interface DashboardRouteChildren {
   DashboardSessionFeedbackSessionIdRoute: typeof DashboardSessionFeedbackSessionIdRoute
   DashboardStudentsStudentIdRoute: typeof DashboardStudentsStudentIdRoute
   DashboardExamsExamIdEditorRoute: typeof DashboardExamsExamIdEditorRoute
+  DashboardRhCandidatesCandidateIdRoute: typeof DashboardRhCandidatesCandidateIdRoute
   DashboardRhEmployeesEmployeeIdRoute: typeof DashboardRhEmployeesEmployeeIdRoute
   DashboardCoursesCourseIdEditorModuleIdRoute: typeof DashboardCoursesCourseIdEditorModuleIdRoute
 }
@@ -827,20 +1050,30 @@ interface DashboardRouteChildren {
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAccountingRoute: DashboardAccountingRoute,
   DashboardAgendaRoute: DashboardAgendaRoute,
+  DashboardAgendaFormationRoute: DashboardAgendaFormationRoute,
+  DashboardAgendaGestionRoute: DashboardAgendaGestionRoute,
   DashboardAnnouncementsRoute: DashboardAnnouncementsRoute,
   DashboardAssignmentsRoute: DashboardAssignmentsRoute,
   DashboardClassesRoute: DashboardClassesRoute,
+  DashboardCommunicationRoute: DashboardCommunicationRoute,
   DashboardCoursesRoute: DashboardCoursesRoute,
   DashboardDocumentsRoute: DashboardDocumentsRoute,
   DashboardExamsRoute: DashboardExamsRoute,
+  DashboardGradesRoute: DashboardGradesRoute,
+  DashboardKpisProductionRoute: DashboardKpisProductionRoute,
   DashboardLibraryRoute: DashboardLibraryRoute,
   DashboardMeetingsRoute: DashboardMeetingsRoute,
   DashboardNotificationsRoute: DashboardNotificationsRoute,
+  DashboardPedagogiqueRoute: DashboardPedagogiqueRoute,
+  DashboardPerformanceRoute: DashboardPerformanceRoute,
   DashboardProfileRoute: DashboardProfileRoute,
   DashboardPurchaseRequestsRoute: DashboardPurchaseRequestsRoute,
+  DashboardReunionsInstancesRoute: DashboardReunionsInstancesRoute,
   DashboardRhRoute: DashboardRhRoute,
+  DashboardRosterRoute: DashboardRosterRoute,
   DashboardSchedulesRoute: DashboardSchedulesRoute,
   DashboardStudentsRoute: DashboardStudentsRoute,
+  DashboardTasksRoute: DashboardTasksRoute,
   DashboardTeachingSessionsRoute: DashboardTeachingSessionsRoute,
   DashboardTimetablesRoute: DashboardTimetablesRoute,
   DashboardUsersRoute: DashboardUsersRoute,
@@ -851,6 +1084,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
     DashboardSessionFeedbackSessionIdRoute,
   DashboardStudentsStudentIdRoute: DashboardStudentsStudentIdRoute,
   DashboardExamsExamIdEditorRoute: DashboardExamsExamIdEditorRoute,
+  DashboardRhCandidatesCandidateIdRoute: DashboardRhCandidatesCandidateIdRoute,
   DashboardRhEmployeesEmployeeIdRoute: DashboardRhEmployeesEmployeeIdRoute,
   DashboardCoursesCourseIdEditorModuleIdRoute:
     DashboardCoursesCourseIdEditorModuleIdRoute,

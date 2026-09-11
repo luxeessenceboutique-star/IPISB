@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ListSkeleton } from "@/components/Skeletons";
 import { PageHead, EmptyHint } from "@/components/dashboard/ui";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 
 export const Route = createFileRoute("/dashboard/assignments")({
   beforeLoad: async () => {
@@ -67,6 +68,7 @@ function AssignmentsPage() {
   const [assignments,        setAssignments]        = useState<Assignment[]>([]);
   const [myCourses,          setMyCourses]          = useState<Course[]>([]);
   const [loading,            setLoading]            = useState(true);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   // Create dialog
   const [showCreate,  setShowCreate]  = useState(false);
@@ -294,7 +296,7 @@ function AssignmentsPage() {
           {visible.map(a => {
             const { label, chip, icon: Icon, iconColor } = statusInfo(a, lang);
             return (
-              <div key={a.id} className="row-c flex-wrap">
+              <div key={a.id} ref={a.id === focusId ? attachFocus : undefined} className="row-c flex-wrap">
                 <span className="flex shrink-0" style={{ color: iconColor }}>
                   <Icon size={20} strokeWidth={1.7} />
                 </span>

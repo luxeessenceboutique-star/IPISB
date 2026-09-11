@@ -30,6 +30,9 @@ type Supplier = {
   total_purchases: number;
   total_spent: number;
   last_purchase: string | null;
+  spent_last_12m: number;
+  pending_invoices_count: number;
+  pending_invoices_amount: number;
 };
 
 const emptyForm = {
@@ -37,7 +40,10 @@ const emptyForm = {
   legal_form: "", rib: "", bank: "", bank_branch: "", payment_terms_days: "", notes: "", comment: "",
 };
 
-function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+// Exporté : réutilisé tel quel par le formulaire de devis (PurchaseRequests.tsx)
+// quand on crée un fournisseur à la volée — le vrai formulaire complet plutôt
+// qu'un simple champ nom, sans quitter la saisie du devis en cours.
+export function SupplierFormModal({ onClose, onSaved, zIndex = 200 }: { onClose: () => void; onSaved: (supplier?: { id: string; company_name: string }) => void; zIndex?: number }) {
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +51,7 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
     if (!form.company_name.trim()) { toast.error("Le nom de l'entreprise est requis."); return; }
     setBusy(true);
     try {
-      await api.post("/api/accounting/suppliers", {
+      const created = await api.post("/api/accounting/suppliers", {
         company_name: form.company_name,
         contact_person: form.contact_person || null,
         email: form.email || null,
@@ -61,7 +67,7 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
         comment: form.comment || null,
       });
       toast.success("Fournisseur créé !");
-      onSaved();
+      onSaved(created);
       onClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors de la création.");
@@ -74,7 +80,7 @@ function FormModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
   const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
   return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
           Nouveau fournisseur
@@ -186,7 +192,7 @@ export function AccountingSuppliers() {
 
   return (
     <div>
-      {showCreate && <FormModal onClose={() => setShowCreate(false)} onSaved={load} />}
+      {showCreate && <SupplierFormModal onClose={() => setShowCreate(false)} onSaved={load} />}
 
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 260px" }}>
@@ -277,7 +283,10 @@ export function AccountingSuppliers() {
               <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
                 <Row label="Total achats" value={String(selected.total_purchases)} />
                 <Row label="Total dépensé" value={fmtMAD(selected.total_spent)} />
+                <Row label="Total dépensé (12 derniers mois)" value={fmtMAD(selected.spent_last_12m)} />
                 <Row label="Dernier achat" value={selected.last_purchase ? new Date(selected.last_purchase).toLocaleDateString("fr-FR") : "—"} />
+                <Row label="Factures en instance" value={String(selected.pending_invoices_count)} />
+                <Row label="Montant total en instance" value={fmtMAD(selected.pending_invoices_amount)} />
               </div>
 
               {selected.notes && (

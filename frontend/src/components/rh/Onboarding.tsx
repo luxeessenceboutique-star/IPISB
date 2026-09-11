@@ -27,8 +27,24 @@ type Pulse = { id: string; week_number: number | null; satisfaction_score: numbe
 const fieldStyle = { marginTop: 8, marginBottom: 12, width: "100%", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
-function Checklist({ title, items, onToggle }: { title: string; items: PlanItem[]; onToggle: (id: string) => void }) {
+function newId() {
+  return (crypto as any).randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function Checklist({ title, items, onToggle, onAdd, onRemove }: {
+  title: string; items: PlanItem[]; onToggle: (id: string) => void;
+  onAdd: (label: string) => void; onRemove: (id: string) => void;
+}) {
   const done = items.filter(i => i.done).length;
+  const [draft, setDraft] = useState("");
+
+  function submitDraft() {
+    const label = draft.trim();
+    if (!label) return;
+    onAdd(label);
+    setDraft("");
+  }
+
   return (
     <div className="dash-card" style={{ padding: 18, flex: "1 1 240px", minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
@@ -36,13 +52,32 @@ function Checklist({ title, items, onToggle }: { title: string; items: PlanItem[
         <span style={{ fontSize: 12, color: PAL.muted }}>{done}/{items.length}</span>
       </div>
       <div style={{ marginBottom: 12 }}><ProgressBar value={items.length ? (done / items.length) * 100 : 0} /></div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
         {items.map(item => (
-          <label key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12.5, color: item.done ? PAL.muted : PAL.ink, textDecoration: item.done ? "line-through" : "none" }}>
-            <input type="checkbox" checked={item.done} onChange={() => onToggle(item.id)} />
-            {item.label}
-          </label>
+          <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12.5, color: item.done ? PAL.muted : PAL.ink, textDecoration: item.done ? "line-through" : "none", flex: 1, minWidth: 0 }}>
+              <input type="checkbox" checked={item.done} onChange={() => onToggle(item.id)} />
+              {item.label}
+            </label>
+            <button
+              type="button" onClick={() => onRemove(item.id)} title="Retirer cet objectif"
+              style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, display: "flex", flexShrink: 0, padding: 2 }}
+            >
+              <Trash2 size={12} strokeWidth={1.7} />
+            </button>
+          </div>
         ))}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          type="text" value={draft} onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); submitDraft(); } }}
+          placeholder="Ajouter un objectif…"
+          style={{ flex: 1, minWidth: 0, padding: "7px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12, color: PAL.ink, background: PAL.paper, outline: "none" }}
+        />
+        <button type="button" onClick={submitDraft} disabled={!draft.trim()} className="btn-c btn-c-sm btn-c-ghost" style={{ opacity: draft.trim() ? 1 : 0.5, flexShrink: 0 }}>
+          <Plus size={13} strokeWidth={1.7} />
+        </button>
       </div>
     </div>
   );
@@ -129,9 +164,8 @@ export function RhOnboarding() {
 
   useEffect(() => { if (employeeId) loadOnboarding(employeeId); else { setOnboarding(null); setPulses([]); } }, [employeeId]);
 
-  async function toggleItem(planKey: "plan_30" | "plan_60" | "plan_90", itemId: string) {
+  async function saveItems(planKey: "plan_30" | "plan_60" | "plan_90", updated: PlanItem[]) {
     if (!onboarding) return;
-    const updated = onboarding[planKey].map(i => i.id === itemId ? { ...i, done: !i.done } : i);
     setOnboarding({ ...onboarding, [planKey]: updated });
     try {
       await api.patch(`/api/rh/onboarding/${employeeId}`, { [planKey]: updated });
@@ -139,6 +173,21 @@ export function RhOnboarding() {
       toast.error(err?.message ?? "Erreur lors de la mise à jour.");
       loadOnboarding(employeeId);
     }
+  }
+
+  function toggleItem(planKey: "plan_30" | "plan_60" | "plan_90", itemId: string) {
+    if (!onboarding) return;
+    saveItems(planKey, onboarding[planKey].map(i => i.id === itemId ? { ...i, done: !i.done } : i));
+  }
+
+  function addItem(planKey: "plan_30" | "plan_60" | "plan_90", label: string) {
+    if (!onboarding) return;
+    saveItems(planKey, [...onboarding[planKey], { id: newId(), label, done: false }]);
+  }
+
+  function removeItem(planKey: "plan_30" | "plan_60" | "plan_90", itemId: string) {
+    if (!onboarding) return;
+    saveItems(planKey, onboarding[planKey].filter(i => i.id !== itemId));
   }
 
   async function saveBuddy() {
@@ -213,9 +262,9 @@ export function RhOnboarding() {
           </div>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <Checklist title="Plan 30 jours" items={onboarding.plan_30} onToggle={id => toggleItem("plan_30", id)} />
-            <Checklist title="Plan 60 jours" items={onboarding.plan_60} onToggle={id => toggleItem("plan_60", id)} />
-            <Checklist title="Plan 90 jours" items={onboarding.plan_90} onToggle={id => toggleItem("plan_90", id)} />
+            <Checklist title="Plan 30 jours" items={onboarding.plan_30} onToggle={id => toggleItem("plan_30", id)} onAdd={label => addItem("plan_30", label)} onRemove={id => removeItem("plan_30", id)} />
+            <Checklist title="Plan 60 jours" items={onboarding.plan_60} onToggle={id => toggleItem("plan_60", id)} onAdd={label => addItem("plan_60", label)} onRemove={id => removeItem("plan_60", id)} />
+            <Checklist title="Plan 90 jours" items={onboarding.plan_90} onToggle={id => toggleItem("plan_90", id)} onAdd={label => addItem("plan_90", label)} onRemove={id => removeItem("plan_90", id)} />
           </div>
 
           <SectionLabel>Pulse surveys</SectionLabel>

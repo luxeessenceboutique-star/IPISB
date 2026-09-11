@@ -49,6 +49,7 @@ async def list_revenues(
     payment_method: Optional[str] = None,
     bank: bool = False,
     class_id: Optional[str] = None,
+    specialty_type: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     sort_by: str = "revenue_date",
@@ -79,6 +80,18 @@ async def list_revenues(
         query = query.in_("payment_method", BANK_METHODS)
     if class_id:  # recettes rattachées à une promo (vue groupée par classe)
         query = query.eq("class_id", class_id) if class_id != "none" else query.is_("class_id", "null")
+    if specialty_type in ("formation_initiale", "formation_continue"):
+        # Pas de jointure directe côté Supabase : on résout d'abord les classes
+        # de la filière demandée, puis on filtre les recettes rattachées.
+        specialty_ids = [
+            s["id"] for s in
+            (db.from_("specialties").select("id").eq("type", specialty_type).execute().data or [])
+        ]
+        class_ids = [
+            c["id"] for c in
+            (db.from_("classes").select("id").in_("specialty_id", specialty_ids).execute().data or [])
+        ] if specialty_ids else []
+        query = query.in_("class_id", class_ids) if class_ids else query.eq("id", "00000000-0000-0000-0000-000000000000")
     if date_from:
         query = query.gte("revenue_date", date_from)
     if date_to:

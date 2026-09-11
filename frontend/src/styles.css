@@ -452,6 +452,24 @@
 .scroll-y::-webkit-scrollbar { width: 8px; }
 .scroll-y::-webkit-scrollbar-thumb { background: var(--pal-soft); border-radius: 99px; }
 
+/* ── Deep-link : ligne/carte ciblée par un clic sur une notification ──
+   Défilement piloté en JS (useDeepLinkFocus) ; ici juste le repère visuel.
+   `both` garde l'état final (transparent) même si la classe reste posée. */
+@keyframes deep-link-flash {
+  0%, 65% { background-color: var(--pal-pale); }
+  100%    { background-color: transparent; }
+}
+.deep-link-focus,
+.deep-link-focus > td {
+  animation: deep-link-flash 3s ease-out both;
+}
+.deep-link-focus {
+  outline: 2px solid var(--pal-primary);
+  outline-offset: -2px;
+  border-radius: 8px;
+  scroll-margin-block: 96px;
+}
+
 /* ── Accessibility ────────────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--pal-mid);

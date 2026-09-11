@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Plane, Plus, Trash2, X, FileDown, Pencil, Check, Ban } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
+import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
@@ -45,12 +46,26 @@ type Note = {
   accompanied_by: string | null; objet: string | null;
   mission_from: string | null; mission_to: string | null; accorded_by: string | null;
   days: string[]; amounts: Record<string, number[]>; total: number;
-  nc: "noir" | "comptable"; comment: string | null; created_by_name: string | null;
+  nc: "noir" | "comptable"; caisse: "caisse_sociale" | "caisse_secondaire"; comment: string | null; created_by_name: string | null;
   status: NoteStatus;
   approved_by_name: string | null; paid_by_name: string | null;
   rejection_reason: string | null; payment_method: string | null; payment_date: string | null;
 };
 type NotesData = { items: Note[]; count: number; total: number };
+
+// Caisse visée par l'avance, choisie à la création — deux caisses physiques,
+// toutes deux comptabilisées (le mode de règlement à l'exécution du paiement
+// en est simplement pré-rempli, il reste modifiable si le contexte change).
+const CAISSE_LABELS: Record<string, string> = { caisse_sociale: "Caisse comptable", caisse_secondaire: "Caisse sociale" };
+
+// Ajoute `delta` jours à une date "AAAA-MM-JJ" ; retourne "" si vide.
+function shiftDate(dateStr: string, delta: number): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
 
 const STATUS_LABELS: Record<NoteStatus, string> = {
   pending: "En attente N+1", approved: "Approuvée", rejected: "Rejetée", paid: "Payée",
@@ -110,6 +125,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     mission_to: (note?.mission_to || "").slice(0, 10),
     accorded_by: note?.accorded_by || "",
     nc: note?.nc || "comptable",
+    caisse: note?.caisse || "caisse_sociale",
     comment: note?.comment || "",
   });
 
@@ -150,8 +166,20 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   const dayTotal = (di: number) => ALL_ARTICLES.reduce((s, a) => s + (parseFloat(cellVal(a.key, di)) || 0), 0);
   const grandTotal = days.reduce((s, _, di) => s + dayTotal(di), 0);
 
+  // Les jours de la grille restent dans ± 1 jour autour de la mission (ex.
+  // mission du 04 au 06/09 → colonnes acceptées du 03 au 07/09).
+  const dayMin = form.mission_from ? shiftDate(form.mission_from, -1) : "";
+  const dayMax = form.mission_to ? shiftDate(form.mission_to, 1) : "";
+
   async function submit() {
     if (!form.beneficiary_name.trim()) { toast.error("Le nom du bénéficiaire est obligatoire."); return; }
+    if (dayMin || dayMax) {
+      const outOfRange = days.find(d => d && ((dayMin && d < dayMin) || (dayMax && d > dayMax)));
+      if (outOfRange) {
+        toast.error(`Les jours de la grille doivent rester entre ${fmtDate(dayMin)} et ${fmtDate(dayMax)} (± 1 jour autour de la mission).`);
+        return;
+      }
+    }
     const payloadAmounts: Record<string, number[]> = {};
     for (const a of ALL_ARTICLES) {
       const row = days.map((_, di) => parseFloat(cellVal(a.key, di)) || 0);
@@ -170,6 +198,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       days: days.map(d => d || ""),
       amounts: payloadAmounts,
       nc: form.nc,
+      caisse: form.caisse,
       comment: form.comment.trim() || null,
     };
     setBusy(true);
@@ -213,6 +242,11 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         </div>
       </div>
 
+      <label style={labelStyle}>Caisse</label>
+      <select value={form.caisse} onChange={e => set("caisse", e.target.value)} className="u-input" style={fieldStyle}>
+        {Object.entries(CAISSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
+
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0 14px" }}>
         <div>
           <label style={labelStyle}>Nom et Prénom (bénéficiaire) *</label>
@@ -230,7 +264,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       <label style={labelStyle}>Objet de mission</label>
       <textarea value={form.objet} onChange={e => set("objet", e.target.value)} placeholder="Motif / objet de la mission" rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" }} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0 14px", alignItems: "end" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", alignItems: "end" }}>
         <div>
           <label style={labelStyle}>Mission du</label>
           <input type="date" value={form.mission_from} onChange={e => set("mission_from", e.target.value)} className="u-input" style={fieldStyle} />
@@ -238,13 +272,6 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         <div>
           <label style={labelStyle}>… au</label>
           <input type="date" value={form.mission_to} onChange={e => set("mission_to", e.target.value)} className="u-input" style={fieldStyle} />
-        </div>
-        <div>
-          <label style={labelStyle}>Nature (journal de caisse)</label>
-          <select value={form.nc} onChange={e => set("nc", e.target.value)} className="u-input" style={fieldStyle}>
-            <option value="comptable">Comptable (déclaré)</option>
-            <option value="noir">Caisse sociale (espèces)</option>
-          </select>
         </div>
       </div>
 
@@ -272,7 +299,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                         </button>
                       )}
                     </div>
-                    <input type="date" value={d} onChange={e => setDayDate(di, e.target.value)} style={{ width: 118, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
+                    <input type="date" value={d} min={dayMin || undefined} max={dayMax || undefined} onChange={e => setDayDate(di, e.target.value)} style={{ width: 118, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
                   </div>
                 </th>
               ))}
@@ -309,7 +336,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       </div>
 
       <div style={{ fontSize: 12, color: PAL.muted, marginBottom: 12 }}>
-        Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total global, nature <strong>{form.nc === "noir" ? "caisse sociale" : "comptable"}</strong>) n'est comptabilisée qu'au paiement.
+        Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total global) n'est comptabilisée qu'au paiement.
       </div>
 
       <label style={labelStyle}>Commentaire (interne, optionnel)</label>
@@ -333,6 +360,7 @@ export function AccountingMissionNotes() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
+  const { focusId, attachFocus } = useDeepLinkFocus();
 
   function load() {
     setLoading(true);
@@ -412,14 +440,14 @@ export function AccountingMissionNotes() {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
               <thead>
                 <tr>
-                  {["N°", "Date", "Bénéficiaire", "Objet", "Mission", "Total (DH)", "n/c", "Statut", ""].map((h, i) => (
+                  {["N°", "Date", "Bénéficiaire", "Objet", "Mission", "Total (DH)", "Statut", ""].map((h, i) => (
                     <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 5 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {items.map(n => (
-                  <tr key={n.id}>
+                  <tr key={n.id} ref={n.id === focusId ? attachFocus : undefined}>
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>{n.reference ?? "—"}</td>
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>{fmtDate(n.note_date)}</td>
                     <td style={{ ...cell, whiteSpace: "normal", minWidth: 150 }}>{n.beneficiary_name}</td>
@@ -428,9 +456,6 @@ export function AccountingMissionNotes() {
                       {n.mission_from || n.mission_to ? `${fmtDate(n.mission_from)} → ${fmtDate(n.mission_to)}` : "—"}
                     </td>
                     <td style={{ ...cell, fontFamily: mono, fontWeight: 700, textAlign: "right" }}>{fmtMAD(n.total)}</td>
-                    <td style={cell}>
-                      <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
-                    </td>
                     <td style={cell}>
                       <span className={`chip-c ${STATUS_TONES[n.status] ?? "chip-c-amber"}`} title={n.status === "rejected" && n.rejection_reason ? `Motif : ${n.rejection_reason}` : n.status === "paid" && n.payment_date ? `Payée le ${fmtDate(n.payment_date)}${n.paid_by_name ? ` · ${n.paid_by_name}` : ""}` : undefined}>
                         {STATUS_LABELS[n.status] ?? n.status}

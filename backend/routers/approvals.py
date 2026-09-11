@@ -165,6 +165,7 @@ async def approvals_inbox(
             "reject_url": f"/api/approvals/{op['id']}/reject",
             # Seuls les décaissements bancaires exigent un second regard.
             "four_eyes": op["op_type"] in PAYMENT_OP_TYPES_CACHE(),
+            "first_approved_by": op.get("first_approved_by"),
         })
 
     # 2 & 3. Avances de caisse et de mission : statut porté par la note.
@@ -277,18 +278,55 @@ async def approve_operation(
     payload = op.get("payload") or {}
     result_id = None
 
-    # Décaissements bancaires : contrôle à quatre yeux. On refuse l'auto-validation
-    # DÈS QU'un autre compte admin existe ; s'il n'y en a qu'un, il valide son
-    # propre règlement (tracé dans le journal d'audit) — sinon le circuit serait
-    # bloqué.
+    # Décaissements bancaires : DOUBLE VALIDATION — deux administrateurs
+    # DISTINCTS, ni l'un ni l'autre l'auteur de la saisie, doivent chacun
+    # approuver avant que le paiement ne soit exécuté. Ne bloque jamais le
+    # circuit : si trop peu d'admins existent pour réunir deux validateurs
+    # différents de l'auteur, on retombe sur une validation unique (comme
+    # avant), pour ne jamais rendre un règlement définitivement bloqué.
     from routers.accounting_cheques import PAYMENT_OP_TYPES
-    if op["op_type"] in PAYMENT_OP_TYPES and op.get("created_by") == user.id:
-        if len([a for a in _admin_ids(db) if a != user.id]) > 0:
+    if op["op_type"] in PAYMENT_OP_TYPES:
+        creator = op.get("created_by")
+        eligible = [a for a in _admin_ids(db) if a != creator]
+        if user.id == creator:
             raise HTTPException(
                 403,
                 "Un règlement bancaire ne peut pas être validé par la personne qui l'a saisi. "
                 "Demandez la validation à un autre administrateur.",
             )
+        first_approver = op.get("first_approved_by")
+        if len(eligible) >= 2 and first_approver is None:
+            # 1ère validation : n'exécute rien, attend un second administrateur
+            # distinct de celui-ci (et de l'auteur).
+            now = datetime.now(timezone.utc).isoformat()
+            try:
+                db.from_("pending_operations").update({
+                    "first_approved_by": user.id, "first_approved_at": now,
+                }).eq("id", op_id).execute()
+            except Exception:
+                # Migration l50 pas encore exécutée côté Supabase : on ne peut
+                # pas tracer la 1ère validation — on exécute directement plutôt
+                # que de faire disparaître la demande sans rien enregistrer.
+                pass
+            else:
+                others = [a for a in eligible if a != user.id]
+                if others:
+                    notify_users(
+                        db, others,
+                        title="Seconde validation requise 🔒",
+                        message=f"« {_op_label(op)} » a reçu une première validation — une seconde validation, par un autre administrateur, est requise avant exécution.",
+                        type="info",
+                        link=f"/dashboard/accounting?tab=validations&focus={op_id}",
+                    )
+                log_audit(db, user.id, "approval.first_approve", "pending_operation", op_id, {"op_type": op["op_type"]})
+                return {"ok": True, "pending_second_approval": True}
+        elif len(eligible) >= 2 and first_approver == user.id:
+            raise HTTPException(
+                403,
+                "Ce règlement a déjà reçu votre première validation — il attend la validation d'un second administrateur, différent de vous.",
+            )
+        # Sinon (2e validation par un admin distinct du 1er, ou trop peu
+        # d'admins pour exiger deux validateurs différents) : exécution ci-dessous.
 
     if op["op_type"] == "tuition_payment":
         res = db.from_("tuition_payments").insert(payload).execute()
@@ -423,7 +461,7 @@ async def approve_operation(
         title="Saisie approuvée ✅",
         message=f"Votre saisie « {label} » a été validée par l'administration.",
         type="success",
-        link="/dashboard/accounting",
+        link=f"/dashboard/accounting?tab=mine&focus={op_id}",
     )
     log_audit(db, user.id, "approval.approve", "pending_operation", op_id,
               {"op_type": op["op_type"], "result_id": result_id})
@@ -465,7 +503,7 @@ async def reject_operation(
         title="Saisie rejetée ⛔",
         message=f"Votre saisie « {label} » a été rejetée. Motif : {comment}",
         type="error",
-        link="/dashboard/accounting",
+        link=f"/dashboard/accounting?tab=mine&focus={op_id}",
     )
     log_audit(db, user.id, "approval.reject", "pending_operation", op_id,
               {"op_type": op["op_type"], "comment": comment})

@@ -168,7 +168,7 @@ async def create_meeting(
                 f"Nouvelle réunion : {body.title}",
                 f"Planifiée le {body.scheduled_at[:10]}",
                 "info",
-                "/dashboard/meetings",
+                f"/dashboard/meetings?focus={new_meeting['id']}",
             )
             # Email students in the class about the new meeting
             try:

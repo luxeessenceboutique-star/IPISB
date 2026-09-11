@@ -18,4 +18,23 @@ test.describe("Permission boundaries", () => {
   test("student does not see the Teaching Sessions link in the sidebar at all", async ({ studentPage: page }) => {
     await expect(page.getByRole("link", { name: /Séances|Sessions/ })).toHaveCount(0);
   });
+
+  /* Tasks module (`tasks.tasks`, Channel 1) — students hold no V1 role for
+     this entity, so `dashboard.tasks.tsx`'s beforeLoad redirects them back
+     to /dashboard rather than rendering the page (same guard pattern as
+     dashboard.rh.tsx / dashboard.accounting.tsx). */
+  test("student is redirected away from the Tasks page on direct navigation", async ({ studentPage: page }) => {
+    await page.goto("/dashboard/tasks");
+    await expect(page).toHaveURL(/\/dashboard\/?$/, { timeout: 10_000 });
+  });
+
+  test("student does not see the Tasks link in the sidebar", async ({ studentPage: page }) => {
+    await expect(page.getByRole("link", { name: /Tâches|Tasks/ })).toHaveCount(0);
+  });
+
+  test("professor can reach the Tasks page", async ({ professorPage: page }) => {
+    await page.goto("/dashboard/tasks");
+    await expect(page).toHaveURL(/\/dashboard\/tasks/);
+    await expect(page.getByRole("heading", { name: /Gestion des tâches/ })).toBeVisible({ timeout: 10_000 });
+  });
 });

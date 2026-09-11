@@ -29,6 +29,22 @@ def _require_admin(user: CurrentUser) -> None:
         raise HTTPException(403, "RH access only")
 
 
+# Canal 2 (V1_THEN_V2, voir permissions.py) : RH/assistant_rh (V1) créent et
+# consultent les demandes ; seul un admin (V2) les approuve/rejette/annule/
+# supprime — la tâche reste "en attente" jusqu'à cette validation finale.
+_ENTITY = "rh.leaves"
+
+
+def _require_write(user: CurrentUser) -> None:
+    if not user.can_act(_ENTITY, "create"):
+        raise HTTPException(403, "RH access only")
+
+
+def _require_validate(user: CurrentUser) -> None:
+    if not user.can_act(_ENTITY, "validate_v2"):
+        raise HTTPException(403, "Seul un administrateur peut valider une demande de congé")
+
+
 def _months_worked(contract_start: date, year: int) -> int:
     """Number of calendar months worked under the contract within `year`, from
     contract_start (or Jan 1 if the contract predates this year) through today
@@ -139,7 +155,7 @@ async def create_leave(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
+    _require_write(user)
     if body.days <= 0:
         raise HTTPException(400, "days must be positive")
     if body.type not in VALID_LEAVE_TYPES:
@@ -165,7 +181,7 @@ async def review_leave(
     db: Annotated[Client, Depends(get_db)],
     status: str = Query(..., pattern="^(approved|rejected)$"),
 ):
-    _require_admin(user)
+    _require_validate(user)
     updates = {
         "status": status,
         "reviewed_by": user.id,
@@ -188,7 +204,7 @@ async def cancel_leave(
     """Calls off a previously approved leave — a status, not a leave type.
     The approval trigger reverses the balance usage and employee status
     when it sees this transition."""
-    _require_admin(user)
+    _require_validate(user)
     existing = db.from_("leave_requests").select("status").eq("id", leave_id).execute().data
     if not existing:
         raise HTTPException(404, "Not found")
@@ -270,10 +286,14 @@ async def update_leave(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
+    _require_write(user)
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
+    if "status" in updates and not user.can_act(_ENTITY, "validate_v2"):
+        # Le statut ne se change que via /review ou /cancel (validation V2) —
+        # sinon ce PATCH générique contournerait la séparation des tâches.
+        raise HTTPException(403, "Seul un administrateur peut changer le statut d'une demande de congé")
 
     res = db.from_("leave_requests").update(updates).eq("id", leave_id).execute()
     if not res.data:
@@ -288,7 +308,7 @@ async def delete_leave(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    _require_admin(user)
+    _require_validate(user)
     existing = db.from_("leave_requests").select("id").eq("id", leave_id).execute().data
     if not existing:
         raise HTTPException(404, "Not found")

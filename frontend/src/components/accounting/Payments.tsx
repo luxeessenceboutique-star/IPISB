@@ -22,7 +22,9 @@ type Purchase = {
   purchase_number: string;
   title: string;
   supplier_name: string | null;
-  total_incl_vat: number;
+  total_price?: number;    // montant HT (quantité × prix unitaire, livraison incluse si payante)
+  vat_percent?: number;
+  total_incl_vat: number;  // montant TTC
   payment_status: "pending" | "partially_paid" | "paid";
   purchase_date: string;
 };
@@ -55,14 +57,21 @@ type Installment = {
 // Versement pré-rempli depuis une échéance planifiée.
 type Preset = { amount?: number; method?: string; installmentId?: string; label?: string };
 
-const isNoir = (m: string) => m === "caisse_sociale";
-
+// Tous les modes de règlement (dont Caisse comptable) sont rattachés au
+// journal comptable — plus de distinction « caisse sociale/comptable ».
 const PAYMENT_METHODS: Record<string, string> = {
   ov_permanent: "Virement Permanent",
   ov_ponctuel: "Virement Ponctuel",
   cheque: "Chèque",
-  caisse_sociale: "Caisse sociale",
-  autre: "Autre",
+  caisse_sociale: "Caisse comptable",
+};
+// Notes de caisse et frais de mission : deux caisses physiques distinctes
+// (comptable / sociale), toutes deux rattachées au journal comptable (aucune
+// n'est hors-comptes). Le versement d'achat libre (AddPaymentModal) n'a lui
+// que la caisse comptable — reste sur PAYMENT_METHODS.
+const CAISSE_NOTE_PAYMENT_METHODS: Record<string, string> = {
+  ...PAYMENT_METHODS,
+  caisse_secondaire: "Caisse sociale",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -77,21 +86,23 @@ const STATUS_TONES: Record<string, string> = {
   paid: "chip-c-green",
 };
 
-function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Purchase; preset?: Preset; onClose: () => void; onSaved: () => void }) {
+function AddPaymentModal({ purchase, preset, balance, onClose, onSaved }: { purchase: Purchase; preset?: Preset; balance: number; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     amount: preset?.amount != null ? String(preset.amount) : "",
     payment_date: new Date().toISOString().slice(0, 10),
     payment_method: preset?.method ?? "cheque",
-    reference: "",
     comment: "",
   });
   const [scanFile, setScanFile] = useState<File | null>(null);
   const [scanKind, setScanKind] = useState("receipt"); // invoice | receipt | document
+  const [scanNumber, setScanNumber] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit() {
     const amt = parseFloat(form.amount);
     if (!amt || amt <= 0) { toast.error("Le montant doit être supérieur à zéro."); return; }
+    if (amt > balance + 0.01) { toast.error(`Le montant (${fmtMAD(amt)}) dépasse le solde restant dû (${fmtMAD(balance)}).`); return; }
+    if (form.payment_method === "caisse_sociale" && amt > 4500) { toast.error("Un règlement en Caisse comptable ne peut pas dépasser 4 500 MAD."); return; }
     if (scanFile && scanFile.size > 20 * 1024 * 1024) { toast.error("Le scan dépasse 20 Mo."); return; }
     setBusy(true);
     try {
@@ -100,7 +111,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
         amount: amt,
         payment_date: form.payment_date,
         payment_method: form.payment_method,
-        reference: form.reference || null,
+        reference: null,
         comment: form.comment || null,
         installment_id: preset?.installmentId ?? null,
       });
@@ -119,6 +130,7 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
         const fd = new FormData();
         fd.append("file", scanFile);
         fd.append("kind", scanKind);
+        if (scanNumber.trim()) fd.append("reference_number", scanNumber.trim());
         await api.uploadFile(`/api/accounting/payments/${created.id}/attachments`, fd);
       }
       toast.success("Paiement enregistré !");
@@ -142,18 +154,33 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
           Pour l'achat : <strong>{purchase.title}</strong> ({purchase.purchase_number})
         </div>
         {preset?.label && (
-          <div className="chip-c chip-c-blue" style={{ marginBottom: 16 }}>Règlement de l'échéance : {preset.label}</div>
+          <div className="chip-c chip-c-blue" style={{ marginBottom: 8 }}>Règlement de l'échéance : {preset.label}</div>
+        )}
+        {purchase.total_incl_vat != null && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, rowGap: 2, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 16, fontSize: 12 }}>
+            <span style={{ color: PAL.muted, marginRight: 14 }}>Montant HT&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(purchase.total_price ?? 0)}</b></span>
+            <span style={{ color: PAL.muted, marginRight: 14 }}>TVA{purchase.vat_percent != null ? ` (${purchase.vat_percent}%)` : ""}&nbsp;: <b style={{ color: PAL.ink }}>{fmtMAD(purchase.total_incl_vat - (purchase.total_price ?? 0))}</b></span>
+            <span style={{ color: PAL.muted }}>Total TTC&nbsp;: <b style={{ color: "var(--pal-primary)" }}>{fmtMAD(purchase.total_incl_vat)}</b></span>
+            <span style={{ color: PAL.muted, marginLeft: 14 }}>Solde restant dû&nbsp;: <b style={{ color: "var(--pal-danger)" }}>{fmtMAD(balance)}</b></span>
+          </div>
         )}
 
         <label style={labelStyle}>Montant (MAD) *</label>
-        <input type="number" step="any" placeholder="Ex: 5000" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
+        <input type="number" step="any" min={0} max={balance} placeholder="Ex: 5000" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
+        <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 12 }}>Plafonné au solde restant dû ({fmtMAD(balance)}).</div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label style={labelStyle}>Mode de paiement</label>
-            <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
+            {preset?.method ? (
+              <div style={{ ...fieldStyle, display: "flex", alignItems: "center", background: "var(--pal-pale)", color: PAL.ink, fontWeight: 600 }}>
+                {PAYMENT_METHODS[form.payment_method] ?? form.payment_method}
+              </div>
+            ) : (
+              <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
+                {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            )}
           </div>
           <div>
             <label style={labelStyle}>Date du paiement</label>
@@ -161,15 +188,12 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
           </div>
         </div>
 
-        <label style={labelStyle}>Référence (N° Chèque, virement…)</label>
-        <input type="text" placeholder="Ex: CH-874291" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="u-input" style={fieldStyle} />
-
         <label style={labelStyle}>Scan de la pièce justificative</label>
         <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, marginTop: 6, marginBottom: 4 }}>
           <select value={scanKind} onChange={e => setScanKind(e.target.value)} className="u-input" style={{ ...fieldStyle, marginTop: 0, marginBottom: 0 }}>
             <option value="invoice">Facture</option>
             <option value="receipt">Reçu</option>
-            <option value="document">Pièce justificative</option>
+            <option value="document">Autre</option>
           </select>
           <label className="btn-c btn-c-ghost" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 0 }}>
             <Paperclip size={14} strokeWidth={1.8} />
@@ -178,10 +202,10 @@ function AddPaymentModal({ purchase, preset, onClose, onSaved }: { purchase: Pur
               onChange={e => { setScanFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
           </label>
         </div>
-        <div style={{ fontSize: 11.5, color: scanFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12 }}>
-          {scanFile
-            ? `📎 ${scanFile.name} → l'opération sera « comptable »`
-            : "Aucun scan → l'opération sera enregistrée en « caisse sociale » (non justifié). PDF/JPG/PNG, 20 Mo max."}
+        <label style={labelStyle}>Numéro de pièce</label>
+        <input type="text" placeholder="Ex: FA-2026-0123" value={scanNumber} onChange={e => setScanNumber(e.target.value)} className="u-input" style={fieldStyle} />
+        <div style={{ fontSize: 11.5, color: scanFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12, marginTop: -8 }}>
+          {scanFile ? `📎 ${scanFile.name}` : "PDF/JPG/PNG, 20 Mo max (facultatif)."}
         </div>
 
         <label style={labelStyle}>Commentaire</label>
@@ -256,7 +280,7 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
 
   return (
     <div className="dash-card" style={{ flex: "1 1 360px", minWidth: 0, padding: "20px 22px" }}>
-      {payFor && <AddPaymentModal purchase={purchase} preset={modalPreset} onClose={() => setPayFor(null)} onSaved={() => { loadPayments(); onChanged(); }} />}
+      {payFor && <AddPaymentModal purchase={purchase} preset={modalPreset} balance={balance} onClose={() => setPayFor(null)} onSaved={() => { loadPayments(); onChanged(); }} />}
 
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
@@ -301,7 +325,6 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
                       <span style={{ fontSize: 11, color: PAL.muted }}>{PAYMENT_METHODS[inst.payment_mode] ?? inst.payment_mode}</span>
-                      <span className={`chip-c ${isNoir(inst.payment_mode) ? "chip-c-amber" : "chip-c-blue"}`}>{isNoir(inst.payment_mode) ? "Caisse sociale" : "Comptable"}</span>
                       {inst.due_date && <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, color: PAL.muted, fontFamily: mono }}><Calendar size={11} />{new Date(inst.due_date).toLocaleDateString("fr-FR")}</span>}
                       {paid > 0 && !isPaid && <span style={{ fontSize: 11, color: PAL.muted }}>· payé {fmtMAD(paid)}</span>}
                     </div>
@@ -339,7 +362,7 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
             <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, background: PAL.paper }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: PAL.ink }}>
-                  <span>{PAYMENT_METHODS[p.payment_method]}</span>
+                  <span>{PAYMENT_METHODS[p.payment_method] ?? p.payment_method}</span>
                   <span style={{ fontFamily: mono }}>{fmtMAD(p.amount)}</span>
                 </div>
                 {p.recu_number && <div style={{ fontFamily: mono, fontSize: 10.5, color: "var(--pal-primary)", marginTop: 3 }}>{p.recu_number}</div>}
@@ -370,18 +393,25 @@ type CashNoteToPay = {
   objet: string | null;
   total: number;
   nc: "noir" | "comptable";
+  caisse?: "caisse_sociale" | "caisse_secondaire";
   approved_by_name: string | null;
 };
 
 function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onClose: () => void; onPaid: () => void }) {
   const [form, setForm] = useState({
-    payment_method: note.nc === "noir" ? "caisse_sociale" : "cheque",
+    // Pré-rempli avec la caisse déclarée à la création de la note — reste
+    // modifiable si le règlement se fait finalement autrement.
+    payment_method: note.caisse ?? "cheque",
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
+  const [docKind, setDocKind] = useState("receipt"); // invoice | receipt | document
+  const [docNumber, setDocNumber] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (docFile && docFile.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
     setBusy(true);
     try {
       const res = await api.post(`/api/accounting/cash-notes/${note.id}/pay`, {
@@ -389,6 +419,13 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
         payment_reference: form.payment_reference || null,
         payment_date: form.payment_date,
       });
+      if (docFile) {
+        const fd = new FormData();
+        fd.append("file", docFile);
+        fd.append("kind", docKind);
+        if (docNumber.trim()) fd.append("reference_number", docNumber.trim());
+        await api.uploadFile(`/api/accounting/cash-notes/${note.id}/attachments`, fd);
+      }
       // Décaissement bancaire → validation N+1 avant règlement (l37, l38).
       toast.success(res?.pending
         ? (res.message ?? "Règlement soumis à validation.")
@@ -422,7 +459,7 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
           <div>
             <label style={labelStyle}>Mode de règlement</label>
             <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(CAISSE_NOTE_PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
@@ -431,11 +468,39 @@ function PayCashNoteModal({ note, onClose, onPaid }: { note: CashNoteToPay; onCl
           </div>
         </div>
 
-        <label style={labelStyle}>Référence (N° Chèque, virement…)</label>
+        <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Type de pièce</label>
+            <select value={docKind} onChange={e => setDocKind(e.target.value)} className="u-input" style={fieldStyle}>
+              <option value="invoice">Facture</option>
+              <option value="receipt">Reçu</option>
+              <option value="document">Autre</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Numéro</label>
+            <input type="text" placeholder="Ex: FA-2026-0123" value={docNumber} onChange={e => setDocNumber(e.target.value)} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>Pièce jointe</label>
+        <div style={{ marginTop: 6, marginBottom: 4 }}>
+          <label className="btn-c btn-c-ghost" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%" }}>
+            <Paperclip size={14} strokeWidth={1.8} />
+            {docFile ? "Changer le fichier" : "Choisir un fichier"}
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+              onChange={e => { setDocFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+          </label>
+        </div>
+        <div style={{ fontSize: 11.5, color: docFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12 }}>
+          {docFile ? `📎 ${docFile.name}` : "PDF/JPG/PNG, 20 Mo max (facultatif)."}
+        </div>
+
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
-          Le décaissement sera comptabilisé en <strong>{note.nc === "noir" ? "caisse sociale" : "comptable"}</strong> (nature définie sur la note) au journal de caisse.
+          Le décaissement sera comptabilisé au journal de caisse.
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
@@ -493,7 +558,6 @@ function CashNotesToPay() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{n.beneficiary_name}</span>
-                <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
               </div>
               <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>
                 {n.reference ? `${n.reference} · ` : ""}{n.objet || "—"}
@@ -523,18 +587,26 @@ type MissionNoteToPay = {
   objet: string | null;
   total: number;
   nc: "noir" | "comptable";
+  caisse?: "caisse_sociale" | "caisse_secondaire";
   approved_by_name: string | null;
 };
 
 function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay; onClose: () => void; onPaid: () => void }) {
   const [form, setForm] = useState({
-    payment_method: note.nc === "noir" ? "caisse_sociale" : "cheque",
+    // Pré-rempli avec la caisse déclarée à la création de la note — reste
+    // modifiable si le règlement se fait finalement autrement.
+    payment_method: note.caisse ?? "cheque",
     payment_reference: "",
     payment_date: new Date().toISOString().slice(0, 10),
   });
+  const [docKind, setDocKind] = useState("receipt"); // invoice | receipt | document
+  const [docNumber, setDocNumber] = useState("");
+  const [docFile, setDocFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit() {
+    if (form.payment_method === "caisse_sociale" && note.total > 4500) { toast.error("Un règlement en Caisse comptable ne peut pas dépasser 4 500 MAD."); return; }
+    if (docFile && docFile.size > 20 * 1024 * 1024) { toast.error("Le fichier dépasse 20 Mo."); return; }
     setBusy(true);
     try {
       const res = await api.post(`/api/accounting/mission-notes/${note.id}/pay`, {
@@ -542,6 +614,13 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
         payment_reference: form.payment_reference || null,
         payment_date: form.payment_date,
       });
+      if (docFile) {
+        const fd = new FormData();
+        fd.append("file", docFile);
+        fd.append("kind", docKind);
+        if (docNumber.trim()) fd.append("reference_number", docNumber.trim());
+        await api.uploadFile(`/api/accounting/mission-notes/${note.id}/attachments`, fd);
+      }
       // Règlement par chèque → validation N+1 avant décaissement (l37).
       toast.success(res?.pending
         ? (res.message ?? "Règlement soumis à validation.")
@@ -575,7 +654,7 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
           <div>
             <label style={labelStyle}>Mode de règlement</label>
             <select value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(CAISSE_NOTE_PAYMENT_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div>
@@ -584,11 +663,39 @@ function PayMissionNoteModal({ note, onClose, onPaid }: { note: MissionNoteToPay
           </div>
         </div>
 
-        <label style={labelStyle}>Référence (N° Chèque, virement…)</label>
+        <label style={labelStyle}>Justification</label>
         <input type="text" placeholder="Ex: CH-874291" value={form.payment_reference} onChange={e => setForm(f => ({ ...f, payment_reference: e.target.value }))} className="u-input" style={fieldStyle} />
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div>
+            <label style={labelStyle}>Type de pièce</label>
+            <select value={docKind} onChange={e => setDocKind(e.target.value)} className="u-input" style={fieldStyle}>
+              <option value="invoice">Facture</option>
+              <option value="receipt">Reçu</option>
+              <option value="document">Autre</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Numéro</label>
+            <input type="text" placeholder="Ex: FA-2026-0123" value={docNumber} onChange={e => setDocNumber(e.target.value)} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
+        <label style={labelStyle}>Pièce jointe</label>
+        <div style={{ marginTop: 6, marginBottom: 4 }}>
+          <label className="btn-c btn-c-ghost" style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%" }}>
+            <Paperclip size={14} strokeWidth={1.8} />
+            {docFile ? "Changer le fichier" : "Choisir un fichier"}
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: "none" }}
+              onChange={e => { setDocFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+          </label>
+        </div>
+        <div style={{ fontSize: 11.5, color: docFile ? "var(--pal-primary)" : PAL.muted, marginBottom: 12 }}>
+          {docFile ? `📎 ${docFile.name}` : "PDF/JPG/PNG, 20 Mo max (facultatif)."}
+        </div>
+
         <div style={{ fontSize: 11.5, color: PAL.muted, marginBottom: 12 }}>
-          Le décaissement sera comptabilisé en <strong>{note.nc === "noir" ? "caisse sociale" : "comptable"}</strong> (nature définie sur la note) au journal de caisse.
+          Le décaissement sera comptabilisé au journal de caisse.
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
@@ -646,7 +753,6 @@ function MissionNotesToPay() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{n.beneficiary_name}</span>
-                <span className={`chip-c ${n.nc === "noir" ? "chip-c-amber" : "chip-c-blue"}`}>{n.nc === "noir" ? "Caisse sociale" : "Comptable"}</span>
               </div>
               <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>
                 {n.reference ? `${n.reference} · ` : ""}{n.objet || "—"}
