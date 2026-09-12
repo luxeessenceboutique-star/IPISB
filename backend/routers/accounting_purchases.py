@@ -43,17 +43,44 @@ def _delivery_status(ordered: float, received: float) -> str:
     return "received"
 
 
+def _reception_counts_as_received(r: dict) -> bool:
+    """Une réception compte-t-elle comme reçue (statut de livraison, reste à
+    livrer, entrée en stock) ?
+
+    - « Retourné » ne compte JAMAIS : la marchandise est repartie chez le
+      fournisseur, quel que soit son validation_status (y compris les lignes
+      créées avant L60, rétro-basculées en 'auto' — le bug visible était
+      justement une livraison « Retourné » affichée comme « Livré »).
+    - Une anomalie (non conforme) encore « en attente » ou « rejetée » ne
+      compte pas non plus — seule une anomalie validée (acceptée) ou une
+      réception conforme (validation_status='auto') compte."""
+    if r.get("quality_status") == "retourne":
+        return False
+    return r.get("validation_status") not in ("pending", "rejected")
+
+
 def _receptions_by_purchase(db: Client, purchase_ids: list[str]) -> dict:
     """Cumul des réceptions par commande, en une seule requête."""
     if not purchase_ids:
         return {}
-    rows = (
-        db.from_("purchase_receptions")
-        .select("purchase_id, received_quantity, quality_status, received_at")
-        .in_("purchase_id", purchase_ids)
-        .execute()
-        .data or []
-    )
+    try:
+        rows = (
+            db.from_("purchase_receptions")
+            .select("purchase_id, received_quantity, quality_status, received_at, validation_status")
+            .in_("purchase_id", purchase_ids)
+            .execute()
+            .data or []
+        )
+    except Exception:
+        # Migration L60 non passée — pas de colonne validation_status, on
+        # retombe sur le comportement historique (tout compte comme reçu).
+        rows = (
+            db.from_("purchase_receptions")
+            .select("purchase_id, received_quantity, quality_status, received_at")
+            .in_("purchase_id", purchase_ids)
+            .execute()
+            .data or []
+        )
     agg: dict = {}
     for r in rows:
         pid = r.get("purchase_id")
@@ -65,7 +92,8 @@ def _receptions_by_purchase(db: Client, purchase_ids: list[str]) -> dict:
             "last_reception_at": None,
             "has_quality_issue": False,
         })
-        a["received_quantity"] += float(r.get("received_quantity") or 0)
+        if _reception_counts_as_received(r):
+            a["received_quantity"] += float(r.get("received_quantity") or 0)
         a["receptions_count"] += 1
         at = r.get("received_at")
         if at and (a["last_reception_at"] is None or at > a["last_reception_at"]):
@@ -80,6 +108,7 @@ async def list_purchases(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
     q: Optional[str] = None,
+    purchase_number: Optional[str] = None,
     category_id: Optional[str] = None,
     supplier_id: Optional[str] = None,
     payment_status: Optional[str] = None,
@@ -104,6 +133,8 @@ async def list_purchases(
     def apply_filters(query):
         if q:
             query = query.ilike("title", f"%{q}%")
+        if purchase_number:
+            query = query.ilike("purchase_number", f"%{purchase_number}%")
         if category_id:
             query = query.eq("category_id", category_id)
         if supplier_id:

@@ -724,7 +724,7 @@ export function AccountingTuitionTracking({ readOnly = false }: { readOnly?: boo
         ) : (
           // ── Grille des promos (vue par défaut) ──
           <>
-            <SectionLabel>Suivi de scolarité — choisir une promo</SectionLabel>
+            <SectionLabel>Paiements scolarité — choisir une promo</SectionLabel>
             {loading ? (
               <div className="dash-card" style={{ padding: 26 }}><div className="shimmer" style={{ height: 18, width: 220, borderRadius: 999 }} /></div>
             ) : classes.length === 0 ? (

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { CreditCard, Plus, Search, Trash2, X, FileText, ChevronRight, Calendar, ArrowRightLeft, Paperclip, NotebookPen, FileDown, Plane } from "lucide-react";
+import { CreditCard, Plus, Search, Trash2, X, FileText, ChevronRight, Calendar, ArrowRightLeft, Paperclip, NotebookPen, FileDown, Plane, SlidersHorizontal, RotateCcw } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -22,12 +22,16 @@ type Purchase = {
   purchase_number: string;
   title: string;
   supplier_name: string | null;
+  category_name?: string | null;
   total_price?: number;    // montant HT (quantité × prix unitaire, livraison incluse si payante)
   vat_percent?: number;
   total_incl_vat: number;  // montant TTC
   payment_status: "pending" | "partially_paid" | "paid";
   purchase_date: string;
 };
+
+type Category = { id: string; name: string };
+type Supplier = { id: string; company_name: string };
 
 type Payment = {
   id: string;
@@ -331,6 +335,11 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
                   </div>
                   {isPaid ? (
                     <span className="chip-c chip-c-green">Payé</span>
+                  ) : balance <= 0 ? (
+                    // Le solde global de la commande est déjà couvert (ex. réglé en un seul
+                    // versement libre, non ventilé sur cette échéance précise) : plus rien à
+                    // payer ici, même si ce jalon n'est pas nominalement rapproché.
+                    <span className="chip-c chip-c-green" title="Solde de la commande déjà couvert par les versements enregistrés">Réglé</span>
                   ) : (
                     <button onClick={() => setPayFor(inst)} className="btn-c btn-c-sm btn-c-primary" style={{ padding: "6px 12px", whiteSpace: "nowrap" }}>
                       <CreditCard size={13} /> Payer{paid > 0 ? " le reste" : ""}
@@ -773,13 +782,27 @@ function MissionNotesToPay() {
   );
 }
 
+const filterFieldStyle = { padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
+const filterLabelStyle = { fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL.muted, letterSpacing: ".05em", textTransform: "uppercase" as const, marginBottom: 4, display: "block" };
+
 export function AccountingPayments() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Purchase | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [purchaseNumber, setPurchaseNumber] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [supplierId, setSupplierId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
 
   async function load() {
     setLoading(true);
@@ -787,6 +810,13 @@ export function AccountingPayments() {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (statusFilter) params.set("payment_status", statusFilter);
+      if (purchaseNumber) params.set("purchase_number", purchaseNumber);
+      if (categoryId) params.set("category_id", categoryId);
+      if (supplierId) params.set("supplier_id", supplierId);
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      if (minAmount) params.set("min_amount", minAmount);
+      if (maxAmount) params.set("max_amount", maxAmount);
       const res = await api.get(`/api/accounting/purchases?${params.toString()}`);
       setPurchases(res.items ?? []);
       setTotal(res.total ?? 0);
@@ -798,8 +828,20 @@ export function AccountingPayments() {
   }
 
   useEffect(() => {
-    load();
-  }, [q, statusFilter]);
+    const timer = setTimeout(load, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, statusFilter, purchaseNumber, categoryId, supplierId, dateFrom, dateTo, minAmount, maxAmount]);
+
+  useEffect(() => {
+    api.get("/api/accounting/categories").then(setCategories).catch(() => {});
+    api.get("/api/accounting/suppliers").then((d: Supplier[]) => setSuppliers(d ?? [])).catch(() => {});
+  }, []);
+
+  const activeFilterCount = [purchaseNumber, categoryId, supplierId, dateFrom, dateTo, minAmount, maxAmount].filter(Boolean).length;
+  function resetFilters() {
+    setPurchaseNumber(""); setCategoryId(""); setSupplierId(""); setDateFrom(""); setDateTo(""); setMinAmount(""); setMaxAmount("");
+  }
 
   return (
     <div style={{ fontFamily: sans }}>
@@ -807,8 +849,8 @@ export function AccountingPayments() {
       <CashNotesToPay />
       <MissionNotesToPay />
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        <div style={{ position: "relative", flex: 1 }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: showFilters ? 12 : 16, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", flex: "1 1 220px" }}>
           <Search size={15} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: PAL.muted }} />
           <input
             type="text"
@@ -816,14 +858,63 @@ export function AccountingPayments() {
             value={q}
             onChange={e => setQ(e.target.value)}
             className="u-input"
-            style={{ width: "100%", padding: "8px 10px 8px 34px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontSize: 13, background: PAL.paper }}
+            style={{ width: "100%", padding: "8px 10px 8px 34px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontSize: 13, background: PAL.paper, boxSizing: "border-box" }}
           />
         </div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="u-input" style={{ padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontSize: 13, background: PAL.paper }}>
           <option value="">Tous les statuts</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <button type="button" onClick={() => setShowFilters(s => !s)} className={`btn-c btn-c-sm ${showFilters || activeFilterCount > 0 ? "btn-c-primary" : "btn-c-ghost"}`}>
+          <SlidersHorizontal size={14} />Filtres{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+        </button>
       </div>
+
+      {showFilters && (
+        <div className="dash-card anim-pop" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+            <div>
+              <label style={filterLabelStyle}>N° de commande</label>
+              <input type="text" placeholder="Ex: PUR-000021" value={purchaseNumber} onChange={e => setPurchaseNumber(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Catégorie</label>
+              <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }}>
+                <option value="">Toutes</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Fournisseur / prestataire</label>
+              <select value={supplierId} onChange={e => setSupplierId(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }}>
+                <option value="">Tous</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Date du</label>
+              <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Date au</label>
+              <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Montant min (MAD)</label>
+              <input type="number" min="0" step="any" placeholder="0" value={minAmount} onChange={e => setMinAmount(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Montant max (MAD)</label>
+              <input type="number" min="0" step="any" placeholder="—" value={maxAmount} onChange={e => setMaxAmount(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+          </div>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={resetFilters} className="btn-c btn-c-ghost btn-c-sm" style={{ marginTop: 12 }}>
+              <RotateCcw size={12} />Réinitialiser les filtres
+            </button>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="shimmer" style={{ height: 100, borderRadius: 10 }} />
@@ -847,7 +938,7 @@ export function AccountingPayments() {
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
                       <div style={{ fontSize: 11, color: PAL.muted, marginTop: 2 }}>
-                        {p.purchase_number} · {p.supplier_name || "—"}
+                        {p.purchase_number} · {p.supplier_name || "—"}{p.category_name ? ` · ${p.category_name}` : ""} · {new Date(p.purchase_date).toLocaleDateString("fr-FR")}
                       </div>
                     </div>
                   </div>

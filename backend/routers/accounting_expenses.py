@@ -13,7 +13,11 @@ router = APIRouter(prefix="/accounting/expenses", tags=["accounting"])
 BUCKET = "accounting"
 SIGNED_URL_TTL = 60 * 60  # 1 hour
 ENTITY_TYPE = "expense"
-ATTACHMENT_KINDS = {"invoice", "receipt", "document"}
+ATTACHMENT_KINDS = {"invoice", "receipt", "document", "photo", "technical_sheet", "warranty"}
+
+# Champs ajoutés par la migration L57 — envoyés seulement quand renseignés
+# pour ne pas casser la création si la migration n'est pas passée.
+_L57_FIELDS = ("caracteristiques", "warranty_end_date", "beneficiary")
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -114,9 +118,14 @@ async def create_expense(
     if not body.title.strip():
         raise HTTPException(400, "title is required")
 
-    data = body.model_dump(exclude={"expense_date"})
+    data = body.model_dump(exclude={"expense_date", *_L57_FIELDS})
     data["expense_date"] = body.expense_date or datetime.now(timezone.utc).date().isoformat()
     data["created_by"] = user.id
+    # champs L57 : seulement si renseignés (compat pré-migration)
+    for f in _L57_FIELDS:
+        v = getattr(body, f)
+        if v is not None:
+            data[f] = v
 
     # Dépense réglée par DÉCAISSEMENT BANCAIRE (chèque, versement, virement, OV)
     # → validation N+1 obligatoire (migrations l37, l38) : ni la dépense ni
@@ -153,7 +162,13 @@ def commit_expense(db: Client, data: dict, user_id: str) -> dict:
     Chemin UNIQUE de comptabilisation — appelé directement hors décaissement bancaire, et rejoué
     à l'identique par la validation N+1 des décaissements bancaires (cf.
     routers/accounting_cheques.execute_pending_payment)."""
-    res = db.from_("expenses").insert(data).execute()
+    try:
+        res = db.from_("expenses").insert(data).execute()
+    except Exception as ex:
+        msg = str(ex)
+        if any(f in msg for f in _L57_FIELDS) or "does not exist" in msg or "Could not find" in msg:
+            raise HTTPException(400, "Migration L57 requise (colonnes caracteristiques / warranty_end_date / beneficiary des dépenses).")
+        raise
     new_expense = res.data[0]
     log_audit(db, user_id, "expense.create", "expense", new_expense["id"],
               {"title": data.get("title"), "reference": new_expense.get("reference")})
@@ -190,11 +205,20 @@ async def update_expense(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    # Ces champs peuvent être remis à vide depuis la fiche.
+    nullable = {"comment", "caracteristiques", "warranty_end_date", "beneficiary"}
+    raw = body.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in raw.items() if k in nullable or v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
 
-    res = db.from_("expenses").update(updates).eq("id", expense_id).execute()
+    try:
+        res = db.from_("expenses").update(updates).eq("id", expense_id).execute()
+    except Exception as ex:
+        msg = str(ex)
+        if any(f in msg for f in _L57_FIELDS) or "does not exist" in msg or "Could not find" in msg:
+            raise HTTPException(400, "Migration L57 requise (colonnes caracteristiques / warranty_end_date / beneficiary des dépenses).")
+        raise
     if not res.data:
         raise HTTPException(404, "Not found")
     log_audit(db, user.id, "expense.update", "expense", expense_id, updates)

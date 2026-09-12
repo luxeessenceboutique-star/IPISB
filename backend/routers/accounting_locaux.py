@@ -71,7 +71,7 @@ async def create_local(
         if "duplicate key" in msg or "locaux_name_floor_key" in msg or "unique" in msg.lower():
             raise HTTPException(409, "Ce local existe déjà à cet étage.")
         if "does not exist" in msg or "relation" in msg:
-            raise HTTPException(400, "Migration L44 requise (table locaux).")
+            raise HTTPException(400, "Migration L55 requise (table locaux).")
         raise HTTPException(500, "Création du local impossible.")
     new_local = res.data[0]
     log_audit(db, user.id, "local.create", "local", new_local["id"], {"name": name, "floor": payload["floor"]})

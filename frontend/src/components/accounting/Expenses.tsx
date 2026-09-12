@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, Receipt, Trash2, ChevronLeft, ChevronRight, Pencil, Upload, Download, FileText, X } from "lucide-react";
+import { Plus, Search, Receipt, Trash2, ChevronLeft, ChevronRight, Pencil, Upload, Download, FileText, X, AlertTriangle } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -31,6 +31,9 @@ type Expense = {
   description: string | null;
   reference?: string | null;
   comment?: string | null;
+  caracteristiques?: string | null;
+  warranty_end_date?: string | null;
+  beneficiary?: string | null;
 };
 type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
 
@@ -38,6 +41,9 @@ const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 const ATTACHMENT_KINDS = [
   { value: "invoice", label: "Facture" },
+  { value: "photo", label: "Photo" },
+  { value: "technical_sheet", label: "Fiche technique" },
+  { value: "warranty", label: "Garantie" },
   { value: "receipt", label: "Reçu" },
   { value: "document", label: "Autre document" },
 ];
@@ -59,6 +65,9 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
     payment_method: editing?.payment_method ?? "",
     description: editing?.description ?? "",
     comment: editing?.comment ?? "",
+    caracteristiques: editing?.caracteristiques ?? "",
+    warranty_end_date: editing?.warranty_end_date ?? "",
+    beneficiary: editing?.beneficiary ?? "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -74,6 +83,9 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
       payment_method: form.payment_method || null,
       description: form.description || null,
       comment: form.comment || null,
+      caracteristiques: form.caracteristiques || null,
+      warranty_end_date: form.warranty_end_date || null,
+      beneficiary: form.beneficiary || null,
     };
     try {
       if (editing) {
@@ -139,6 +151,20 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
           {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
 
+        <label style={labelStyle}>Caractéristiques</label>
+        <input type="text" placeholder="Modèle, réf. fabricant, specs…" value={form.caracteristiques} onChange={e => setForm(f => ({ ...f, caracteristiques: e.target.value }))} className="u-input" style={fieldStyle} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Fin de garantie</label>
+            <input type="date" value={form.warranty_end_date} onChange={e => setForm(f => ({ ...f, warranty_end_date: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Utilisateur (demandeur)</label>
+            <input type="text" placeholder="Ex: Salle 204, M. Alami…" value={form.beneficiary} onChange={e => setForm(f => ({ ...f, beneficiary: e.target.value }))} className="u-input" style={fieldStyle} />
+          </div>
+        </div>
+
         <label style={labelStyle}>Description</label>
         <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
 
@@ -156,7 +182,7 @@ function FormModal({ categories, suppliers, editing, onClose, onSaved }: {
   );
 }
 
-function DetailPanel({ expense, onClose, onChanged }: { expense: Expense; onClose: () => void; onChanged: () => void }) {
+function DetailPanel({ expense, onClose, onChanged, onEdit }: { expense: Expense; onClose: () => void; onChanged: () => void; onEdit: (e: Expense) => void }) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadKind, setUploadKind] = useState("invoice");
@@ -230,13 +256,19 @@ function DetailPanel({ expense, onClose, onChanged }: { expense: Expense; onClos
     }
   }
 
+  const warrantyExpired = !!expense.warranty_end_date && expense.warranty_end_date < new Date().toISOString().slice(0, 10);
+
   return (
     <div className="dash-card" style={{ flex: "1 1 340px", minWidth: 0, padding: "20px 22px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink }}>{expense.title}</div>
+          {expense.caracteristiques && <div style={{ fontSize: 12, color: PAL.muted, marginTop: 2 }}>{expense.caracteristiques}</div>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => onEdit(expense)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier">
+            <Pencil size={15} strokeWidth={1.7} />
+          </button>
           <button onClick={removeExpense} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
             <Trash2 size={15} strokeWidth={1.7} />
           </button>
@@ -253,6 +285,14 @@ function DetailPanel({ expense, onClose, onChanged }: { expense: Expense; onClos
         <Row label="Montant" value={fmtMAD(expense.amount)} />
         <Row label="Date" value={new Date(expense.expense_date).toLocaleDateString("fr-FR")} />
         <Row label="Mode de paiement" value={expense.payment_method} />
+        <Row label="Utilisateur (demandeur)" value={expense.beneficiary} />
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ color: "var(--pal-muted)" }}>Fin de garantie</span>
+          <span style={{ color: warrantyExpired ? "var(--pal-danger)" : "var(--pal-ink)", fontWeight: 600, textAlign: "right", display: "flex", alignItems: "center", gap: 4 }}>
+            {expense.warranty_end_date ? new Date(expense.warranty_end_date).toLocaleDateString("fr-FR") : "—"}
+            {warrantyExpired && <AlertTriangle size={12} />}
+          </span>
+        </div>
       </div>
 
       {expense.comment && (
@@ -351,6 +391,15 @@ export function AccountingExpenses() {
     }
   }
 
+  // Après création/édition : recharge la liste, et si la fiche modifiée est
+  // celle ouverte dans le panneau, la rafraîchit aussi (sinon elle reste figée).
+  async function handleSaved() {
+    await load();
+    if (selected && modal.editing && selected.id === modal.editing.id) {
+      try { setSelected(await api.get(`/api/accounting/expenses/${selected.id}`)); } catch {}
+    }
+  }
+
   useEffect(() => {
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
@@ -378,7 +427,7 @@ export function AccountingExpenses() {
   return (
     <div>
       {modal.open && (
-        <FormModal categories={categories} suppliers={suppliers} editing={modal.editing} onClose={() => setModal({ open: false, editing: null })} onSaved={load} />
+        <FormModal categories={categories} suppliers={suppliers} editing={modal.editing} onClose={() => setModal({ open: false, editing: null })} onSaved={handleSaved} />
       )}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
@@ -436,7 +485,7 @@ export function AccountingExpenses() {
           </div>
 
           {selected && (
-            <DetailPanel expense={selected} onClose={() => setSelected(null)} onChanged={load} />
+            <DetailPanel expense={selected} onClose={() => setSelected(null)} onChanged={load} onEdit={e => setModal({ open: true, editing: e })} />
           )}
         </div>
       )}

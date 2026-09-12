@@ -1,5 +1,5 @@
 -- ============================================================
--- L42 — Budgets : période « du … au … » (plage de dates libre)
+-- L53 — Budgets : période « du … au … » (plage de dates libre)
 -- ============================================================
 -- Contexte
 --   Un budget prévisionnel se rattachait jusqu'ici soit à une année entière

@@ -1,11 +1,16 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { ShieldCheck, Check, X, Clock, Inbox, RefreshCw, ArrowRight } from "lucide-react";
+import { ShieldCheck, Check, X, Clock, Inbox, RefreshCw, ArrowRight, Search, SlidersHorizontal, RotateCcw } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useDeepLinkFocus } from "@/lib/deep-link";
 
 const sans = '"Manrope", system-ui, sans-serif';
+const PAL_LINE = "oklch(88% 0.015 170)";
+const PAL_PAPER = "oklch(99% 0.005 160)";
+const PAL_MUTED = "oklch(48% 0.02 180)";
+const filterFieldStyle = { padding: "8px 10px", border: `1px solid ${PAL_LINE}`, borderRadius: 8, fontFamily: sans, fontSize: 13, background: PAL_PAPER, outline: "none", boxSizing: "border-box" as const };
+const filterLabelStyle = { fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL_MUTED, letterSpacing: ".05em", textTransform: "uppercase" as const, marginBottom: 4, display: "block" };
 
 type PendingOp = {
   id: string;
@@ -87,6 +92,12 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
   const [comment, setComment] = useState("");
   const { focusId, attachFocus } = useDeepLinkFocus();
 
+  const [showFilters, setShowFilters] = useState(false);
+  const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -140,9 +151,28 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
     }
   }
 
+  // Groupes distincts présents dans la boîte (pour le filtre « Catégorie »),
+  // dans l'ordre d'apparition renvoyé par le backend.
+  const availableGroups: string[] = [];
+  for (const it of items) if (!availableGroups.includes(it.group)) availableGroups.push(it.group);
+
+  const activeFilterCount = [search, groupFilter, dateFrom, dateTo].filter(Boolean).length;
+  function resetFilters() { setSearch(""); setGroupFilter(""); setDateFrom(""); setDateTo(""); }
+
+  const filteredItems = useMemo(() => items.filter(it => {
+    if (groupFilter && it.group !== groupFilter) return false;
+    if (dateFrom && it.created_at.slice(0, 10) < dateFrom) return false;
+    if (dateTo && it.created_at.slice(0, 10) > dateTo) return false;
+    if (search) {
+      const hay = `${it.label} ${it.detail ?? ""} ${it.created_by_name}`.toLowerCase();
+      if (!hay.includes(search.toLowerCase())) return false;
+    }
+    return true;
+  }), [items, groupFilter, dateFrom, dateTo, search]);
+
   // Une section par file d'origine, dans l'ordre où le backend les a renvoyées.
   const groups: { name: string; rows: InboxItem[] }[] = [];
-  for (const it of items) {
+  for (const it of filteredItems) {
     const g = groups.find(x => x.name === it.group);
     if (g) g.rows.push(it);
     else groups.push({ name: it.group, rows: [it] });
@@ -150,17 +180,56 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
 
   return (
     <div style={{ fontFamily: sans }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <ShieldCheck size={18} strokeWidth={1.8} color="var(--pal-primary)" />
           <span style={{ fontSize: 15.5, fontWeight: 800, color: "var(--pal-ink)" }}>
             Validations en attente {items.length > 0 && <span className="chip-c chip-c-amber" style={{ marginInlineStart: 8 }}>{items.length}</span>}
           </span>
         </div>
-        <button type="button" className="btn-c btn-c-ghost btn-c-sm" onClick={load}>
-          <RefreshCw size={14} strokeWidth={1.8} /> Actualiser
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button type="button" className={`btn-c btn-c-sm ${showFilters || activeFilterCount > 0 ? "btn-c-primary" : "btn-c-ghost"}`} onClick={() => setShowFilters(s => !s)}>
+            <SlidersHorizontal size={13} strokeWidth={1.8} /> Filtres{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+          </button>
+          <button type="button" className="btn-c btn-c-ghost btn-c-sm" onClick={load}>
+            <RefreshCw size={14} strokeWidth={1.8} /> Actualiser
+          </button>
+        </div>
       </div>
+
+      {showFilters && (
+        <div className="dash-card anim-pop" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+            <div>
+              <label style={filterLabelStyle}>Recherche</label>
+              <div style={{ position: "relative" }}>
+                <Search size={13} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: PAL_MUTED }} />
+                <input type="text" placeholder="Libellé, personne…" value={search} onChange={e => setSearch(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%", paddingLeft: 28 }} />
+              </div>
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Catégorie</label>
+              <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }}>
+                <option value="">Toutes</option>
+                {availableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Date du</label>
+              <input type="date" value={dateFrom} max={dateTo || undefined} onChange={e => setDateFrom(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+            <div>
+              <label style={filterLabelStyle}>Date au</label>
+              <input type="date" value={dateTo} min={dateFrom || undefined} onChange={e => setDateTo(e.target.value)} className="u-input" style={{ ...filterFieldStyle, width: "100%" }} />
+            </div>
+          </div>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={resetFilters} className="btn-c btn-c-ghost btn-c-sm" style={{ marginTop: 12 }}>
+              <RotateCcw size={12} />Réinitialiser les filtres
+            </button>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="dash-card" style={{ padding: 30, textAlign: "center", color: "var(--pal-muted)" }}>Chargement…</div>
@@ -168,6 +237,13 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
         <div className="dash-card" style={{ padding: 40, textAlign: "center", color: "var(--pal-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
           <Check size={30} strokeWidth={1.5} color="var(--pal-primary)" />
           Aucune demande en attente de validation.
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="dash-card" style={{ padding: 40, textAlign: "center", color: "var(--pal-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+          Aucun résultat pour ces filtres.
+          <button type="button" onClick={resetFilters} className="btn-c btn-c-ghost btn-c-sm">
+            <RotateCcw size={12} />Réinitialiser les filtres
+          </button>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>

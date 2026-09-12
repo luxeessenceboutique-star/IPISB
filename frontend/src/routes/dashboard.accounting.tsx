@@ -51,7 +51,7 @@ type Tab = "overview" | "tuition" | "revenues" | "expenses" | "invoices" | "purc
 const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "validations",       label: "Validations",      icon: ShieldCheck   },
   { key: "overview",          label: "Vue d'ensemble",   icon: LayoutGrid    },
-  { key: "tuition",           label: "Suivi scolarité",  icon: Wallet        },
+  { key: "tuition",           label: "Paiements scolarité", icon: Wallet     },
   { key: "mine",              label: "Mes saisies",      icon: Inbox         },
   { key: "revenues",          label: "Recettes",         icon: TrendingUp    },
   { key: "expenses",          label: "Dépenses",         icon: Receipt       },

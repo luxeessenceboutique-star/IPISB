@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, Truck, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { Plus, Search, Truck, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Pencil, ShieldCheck } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -61,6 +61,19 @@ const DELIVERY_TONE: Record<DeliveryStatus, string> = {
   pending: "chip-c-amber",
   partial: "chip-c-blue",
   received: "chip-c-green",
+};
+
+// Anomalie qualité (non conforme / retourné) : reste « en attente » tant
+// qu'un admin ne l'a pas tranchée — pas d'entrée en stock avant décision.
+const VALIDATION_LABEL: Record<string, string> = {
+  pending: "En attente de validation",
+  validated: "Validée",
+  rejected: "Rejetée",
+};
+const VALIDATION_TONE: Record<string, string> = {
+  pending: "chip-c-amber",
+  validated: "chip-c-green",
+  rejected: "chip-c-red",
 };
 // Même règle que l'API (_delivery_status) : le panneau de détail la recalcule sur
 // ses propres réceptions pour rester juste sans attendre un rechargement.
@@ -240,6 +253,28 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
     comment: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Validation d'une anomalie qualité en attente (accepter/rejeter, motif obligatoire)
+  const [validatingId, setValidatingId] = useState<string | null>(null);
+  const [validationComment, setValidationComment] = useState("");
+  const [savingValidation, setSavingValidation] = useState(false);
+
+  async function handleValidateReception(id: string, decision: "accept" | "reject") {
+    if (!validationComment.trim()) { toast.error("Un commentaire est requis pour motiver la décision."); return; }
+    setSavingValidation(true);
+    try {
+      await api.post(`/api/accounting/receptions/${id}/validate`, { decision, comment: validationComment.trim() });
+      toast.success(decision === "accept" ? "Réception validée — article ajouté au stock." : "Réception rejetée.");
+      setValidatingId(null);
+      setValidationComment("");
+      loadReceptions();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la validation.");
+    } finally {
+      setSavingValidation(false);
+    }
+  }
 
   const orderedQty = Number(purchase.quantity) || 0;
   const receivedQty = receptions.reduce((s, r) => s + (Number(r.received_quantity) || 0), 0);
@@ -510,6 +545,13 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
             <textarea value={recForm.comment} onChange={e => setRecForm(rf => ({ ...rf, comment: e.target.value }))} rows={2} placeholder="Observations..." className="u-input" style={{ width: "100%", padding: "5px 8px", fontSize: 12, marginTop: 3, border: `1px solid ${PAL.line}`, borderRadius: 6, resize: "none" }} />
           </div>
 
+          {recForm.quality_status !== "conforme" && (
+            <div style={{ fontSize: 11, color: "oklch(50% 0.1 70)", marginBottom: 8, lineHeight: 1.4 }}>
+              ⚠ Anomalie qualité : cette réception restera <strong>en attente de validation</strong> — aucun article
+              ne sera ajouté au stock tant qu'un admin ne l'aura pas acceptée ou rejetée (motif obligatoire).
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
             <button onClick={() => setShowAddReception(false)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "4px 8px" }}>Annuler</button>
             <button disabled={savingReception} onClick={handleSaveReception} className="btn-c btn-c-sm btn-c-primary" style={{ padding: "4px 12px" }}>Enregistrer</button>
@@ -563,6 +605,46 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
                     </div>
                   </div>
                   {r.comment && <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 4, color: PAL.ink }}>Note : {r.comment}</div>}
+
+                  {r.validation_status && r.validation_status !== "auto" && (
+                    <div style={{ marginTop: 6 }}>
+                      <span className={`chip-c ${VALIDATION_TONE[r.validation_status] ?? ""}`} style={{ fontSize: 10 }}>
+                        {VALIDATION_LABEL[r.validation_status] ?? r.validation_status}
+                      </span>
+                    </div>
+                  )}
+
+                  {r.validation_status === "pending" && (
+                    validatingId === r.id ? (
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                        <textarea
+                          autoFocus
+                          value={validationComment}
+                          onChange={e => setValidationComment(e.target.value)}
+                          rows={2}
+                          placeholder="Motif de la décision (obligatoire)…"
+                          className="u-input"
+                          style={{ width: "100%", padding: "5px 8px", fontSize: 12, border: `1px solid ${PAL.line}`, borderRadius: 6, resize: "none" }}
+                        />
+                        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          <button onClick={() => { setValidatingId(null); setValidationComment(""); }} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "4px 8px" }}>Annuler</button>
+                          <button disabled={savingValidation} onClick={() => handleValidateReception(r.id, "reject")} className="btn-c btn-c-sm btn-c-danger" style={{ padding: "4px 10px" }}>Rejeter</button>
+                          <button disabled={savingValidation} onClick={() => handleValidateReception(r.id, "accept")} className="btn-c btn-c-sm btn-c-primary" style={{ padding: "4px 10px" }}>Accepter</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setValidatingId(r.id); setValidationComment(""); }} className="btn-c btn-c-sm btn-c-soft" style={{ marginTop: 6, padding: "4px 10px" }}>
+                        <ShieldCheck size={12} /> Valider l'anomalie
+                      </button>
+                    )
+                  )}
+
+                  {(r.validation_status === "validated" || r.validation_status === "rejected") && r.validation_comment && (
+                    <div style={{ fontSize: 10.5, color: PAL.muted, marginTop: 4 }}>
+                      {r.validation_status === "validated" ? "Acceptée" : "Rejetée"}
+                      {r.validated_at ? ` le ${new Date(r.validated_at).toLocaleDateString("fr-FR")}` : ""} — {r.validation_comment}
+                    </div>
+                  )}
                 </>
               )}
             </div>

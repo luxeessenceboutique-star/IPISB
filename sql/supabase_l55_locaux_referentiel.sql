@@ -1,9 +1,9 @@
 -- ============================================================
--- L44 — Référentiel des locaux du bâtiment (pièce par pièce, étage par étage)
+-- L55 — Référentiel des locaux du bâtiment (pièce par pièce, étage par étage)
 -- ============================================================
 -- Contexte
 --   Le champ « Localisation » de l'inventaire et la ventilation « affectation
---   par local » (L43) se tapaient à la main → « tp », « Salle A », « salle 3 »…
+--   par local » (L54) se tapaient à la main → « tp », « Salle A », « salle 3 »…
 --   Impossible d'avoir une vue fiable « quel matériel dans quelle salle ».
 --
 --   On crée un référentiel `locaux` : une ligne par pièce, rattachée à un

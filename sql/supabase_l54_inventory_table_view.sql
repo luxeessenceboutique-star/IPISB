@@ -1,5 +1,5 @@
 -- ============================================================
--- L43 — Inventaire : vue tableau (caractéristiques, unité, prix TTC,
+-- L54 — Inventaire : vue tableau (caractéristiques, unité, prix TTC,
 --        ventilation par local, demandeur des sorties)
 -- ============================================================
 -- Contexte

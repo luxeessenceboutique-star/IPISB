@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import {
   Plus, Search, Trash2, X, AlertTriangle, MapPin, ChevronRight, Package,
   ArrowUpRight, ArrowDownRight, RefreshCw, Download, Pencil, LayoutList,
-  Table as TableIcon, ArrowUpDown,
+  Table as TableIcon, ArrowUpDown, Settings2, Eye, EyeOff,
 } from "lucide-react";
 import { SectionLabel, EmptyHint, ProgressBar } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
@@ -26,9 +26,13 @@ const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 
 const UNITS = ["pièce", "boîte", "carton", "paquet", "lot", "kg", "g", "L", "mL", "m", "m²", "rame", "flacon"];
 
-type Category = "consommable" | "equipement" | "locaux" | "service";
-type ItemStatus = "actif" | "hors_service" | "vendu" | "perdu";
+/** Les catégories d'actifs sont gérables (voir CategoriesManagerModal) —
+ *  on ne restreint plus le type à une union figée. */
+type Category = string;
+type ItemStatus = "en_stock" | "actif" | "hors_service" | "vendu" | "perdu";
 type StockState = "ok" | "alerte" | "rupture";
+
+type InvCategory = { id: string; key: string; label: string; sort_order: number; active: boolean };
 
 type Allocation = { location: string; quantity: number };
 
@@ -93,18 +97,20 @@ type Movement = {
 
 type Attachment = { id: string; kind: string; file_name: string; file_type: string; file_size: number; created_at: string };
 
-const CATEGORIES: { key: Category; label: string }[] = [
-  { key: "consommable", label: "Consommables" },
-  { key: "equipement",  label: "Équipements"  },
-  { key: "locaux",      label: "Locaux"       },
-  { key: "service",     label: "Services"     },
-];
-
 const STATUS_LABELS: Record<ItemStatus, string> = {
+  en_stock: "En stock",
   actif: "Actif",
   hors_service: "Hors Service",
   vendu: "Vendu",
   perdu: "Perdu",
+};
+
+const STATUS_TONES: Record<ItemStatus, string> = {
+  en_stock: "chip-c-blue",
+  actif: "chip-c-green",
+  hors_service: "chip-c-amber",
+  vendu: "chip-c",
+  perdu: "chip-c-red",
 };
 
 const STOCK_STATE: Record<StockState, { label: string; chip: string }> = {
@@ -193,10 +199,145 @@ function LocationPicker({ value, onChange, locaux, reloadLocaux, style }: {
   );
 }
 
-function CreateEditModal({ editing, locaux, reloadLocaux, onClose, onSaved }: { editing: InventoryItem | null; locaux: Local[]; reloadLocaux: () => Promise<void> | void; onClose: () => void; onSaved: () => void }) {
+/** Gestion des catégories d'actifs (onglets de l'Inventaire) : ajout, renommage,
+ *  désactivation, suppression (si non utilisée). */
+function CategoriesManagerModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const [all, setAll] = useState<InvCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      setAll(await api.get("/api/accounting/inventory-categories?include_inactive=true") ?? []);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du chargement.");
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function add() {
+    if (!label.trim()) return;
+    setBusy(true);
+    try {
+      await api.post("/api/accounting/inventory-categories", { label: label.trim() });
+      setLabel("");
+      await load();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la création.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRename(c: InvCategory) {
+    if (!editingLabel.trim() || editingLabel.trim() === c.label) { setEditingId(null); return; }
+    try {
+      await api.patch(`/api/accounting/inventory-categories/${c.id}`, { label: editingLabel.trim() });
+      setEditingId(null);
+      await load();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du renommage.");
+    }
+  }
+
+  async function toggleActive(c: InvCategory) {
+    try {
+      await api.patch(`/api/accounting/inventory-categories/${c.id}`, { active: !c.active });
+      await load();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    }
+  }
+
+  async function remove(c: InvCategory) {
+    if (!window.confirm(`Supprimer la catégorie « ${c.label} » ?`)) return;
+    try {
+      await api.delete(`/api/accounting/inventory-categories/${c.id}`);
+      toast.success("Catégorie supprimée.");
+      await load();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Suppression impossible.");
+    }
+  }
+
+  const visible = showInactive ? all : all.filter(c => c.active);
+  const inactiveCount = all.filter(c => !c.active).length;
+
+  return (
+    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
+      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 14, padding: 28, width: 440, maxWidth: "95vw", maxHeight: "88vh", overflowY: "auto", boxShadow: "0 20px 50px rgba(0,0,0,.15)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <h2 style={{ fontFamily: titleFont, fontSize: 23, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>Catégories d'actifs</h2>
+          <button onClick={onClose} style={{ border: 0, background: "none", cursor: "pointer", color: PAL.muted }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          <input type="text" placeholder="Nouvelle catégorie…" value={label} onChange={e => setLabel(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && add()} className="u-input"
+            style={{ flex: 1, padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13.5, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
+          <button type="button" disabled={busy} onClick={add} className="btn-c btn-c-primary btn-c-sm">
+            <Plus size={14} />Ajouter
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="shimmer" style={{ height: 80, borderRadius: 10 }} />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {visible.map(c => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 8, opacity: c.active ? 1 : 0.5 }}>
+                {editingId === c.id ? (
+                  <input autoFocus value={editingLabel} onChange={e => setEditingLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") saveRename(c); if (e.key === "Escape") setEditingId(null); }}
+                    onBlur={() => saveRename(c)} className="u-input"
+                    style={{ flex: 1, padding: "5px 8px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontSize: 13 }} />
+                ) : (
+                  <span style={{ flex: 1, fontSize: 13.5, fontWeight: 600, color: PAL.ink }}>{c.label}</span>
+                )}
+                <button type="button" onClick={() => toggleActive(c)} title={c.active ? "Désactiver" : "Réactiver"} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}>
+                  {c.active ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+                <button type="button" onClick={() => { setEditingId(c.id); setEditingLabel(c.label); }} title="Renommer" style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}>
+                  <Pencil size={13} />
+                </button>
+                <button type="button" onClick={() => remove(c)} title="Supprimer" style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+            {visible.length === 0 && <div style={{ fontSize: 12.5, color: PAL.muted, padding: "8px 0" }}>Aucune catégorie.</div>}
+          </div>
+        )}
+
+        {inactiveCount > 0 && (
+          <button type="button" onClick={() => setShowInactive(s => !s)} className="btn-c btn-c-ghost btn-c-sm" style={{ marginTop: 12 }}>
+            {showInactive ? "Masquer" : "Afficher"} les {inactiveCount} désactivée(s)
+          </button>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+          <button onClick={onClose} className="btn-c btn-c-ghost">Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateEditModal({ editing, categories, locaux, reloadLocaux, onClose, onSaved }: { editing: InventoryItem | null; categories: InvCategory[]; locaux: Local[]; reloadLocaux: () => Promise<void> | void; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     name: editing?.name ?? "",
-    asset_category: String(editing?.asset_category ?? "consommable"),
+    asset_category: String(editing?.asset_category ?? categories[0]?.key ?? "consommable"),
     initial_value: String(editing?.initial_value ?? "0"),
     purchase_date: editing?.purchase_date ?? new Date().toISOString().slice(0, 10),
     status: String(editing?.status ?? "actif"),
@@ -263,7 +404,10 @@ function CreateEditModal({ editing, locaux, reloadLocaux, onClose, onSaved }: { 
           <div>
             <label style={labelStyle}>Catégorie</label>
             <select value={form.asset_category} onChange={e => setForm(f => ({ ...f, asset_category: e.target.value }))} className="u-input" style={fieldStyle}>
-              {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+              {editing && !categories.some(c => c.key === editing.asset_category) && (
+                <option value={editing.asset_category}>{editing.asset_category} (désactivée)</option>
+              )}
+              {categories.map(c => <option key={c.id} value={c.key}>{c.label}</option>)}
             </select>
           </div>
           <div>
@@ -302,7 +446,7 @@ function CreateEditModal({ editing, locaux, reloadLocaux, onClose, onSaved }: { 
             <input type="number" step="any" value={form.tva_percent} onChange={e => setForm(f => ({ ...f, tva_percent: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
           <div>
-            <label style={labelStyle}>Valeur d'acquisition (HT)</label>
+            <label style={labelStyle}>Valeur d'acquisition (TTC)</label>
             <input type="number" step="any" value={form.initial_value} onChange={e => setForm(f => ({ ...f, initial_value: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
         </div>
@@ -496,7 +640,7 @@ function DetailsPanel({ item, wide, locaux, reloadLocaux, onClose, onEdit, onCha
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: PAL.muted }}>Statut</span>
-            <span className="chip-c chip-c-green">{STATUS_LABELS[full.status]}</span>
+            <span className={`chip-c ${STATUS_TONES[full.status] ?? ""}`}>{STATUS_LABELS[full.status] ?? full.status}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ color: PAL.muted }}>Quantité en stock</span>
@@ -524,7 +668,7 @@ function DetailsPanel({ item, wide, locaux, reloadLocaux, onClose, onEdit, onCha
             <span style={{ fontFamily: mono, fontWeight: 600 }}>{stockValue != null ? fmtMAD(stockValue) : "—"}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: PAL.muted }}>Valeur d'acquisition</span>
+            <span style={{ color: PAL.muted }}>Valeur d'acquisition (TTC)</span>
             <span style={{ fontFamily: mono, fontWeight: 600 }}>{fmtMAD(full.initial_value)}</span>
           </div>
         </div>
@@ -741,7 +885,9 @@ function InventoryTable({ rows, loading, onOpen }: { rows: TableRow[]; loading: 
 }
 
 export function AccountingInventory() {
-  const [tab, setTab] = useState<Category>("consommable");
+  const [tab, setTab] = useState<Category>("");
+  const [categories, setCategories] = useState<InvCategory[]>([]);
+  const [categoriesModal, setCategoriesModal] = useState(false);
   const [view, setView] = useState<"list" | "table">("list");
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [tableRows, setTableRows] = useState<TableRow[]>([]);
@@ -760,9 +906,22 @@ export function AccountingInventory() {
     try { setLocaux(await api.get("/api/accounting/locaux") ?? []); } catch {}
   }
 
-  useEffect(() => { loadLocaux(); }, []);
+  async function loadCategories() {
+    try { setCategories(await api.get("/api/accounting/inventory-categories") ?? []); } catch {}
+  }
+
+  useEffect(() => { loadLocaux(); loadCategories(); }, []);
+
+  // Une fois les catégories chargées, on ouvre sur la première si l'onglet
+  // courant n'en fait pas (ou plus) partie (catégorie désactivée entretemps).
+  useEffect(() => {
+    if (categories.length && !categories.some(c => c.key === tab)) {
+      setTab(categories[0].key);
+    }
+  }, [categories, tab]);
 
   async function loadList() {
+    if (!tab) return;
     setLoading(true);
     try {
       const res = await api.get(`/api/accounting/inventory?asset_category=${tab}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
@@ -775,6 +934,7 @@ export function AccountingInventory() {
   }
 
   async function loadTable() {
+    if (!tab) return;
     setLoading(true);
     try {
       const res = await api.get(`/api/accounting/inventory/table?asset_category=${tab}${q ? `&q=${encodeURIComponent(q)}` : ""}`);
@@ -820,7 +980,8 @@ export function AccountingInventory() {
 
   return (
     <div style={{ fontFamily: sans }}>
-      {modal.open && <CreateEditModal editing={modal.editing} locaux={locaux} reloadLocaux={loadLocaux} onClose={() => setModal({ open: false, editing: null })} onSaved={reload} />}
+      {modal.open && <CreateEditModal editing={modal.editing} categories={categories} locaux={locaux} reloadLocaux={loadLocaux} onClose={() => setModal({ open: false, editing: null })} onSaved={reload} />}
+      {categoriesModal && <CategoriesManagerModal onClose={() => setCategoriesModal(false)} onChanged={loadCategories} />}
 
       {alerts.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", background: "oklch(95% 0.02 30)", border: "1px solid oklch(85% 0.05 35)", borderRadius: 10, marginBottom: 16, color: "oklch(35% 0.05 35)", fontSize: 13 }}>
@@ -831,11 +992,11 @@ export function AccountingInventory() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: `1px solid ${PAL.line}`, flexWrap: "wrap" }}>
-        {CATEGORIES.map(c => {
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, borderBottom: `1px solid ${PAL.line}`, flexWrap: "wrap", alignItems: "center" }}>
+        {categories.map(c => {
           const active = tab === c.key;
           return (
-            <button key={c.key} onClick={() => { setTab(c.key); setSelected(null); }} style={{
+            <button key={c.id} onClick={() => { setTab(c.key); setSelected(null); }} style={{
               background: "none", border: 0,
               borderBottom: active ? `2px solid ${PAL.primary}` : "2px solid transparent",
               padding: "8px 12px", cursor: "pointer",
@@ -846,6 +1007,10 @@ export function AccountingInventory() {
             </button>
           );
         })}
+        <button type="button" onClick={() => setCategoriesModal(true)} title="Gérer les catégories"
+          style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, padding: "6px 8px", marginBottom: 2, display: "flex", alignItems: "center" }}>
+          <Settings2 size={15} />
+        </button>
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>

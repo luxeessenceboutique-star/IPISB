@@ -412,7 +412,7 @@ class PurchaseUpdate(BaseModel):
 class InvoiceCreate(BaseModel):
     invoice_number: str
     supplier_id: Optional[str] = None
-    purchase_id: Optional[str] = None
+    purchase_id: Optional[str] = None       # commande liée (N° de commande affiché)
     class_id: Optional[str] = None          # promo rattachée (facturation élève)
     student_id: Optional[str] = None        # élève concerné
     invoice_date: Optional[str] = None
@@ -420,6 +420,8 @@ class InvoiceCreate(BaseModel):
     amount: float = 0                       # HT
     vat_percent: float = 20
     payment_status: str = "pending"         # 'pending' | 'partially_paid' | 'paid'
+    payment_date: Optional[str] = None
+    payment_method: Optional[str] = None    # 'ov_permanent'|'ov_ponctuel'|'cheque'|'versement'|'espece'|'autre'
     comment: Optional[str] = None
 
 
@@ -434,6 +436,9 @@ class InvoiceUpdate(BaseModel):
     amount: Optional[float] = None
     vat_percent: Optional[float] = None
     payment_status: Optional[str] = None
+    payment_date: Optional[str] = None
+    payment_method: Optional[str] = None
+    comment: Optional[str] = None
 
 
 # ── Expenses (dépenses) ──────────────────────────────────────────────────────
@@ -446,6 +451,9 @@ class ExpenseCreate(BaseModel):
     payment_method: Optional[str] = None
     description: Optional[str] = None
     comment: Optional[str] = None
+    caracteristiques: Optional[str] = None       # specs / modèle (dépenses d'équipement)
+    warranty_end_date: Optional[str] = None      # fin de garantie
+    beneficiary: Optional[str] = None            # utilisateur / demandeur
 
 
 class ExpenseUpdate(BaseModel):
@@ -456,6 +464,10 @@ class ExpenseUpdate(BaseModel):
     expense_date: Optional[str] = None
     payment_method: Optional[str] = None
     description: Optional[str] = None
+    comment: Optional[str] = None
+    caracteristiques: Optional[str] = None
+    warranty_end_date: Optional[str] = None
+    beneficiary: Optional[str] = None
 
 
 # ── Budgets (budget prévisionnel par catégorie / année / mois / plage) ───────
@@ -593,10 +605,14 @@ class CashJournalEntryUpdate(BaseModel):
 
 
 class CashNoteItem(BaseModel):
-    """Ligne du tableau d'une note de caisse."""
+    """Ligne du tableau d'une note de caisse. `montant` (TTC) est toujours
+    recalculé par le backend à partir de montant_ht × (1 + tva_percent/100) —
+    jamais fait confiance à la valeur envoyée par le client."""
     article: Optional[str] = None
     prestataire: Optional[str] = None
-    montant: float = 0
+    montant_ht: float = 0
+    tva_percent: float = 20
+    montant: float = 0                              # TTC — recalculé côté serveur
 
 
 class CashNoteCreate(BaseModel):
@@ -608,9 +624,10 @@ class CashNoteCreate(BaseModel):
     period_from: Optional[str] = None               # Du ...
     period_to: Optional[str] = None                 # ... au ...
     accorded_by: Optional[str] = None               # Accordée par
-    items: list[CashNoteItem] = []                  # [{article, prestataire, montant}]
+    items: list[CashNoteItem] = []                  # [{article, prestataire, montant_ht, tva_percent, montant}]
     nc: str = "comptable"                           # nature journal : 'noir' | 'comptable'
     caisse: str = "caisse_sociale"                  # caisse visée : caisse_sociale=Comptable | caisse_secondaire=Sociale
+    disbursement_method: str = "espece"             # remise au bénéficiaire : 'espece' | 'versement'
     comment: Optional[str] = None
 
 
@@ -626,6 +643,7 @@ class CashNoteUpdate(BaseModel):
     items: Optional[list[CashNoteItem]] = None
     nc: Optional[str] = None                         # 'noir' | 'comptable'
     caisse: Optional[str] = None                     # caisse_sociale | caisse_secondaire
+    disbursement_method: Optional[str] = None        # 'espece' | 'versement'
     comment: Optional[str] = None
 
 
@@ -734,6 +752,11 @@ class PurchaseReceptionUpdate(BaseModel):
     comment: Optional[str] = None
 
 
+class PurchaseReceptionValidation(BaseModel):
+    decision: str            # 'accept' | 'reject'
+    comment: str             # obligatoire — motive la décision, conservé comme historique
+
+
 class PurchasePaymentCreate(BaseModel):
     purchase_id: str
     amount: float
@@ -830,6 +853,17 @@ class LocalUpdate(BaseModel):
     note: Optional[str] = None
     sort_order: Optional[int] = None
     active: Optional[bool] = None
+
+
+# ── Inventaire : catégories d'actifs gérables ────────────────────────────────
+class InventoryCategoryCreate(BaseModel):
+    label: str
+
+
+class InventoryCategoryUpdate(BaseModel):
+    label: Optional[str] = None
+    active: Optional[bool] = None
+    sort_order: Optional[int] = None
 
 
 # ── RH — Employees (Ressources humaines) ──────────────────────────────────────

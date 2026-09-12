@@ -16,15 +16,20 @@ from utils.excel import make_xlsx
 
 router = APIRouter(prefix="/accounting/inventory", tags=["accounting"])
 
-ASSET_CATEGORIES = {"consommable", "equipement", "locaux", "service"}
+# Catégories historiques — repli si la migration L56 (catégories gérables,
+# table inventory_categories) n'est pas encore passée.
+ASSET_CATEGORIES_FALLBACK = {"consommable", "equipement", "locaux", "service"}
 MOVEMENT_TYPES = {"entree", "sortie", "ajustement"}
-ITEM_STATUSES = {"actif", "hors_service", "vendu", "perdu"}
+# 'en_stock' ajouté par la migration L58 — la contrainte CHECK en base doit
+# être mise à jour (sinon l'insertion/mise à jour échoue proprement, cf.
+# _status_check_error ci-dessous).
+ITEM_STATUSES = {"en_stock", "actif", "hors_service", "vendu", "perdu"}
 
-# Champs ajoutés par la migration L43 — on les envoie seulement quand ils sont
+# Champs ajoutés par la migration L54 — on les envoie seulement quand ils sont
 # renseignés pour ne pas casser la création si la migration n'est pas passée.
-_L43_ITEM_FIELDS = ("caracteristiques", "unite", "prix_unitaire_ttc", "tva_percent")
+_L54_ITEM_FIELDS = ("caracteristiques", "unite", "prix_unitaire_ttc", "tva_percent")
 
-_CATEGORY_LABELS = {
+_CATEGORY_LABELS_FALLBACK = {
     "consommable": "Consommable", "equipement": "Équipement",
     "locaux": "Local", "service": "Service",
 }
@@ -34,6 +39,39 @@ _STATE_LABELS = {"rupture": "Rupture", "alerte": "Sous seuil", "ok": "En stock"}
 def _require_admin(user: CurrentUser) -> None:
     if not user.can_access_accounting_full():
         raise HTTPException(403, "Admin only")
+
+
+def _valid_category_keys(db: Client) -> set[str]:
+    """Clés de catégorie actives (L56) — repli sur les 4 historiques si la
+    migration n'est pas passée ou si le référentiel est vide."""
+    try:
+        rows = db.from_("inventory_categories").select("key").eq("active", True).execute().data or []
+        keys = {r["key"] for r in rows}
+        return keys or ASSET_CATEGORIES_FALLBACK
+    except Exception:
+        return ASSET_CATEGORIES_FALLBACK
+
+
+def _category_label(db: Client, key: Optional[str]) -> str:
+    if not key:
+        return "tous"
+    try:
+        rows = db.from_("inventory_categories").select("label").eq("key", key).execute().data
+        if rows:
+            return rows[0]["label"]
+    except Exception:
+        pass
+    return _CATEGORY_LABELS_FALLBACK.get(key, key)
+
+
+def _status_check_error(ex: Exception) -> Optional[HTTPException]:
+    """Si l'écriture échoue parce que le statut 'en_stock' n'est pas encore
+    accepté par la contrainte CHECK en base (migration L58 non passée),
+    renvoie une erreur claire plutôt que l'exception brute PostgREST."""
+    msg = str(ex)
+    if "inventory_items_status_check" in msg or "status_check" in msg:
+        return HTTPException(400, "Migration L58 requise (statut « En stock » non reconnu en base).")
+    return None
 
 
 def _calculate_amortization(item: dict) -> dict:
@@ -268,7 +306,7 @@ async def inventory_table_export(
             "beneficiaries": ", ".join(r["beneficiaries"]),
             "allocations": " · ".join(f'{a["location"]}: {a["quantity"]:g}' for a in r["allocations"]),
         })
-    cat = _CATEGORY_LABELS.get(asset_category, "tous") if asset_category else "tous"
+    cat = _category_label(db, asset_category)
     stem = f"Inventaire_{cat}_{today.isoformat()}"
 
     if fmt == "csv":
@@ -354,21 +392,27 @@ async def create_inventory_item(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    if body.asset_category not in ASSET_CATEGORIES:
+    if body.asset_category not in _valid_category_keys(db):
         raise HTTPException(400, "Invalid asset_category")
     if body.status not in ITEM_STATUSES:
         raise HTTPException(400, "Invalid status")
 
-    data = body.model_dump(exclude={"purchase_date", *_L43_ITEM_FIELDS})
+    data = body.model_dump(exclude={"purchase_date", *_L54_ITEM_FIELDS})
     data["purchase_date"] = body.purchase_date or date.today().isoformat()
     data["created_by"] = user.id
-    # champs L43 : seulement si renseignés (compat pré-migration)
-    for f in _L43_ITEM_FIELDS:
+    # champs L54 : seulement si renseignés (compat pré-migration)
+    for f in _L54_ITEM_FIELDS:
         v = getattr(body, f)
         if v is not None:
             data[f] = v
 
-    res = db.from_("inventory_items").insert(data).execute()
+    try:
+        res = db.from_("inventory_items").insert(data).execute()
+    except Exception as ex:
+        status_err = _status_check_error(ex)
+        if status_err:
+            raise status_err
+        raise
     new_item = res.data[0]
 
     # Create initial entree movement if quantity > 0
@@ -413,7 +457,7 @@ async def update_inventory_item(
     if not updates:
         raise HTTPException(400, "No fields to update")
 
-    if updates.get("asset_category") is not None and updates["asset_category"] not in ASSET_CATEGORIES:
+    if updates.get("asset_category") is not None and updates["asset_category"] not in _valid_category_keys(db):
         raise HTTPException(400, "Invalid asset_category")
     if updates.get("status") is not None and updates["status"] not in ITEM_STATUSES:
         raise HTTPException(400, "Invalid status")
@@ -421,11 +465,14 @@ async def update_inventory_item(
     try:
         res = db.from_("inventory_items").update(updates).eq("id", item_id).execute()
     except Exception as ex:
-        if any(f in str(ex) for f in _L43_ITEM_FIELDS) or "does not exist" in str(ex):
-            for f in _L43_ITEM_FIELDS:
+        status_err = _status_check_error(ex)
+        if status_err:
+            raise status_err
+        if any(f in str(ex) for f in _L54_ITEM_FIELDS) or "does not exist" in str(ex):
+            for f in _L54_ITEM_FIELDS:
                 updates.pop(f, None)
             if not updates:
-                raise HTTPException(400, "Migration L43 requise pour ces champs.")
+                raise HTTPException(400, "Migration L54 requise pour ces champs.")
             res = db.from_("inventory_items").update(updates).eq("id", item_id).execute()
         else:
             raise
@@ -466,7 +513,7 @@ async def set_allocations(
     except Exception as ex:
         msg = str(ex)
         if "does not exist" in msg or "inventory_allocations" in msg:
-            raise HTTPException(400, "Migration L43 requise (table inventory_allocations).")
+            raise HTTPException(400, "Migration L54 requise (table inventory_allocations).")
         raise HTTPException(500, "Écriture de la ventilation impossible.")
 
     log_audit(db, user.id, "inventory_item.allocations", "inventory_item", item_id,

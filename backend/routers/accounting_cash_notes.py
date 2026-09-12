@@ -23,6 +23,11 @@ PAYMENT_METHODS = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale", "c
 # modes caisse ci-dessus — pré-remplit le mode de règlement à l'exécution du
 # paiement, qui reste modifiable si le contexte change).
 CAISSE_VALUES = {"caisse_sociale", "caisse_secondaire"}
+# Comment l'avance sera remise au bénéficiaire, choisi dès la création (L61) —
+# distinct du mode de règlement de l'exécution du paiement (PAYMENT_METHODS
+# ci-dessus, qui recharge la caisse / règle la note, sans rapport avec la
+# façon dont le bénéficiaire touche l'argent).
+DISBURSEMENT_VALUES = {"espece", "versement"}
 # Statuts du circuit : saisie → approbation N+1 → exécution paiement.
 STATUS_VALUES = {"pending", "approved", "rejected", "paid"}
 # source_type de la ligne de journal de caisse générée par une note.
@@ -56,7 +61,13 @@ def _now() -> str:
 
 def _clean_items(items) -> tuple[list[dict], float]:
     """Normalise les lignes du tableau et calcule le total. Les lignes vides
-    (aucun article, aucun prestataire, montant nul) sont ignorées."""
+    (aucun article, aucun prestataire, montant HT nul) sont ignorées.
+
+    Le TTC de chaque ligne (`montant`) est toujours recalculé ici à partir de
+    montant_ht × (1 + tva_percent/100) — jamais fait confiance à la valeur
+    envoyée par le client (compat aussi les anciennes notes qui n'avaient
+    qu'un `montant` sans HT/TVA : dans ce cas montant_ht=0 → on retombe sur
+    le `montant` fourni tel quel)."""
     cleaned: list[dict] = []
     total = 0.0
     for it in (items or []):
@@ -64,14 +75,29 @@ def _clean_items(items) -> tuple[list[dict], float]:
         article = (d.get("article") or "").strip()
         prestataire = (d.get("prestataire") or "").strip()
         try:
-            montant = float(d.get("montant") or 0)
+            montant_ht = float(d.get("montant_ht") or 0)
         except Exception:
-            montant = 0.0
+            montant_ht = 0.0
+        try:
+            tva_percent = float(d.get("tva_percent") if d.get("tva_percent") is not None else 20)
+        except Exception:
+            tva_percent = 20.0
+        if montant_ht > 0:
+            montant = montant_ht * (1 + tva_percent / 100)
+        else:
+            # Ligne saisie à l'ancienne (montant TTC direct, pas de HT) : on
+            # préserve la valeur telle quelle plutôt que de la mettre à 0.
+            try:
+                montant = float(d.get("montant") or 0)
+            except Exception:
+                montant = 0.0
         if not article and not prestataire and montant == 0:
             continue
         cleaned.append({
             "article": article or None,
             "prestataire": prestataire or None,
+            "montant_ht": round(montant_ht, 2),
+            "tva_percent": round(tva_percent, 2),
             "montant": round(montant, 2),
         })
         total += montant
@@ -203,6 +229,8 @@ async def create_note(
         raise HTTPException(400, "Le nom du bénéficiaire est obligatoire.")
     if body.caisse not in CAISSE_VALUES:
         raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
+    if body.disbursement_method not in DISBURSEMENT_VALUES:
+        raise HTTPException(400, "Mode de remise invalide (espece | versement).")
     items, total = _clean_items(body.items)
     if total > MAX_AMOUNT:
         raise HTTPException(400, f"Le montant total ({total:.2f} MAD) dépasse le plafond des notes de caisse ({MAX_AMOUNT} MAD).")
@@ -221,7 +249,16 @@ async def create_note(
         "comment": (body.comment or "").strip() or None,
         "created_by": user.id,
     }
-    res = db.from_("cash_notes").insert(row).execute()
+    try:
+        res = db.from_("cash_notes").insert({**row, "disbursement_method": body.disbursement_method}).execute()
+    except Exception as ex:
+        msg = str(ex)
+        if "disbursement_method" in msg or "does not exist" in msg or "Could not find" in msg:
+            # Migration L61 non passée — on enregistre la note sans le mode de
+            # remise plutôt que de bloquer toute la saisie.
+            res = db.from_("cash_notes").insert(row).execute()
+        else:
+            raise
     note = res.data[0] if res.data else row
     # Nouveau circuit : la note naît « en attente » d'approbation N+1. AUCUNE ligne
     # de journal de caisse n'est créée ici — la comptabilisation n'a lieu qu'à
@@ -274,6 +311,10 @@ async def update_note(
         if data["caisse"] not in CAISSE_VALUES:
             raise HTTPException(400, "Caisse invalide (caisse_sociale | caisse_secondaire).")
         updates["caisse"] = data["caisse"]
+    if "disbursement_method" in data:
+        if data["disbursement_method"] not in DISBURSEMENT_VALUES:
+            raise HTTPException(400, "Mode de remise invalide (espece | versement).")
+        updates["disbursement_method"] = data["disbursement_method"]
     if "items" in data:
         items, total = _clean_items(body.items)
         if total > MAX_AMOUNT:
@@ -285,7 +326,15 @@ async def update_note(
         return db.from_("cash_notes").select("*").eq("id", note_id).execute().data[0]
 
     updates["updated_at"] = _now()
-    res = db.from_("cash_notes").update(updates).eq("id", note_id).execute()
+    try:
+        res = db.from_("cash_notes").update(updates).eq("id", note_id).execute()
+    except Exception as ex:
+        msg = str(ex)
+        if "disbursement_method" in msg or "does not exist" in msg or "Could not find" in msg:
+            updates.pop("disbursement_method", None)
+            res = db.from_("cash_notes").update(updates).eq("id", note_id).execute()
+        else:
+            raise
     note = res.data[0] if res.data else None
     # Pas de ligne de journal tant que la note n'est pas payée : rien à répercuter ici.
     log_audit(db, user.id, "cash_note.update", "cash_note", note_id, {"fields": list(updates.keys())})

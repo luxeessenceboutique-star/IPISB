@@ -12,14 +12,16 @@ const sans = '"Manrope", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 const titleFont = '"Cormorant Garamond", Georgia, serif';
 
-type Item = { article: string | null; prestataire: string | null; montant: number };
+type Item = { article: string | null; prestataire: string | null; montant_ht?: number; tva_percent?: number; montant: number };
 type NoteStatus = "pending" | "approved" | "rejected" | "paid";
 type Note = {
   id: string; reference: string | null; note_date: string;
   beneficiary_name: string; beneficiary_cin: string | null; objet: string | null;
   period_from: string | null; period_to: string | null; accorded_by: string | null;
   items: Item[]; total: number; nc: "noir" | "comptable";
-  caisse: "caisse_sociale" | "caisse_secondaire"; comment: string | null; created_by_name: string | null;
+  caisse: "caisse_sociale" | "caisse_secondaire";
+  disbursement_method: "espece" | "versement" | null;
+  comment: string | null; created_by_name: string | null;
   status: NoteStatus;
   approved_by_name: string | null; paid_by_name: string | null;
   rejection_reason: string | null; payment_method: string | null; payment_date: string | null;
@@ -30,6 +32,10 @@ type NotesData = { items: Note[]; count: number; total: number };
 // toutes deux comptabilisées (le mode de règlement à l'exécution du paiement
 // en est simplement pré-rempli, il reste modifiable si le contexte change).
 const CAISSE_LABELS: Record<string, string> = { caisse_sociale: "Caisse comptable", caisse_secondaire: "Caisse sociale" };
+
+// Comment l'avance est remise au bénéficiaire — distinct du mode de règlement
+// choisi plus tard dans Paiements (qui recharge la caisse / règle la note).
+const DISBURSEMENT_LABELS: Record<string, string> = { espece: "Espèces", versement: "Versement" };
 
 const STATUS_LABELS: Record<NoteStatus, string> = {
   pending: "En attente N+1", approved: "Approuvée", rejected: "Rejetée", paid: "Payée",
@@ -71,8 +77,10 @@ function StatTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-type FormItem = { article: string; prestataire: string; montant: string };
-const EMPTY_ROW: FormItem = { article: "", prestataire: "", montant: "" };
+type FormItem = { article: string; prestataire: string; montant_ht: string; tva_percent: string; montant: string };
+const EMPTY_ROW: FormItem = { article: "", prestataire: "", montant_ht: "", tva_percent: "20", montant: "" };
+const lineTtc = (r: FormItem) => (parseFloat(r.montant_ht) || 0) * (1 + (parseFloat(r.tva_percent) || 0) / 100)
+  || parseFloat(r.montant) || 0; // ligne à l'ancienne (montant direct, pas de HT) : on garde ce total
 const MAX_AMOUNT = 4500; // plafond réglementaire d'une note de caisse (MAD)
 
 function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () => void; onSaved: () => void }) {
@@ -88,11 +96,17 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     accorded_by: note?.accorded_by || "",
     nc: note?.nc || "comptable",
     caisse: note?.caisse || "caisse_sociale",
+    disbursement_method: note?.disbursement_method || "espece",
     comment: note?.comment || "",
   });
   const [items, setItems] = useState<FormItem[]>(
     note?.items?.length
-      ? note.items.map(it => ({ article: it.article || "", prestataire: it.prestataire || "", montant: String(it.montant ?? "") }))
+      ? note.items.map(it => ({
+          article: it.article || "", prestataire: it.prestataire || "",
+          montant_ht: it.montant_ht ? String(it.montant_ht) : "",
+          tva_percent: it.tva_percent != null ? String(it.tva_percent) : "20",
+          montant: String(it.montant ?? ""),
+        }))
       : [{ ...EMPTY_ROW }, { ...EMPTY_ROW }, { ...EMPTY_ROW }]
   );
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -100,13 +114,19 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   const addRow = () => setItems(rows => [...rows, { ...EMPTY_ROW }]);
   const removeRow = (i: number) => setItems(rows => rows.length > 1 ? rows.filter((_, idx) => idx !== i) : rows);
 
-  const total = items.reduce((s, r) => s + (parseFloat(r.montant) || 0), 0);
+  const total = items.reduce((s, r) => s + lineTtc(r), 0);
   const overCap = total > MAX_AMOUNT;
 
   async function submit() {
     if (!form.beneficiary_name.trim()) { toast.error("Le nom du bénéficiaire est obligatoire."); return; }
     const payloadItems = items
-      .map(r => ({ article: r.article.trim() || null, prestataire: r.prestataire.trim() || null, montant: parseFloat(r.montant) || 0 }))
+      .map(r => ({
+        article: r.article.trim() || null,
+        prestataire: r.prestataire.trim() || null,
+        montant_ht: parseFloat(r.montant_ht) || 0,
+        tva_percent: parseFloat(r.tva_percent) || 0,
+        montant: lineTtc(r),
+      }))
       .filter(r => r.article || r.prestataire || r.montant);
     if (!payloadItems.length) { toast.error("Ajoutez au moins une ligne au tableau."); return; }
     if (overCap) { toast.error(`Le montant total (${fmtMAD(total)}) dépasse le plafond des notes de caisse (${fmtMAD(MAX_AMOUNT)}).`); return; }
@@ -121,6 +141,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       items: payloadItems,
       nc: form.nc,
       caisse: form.caisse,
+      disbursement_method: form.disbursement_method,
       comment: form.comment.trim() || null,
     };
     setBusy(true);
@@ -160,10 +181,20 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         </div>
       </div>
 
-      <label style={labelStyle}>Caisse</label>
-      <select value={form.caisse} onChange={e => set("caisse", e.target.value)} className="u-input" style={fieldStyle}>
-        {Object.entries(CAISSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-      </select>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+        <div>
+          <label style={labelStyle}>Caisse</label>
+          <select value={form.caisse} onChange={e => set("caisse", e.target.value)} className="u-input" style={fieldStyle}>
+            {Object.entries(CAISSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Remise au bénéficiaire</label>
+          <select value={form.disbursement_method} onChange={e => set("disbursement_method", e.target.value)} className="u-input" style={fieldStyle}>
+            {Object.entries(DISBURSEMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0 14px" }}>
         <div>
@@ -194,17 +225,17 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
         Cette avance sera soumise à <strong>approbation N+1</strong>, puis réglée dans l'onglet <strong>Paiements</strong>. La <strong>sortie</strong> au journal de caisse (montant = total) n'est comptabilisée qu'au paiement.
       </div>
 
-      {/* Tableau dynamique Article / Prestataire / Montant */}
+      {/* Tableau dynamique Article / Prestataire / HT / TVA / TTC */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4, marginBottom: 8 }}>
-        <label style={labelStyle}>Détail (Article · Prestataire · Montant)</label>
+        <label style={labelStyle}>Détail (Article · Prestataire · HT · TVA · TTC)</label>
         <button type="button" onClick={addRow} className="btn-c btn-c-soft btn-c-sm"><Plus size={13} />Ajouter une ligne</button>
       </div>
-      <div style={{ border: `1px solid ${PAL.line}`, borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+      <div style={{ border: `1px solid ${PAL.line}`, borderRadius: 10, overflow: "hidden", marginBottom: 14, overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
           <thead>
             <tr>
-              {["Article", "Prestataire", "Montant (DH)", ""].map((h, i) => (
-                <th key={i} style={{ padding: "8px 10px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 2 ? "right" : "left", ...labelStyle }}>{h}</th>
+              {["Article", "Prestataire", "HT (DH)", "TVA %", "TTC (DH)", ""].map((h, i) => (
+                <th key={i} style={{ padding: "8px 10px", borderBottom: `1px solid ${PAL.line}`, textAlign: i >= 2 && i <= 4 ? "right" : "left", ...labelStyle }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -217,8 +248,14 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                 <td style={{ padding: 6, borderBottom: `1px solid ${PAL.line}` }}>
                   <input value={r.prestataire} onChange={e => setItem(i, "prestataire", e.target.value)} placeholder="Fournisseur / tiers" className="u-input" style={{ ...fieldStyle, margin: 0 }} />
                 </td>
-                <td style={{ padding: 6, borderBottom: `1px solid ${PAL.line}`, width: 140 }}>
-                  <input type="number" step="any" min="0" value={r.montant} onChange={e => setItem(i, "montant", e.target.value)} placeholder="0,00" className="u-input" style={{ ...fieldStyle, margin: 0, textAlign: "right", fontFamily: mono }} />
+                <td style={{ padding: 6, borderBottom: `1px solid ${PAL.line}`, width: 110 }}>
+                  <input type="number" step="any" min="0" value={r.montant_ht} onChange={e => setItem(i, "montant_ht", e.target.value)} placeholder="0,00" className="u-input" style={{ ...fieldStyle, margin: 0, textAlign: "right", fontFamily: mono }} />
+                </td>
+                <td style={{ padding: 6, borderBottom: `1px solid ${PAL.line}`, width: 80 }}>
+                  <input type="number" step="any" min="0" value={r.tva_percent} onChange={e => setItem(i, "tva_percent", e.target.value)} placeholder="20" className="u-input" style={{ ...fieldStyle, margin: 0, textAlign: "right", fontFamily: mono }} />
+                </td>
+                <td style={{ padding: "6px 10px", borderBottom: `1px solid ${PAL.line}`, width: 100, textAlign: "right", fontFamily: mono, fontWeight: 600, color: PAL.ink }}>
+                  {fmtMAD(lineTtc(r))}
                 </td>
                 <td style={{ padding: 6, borderBottom: `1px solid ${PAL.line}`, width: 34, textAlign: "center" }}>
                   <button type="button" onClick={() => removeRow(i)} disabled={items.length <= 1} title="Retirer la ligne"
@@ -231,7 +268,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={2} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: PAL.muted, fontFamily: sans, fontSize: 13 }}>Total Global</td>
+              <td colSpan={4} style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, color: PAL.muted, fontFamily: sans, fontSize: 13 }}>Total Global (TTC)</td>
               <td style={{ padding: "10px 12px", textAlign: "right", fontFamily: mono, fontWeight: 700, color: overCap ? "var(--pal-danger)" : "var(--pal-primary)" }}>{fmtMAD(total)}</td>
               <td />
             </tr>
@@ -345,8 +382,8 @@ export function AccountingCashNotes() {
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 1000 }}>
               <thead>
                 <tr>
-                  {["N°", "Date", "Bénéficiaire", "CIN", "Objet", "Période", "Total (DH)", "Statut", ""].map((h, i) => (
-                    <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 6 ? "right" : "left", ...labelStyle }}>{h}</th>
+                  {["N°", "Date", "Bénéficiaire", "CIN", "Objet", "Période", "Remise", "Total (DH)", "Statut", ""].map((h, i) => (
+                    <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 7 ? "right" : "left", ...labelStyle }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -361,6 +398,7 @@ export function AccountingCashNotes() {
                     <td style={{ ...cell, fontFamily: mono, fontSize: 12, color: PAL.muted }}>
                       {n.period_from || n.period_to ? `${fmtDate(n.period_from)} → ${fmtDate(n.period_to)}` : "—"}
                     </td>
+                    <td style={cell}>{n.disbursement_method ? DISBURSEMENT_LABELS[n.disbursement_method] ?? n.disbursement_method : "—"}</td>
                     <td style={{ ...cell, fontFamily: mono, fontWeight: 700, textAlign: "right" }}>{fmtMAD(n.total)}</td>
                     <td style={cell}>
                       <span className={`chip-c ${STATUS_TONES[n.status] ?? "chip-c-amber"}`} title={n.status === "rejected" && n.rejection_reason ? `Motif : ${n.rejection_reason}` : n.status === "paid" && n.payment_date ? `Payée le ${fmtDate(n.payment_date)}${n.paid_by_name ? ` · ${n.paid_by_name}` : ""}` : undefined}>

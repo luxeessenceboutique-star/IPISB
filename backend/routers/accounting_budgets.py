@@ -136,7 +136,7 @@ def _write_error(ex: Exception) -> HTTPException:
     if any(t in msg for t in ("start_date", "end_date", "budgets_date_range_chk",
                               "budgets_range_no_month_chk", "does not exist",
                               "Could not find", "PGRST204", "42703")):
-        return HTTPException(400, "Migration L42 requise (colonnes start_date / end_date des budgets).")
+        return HTTPException(400, "Migration L53 requise (colonnes start_date / end_date des budgets).")
     if "duplicate key" in msg or "23505" in msg or "unique" in msg.lower():
         return HTTPException(409, "Un budget existe déjà pour cette catégorie / période.")
     return HTTPException(500, "Écriture du budget impossible.")
