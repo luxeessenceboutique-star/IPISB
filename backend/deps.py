@@ -16,9 +16,37 @@ SUPABASE_SERVICE_KEY: str = os.environ["SUPABASE_SERVICE_KEY"]
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5178")
 
 
+def _force_http1(client: Client) -> None:
+    """postgrest-py force http2=True pour la session REST (voir
+    postgrest/_sync/client.py::SyncPostgrestClient.create_session) et ne
+    laisse aucun moyen public de le désactiver via create_client/ClientOptions
+    dans cette version. Sur ce déploiement, la connexion HTTP/2 vers Supabase
+    est coupée par le réseau (RemoteProtocolError/ConnectionTerminated) après
+    seulement 1-2 requêtes — pas seulement après une inactivité prolongée —
+    ce qui pointe vers un intermédiaire réseau qui gère mal le multiplexage
+    HTTP/2 plutôt qu'un simple timeout d'inactivité. HTTP/1.1 keep-alive ne
+    connaît pas ce mode de panne, donc on remplace la session du client
+    postgrest par une équivalente en HTTP/1.1 juste après sa création."""
+    old = client.postgrest.session  # déclenche la création lazy si besoin
+    new = type(old)(
+        base_url=old.base_url,
+        headers=old.headers,
+        timeout=old.timeout,
+        follow_redirects=True,
+        http2=False,
+    )
+    client.postgrest.session = new
+    try:
+        old.close()
+    except Exception:
+        pass
+
+
 @lru_cache(maxsize=1)
 def _client() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    _force_http1(client)
+    return client
 
 
 def get_db() -> Client:
@@ -27,11 +55,11 @@ def get_db() -> Client:
 
 def reset_db_client() -> None:
     """Jette le client Supabase mis en cache pour forcer une nouvelle connexion
-    à la prochaine requête. Le client (et son pool de connexions HTTP/2 sous-
-    jacent) est un singleton réutilisé pour toute la durée de vie du process ;
-    quand Supabase ferme une connexion inactive de son côté, httpx ne s'en
-    aperçoit qu'en la réutilisant, ce qui fait échouer la requête suivante
-    avec un RemoteProtocolError. Voir le handler dans main.py."""
+    à la prochaine requête. Le client (et son pool de connexions sous-jacent)
+    est un singleton réutilisé pour toute la durée de vie du process ; si une
+    connexion se retrouve coupée côté serveur/réseau, httpx ne s'en aperçoit
+    qu'en la réutilisant, ce qui fait échouer la requête suivante avec un
+    RemoteProtocolError. Voir le handler dans main.py."""
     _client.cache_clear()
 
 
