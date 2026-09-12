@@ -4,6 +4,7 @@ import re
 from contextlib import asynccontextmanager
 import httpcore
 import httpx
+from gotrue.errors import AuthRetryableError
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -201,6 +202,10 @@ _TRANSIENT_DB_CONN_ERRORS = (
     httpcore.RemoteProtocolError,
     httpx.ConnectError,
     httpcore.ConnectError,
+    # gotrue classe déjà ses propres erreurs de transport à part (voir
+    # gotrue.helpers.handle_exception) — deps.get_current_user relaie cette
+    # exception telle quelle plutôt que de la déguiser en "token invalide".
+    AuthRetryableError,
 )
 
 

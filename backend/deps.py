@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import create_client, Client
+from gotrue.errors import AuthRetryableError
 from dotenv import load_dotenv
 
 from utils.login_approval import enforce_login_gate
@@ -17,16 +18,18 @@ FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5178")
 
 
 def _force_http1(client: Client) -> None:
-    """postgrest-py force http2=True pour la session REST (voir
-    postgrest/_sync/client.py::SyncPostgrestClient.create_session) et ne
-    laisse aucun moyen public de le désactiver via create_client/ClientOptions
-    dans cette version. Sur ce déploiement, la connexion HTTP/2 vers Supabase
-    est coupée par le réseau (RemoteProtocolError/ConnectionTerminated) après
-    seulement 1-2 requêtes — pas seulement après une inactivité prolongée —
-    ce qui pointe vers un intermédiaire réseau qui gère mal le multiplexage
-    HTTP/2 plutôt qu'un simple timeout d'inactivité. HTTP/1.1 keep-alive ne
-    connaît pas ce mode de panne, donc on remplace la session du client
-    postgrest par une équivalente en HTTP/1.1 juste après sa création."""
+    """postgrest-py ET gotrue-py forcent http2=True pour leurs sessions HTTP
+    (voir postgrest/_sync/client.py::SyncPostgrestClient.create_session et
+    gotrue/_sync/gotrue_base_api.py::SyncGoTrueBaseAPI.__init__) sans laisser
+    de moyen public de le désactiver via create_client/ClientOptions dans ces
+    versions. Sur ce déploiement, la connexion HTTP/2 vers Supabase est coupée
+    par le réseau (RemoteProtocolError/ConnectionTerminated) après seulement
+    1-2 requêtes — pas seulement après une inactivité prolongée — ce qui
+    pointe vers un intermédiaire réseau qui gère mal le multiplexage HTTP/2
+    plutôt qu'un simple timeout d'inactivité. HTTP/1.1 keep-alive ne connaît
+    pas ce mode de panne, donc on remplace les deux sessions (REST ET auth —
+    get_current_user appelle db.auth.get_user() à chaque requête) par des
+    équivalentes en HTTP/1.1 juste après la création du client."""
     old = client.postgrest.session  # déclenche la création lazy si besoin
     new = type(old)(
         base_url=old.base_url,
@@ -38,6 +41,14 @@ def _force_http1(client: Client) -> None:
     client.postgrest.session = new
     try:
         old.close()
+    except Exception:
+        pass
+
+    old_auth = client.auth._http_client
+    new_auth = type(old_auth)(follow_redirects=True, http2=False)
+    client.auth._http_client = new_auth
+    try:
+        old_auth.close()
     except Exception:
         pass
 
@@ -172,6 +183,14 @@ async def get_current_user(
         resp = db.auth.get_user(token)
         if resp.user is None:
             raise ValueError("no user")
+    except AuthRetryableError:
+        # Coupure réseau/connexion transitoire vers Supabase (gotrue classe
+        # déjà ça à part des vraies erreurs d'auth) — ne PAS la confondre avec
+        # un token invalide/expiré : ça déconnecterait un utilisateur dont la
+        # session est parfaitement valide à cause d'un simple aléa réseau.
+        # On laisse remonter pour que le middleware de main.py réinitialise
+        # le client et retente (GET/HEAD) au lieu d'afficher un faux 401.
+        raise
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
