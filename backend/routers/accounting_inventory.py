@@ -28,6 +28,9 @@ ITEM_STATUSES = {"en_stock", "actif", "hors_service", "vendu", "perdu"}
 # Champs ajoutés par la migration L54 — on les envoie seulement quand ils sont
 # renseignés pour ne pas casser la création si la migration n'est pas passée.
 _L54_ITEM_FIELDS = ("caracteristiques", "unite", "prix_unitaire_ttc", "tva_percent")
+# Champs ajoutés par la migration L62 (lien vers le catalogue Code
+# article / Article de Comptabilité > Catégories) — même repli.
+_L62_ITEM_FIELDS = ("category_ref_id", "catalog_article_id", "code_article")
 
 _CATEGORY_LABELS_FALLBACK = {
     "consommable": "Consommable", "equipement": "Équipement",
@@ -351,6 +354,28 @@ async def inventory_table_export(
     )
 
 
+@router.get("/catalog")
+async def inventory_catalog(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Catalogue Code article / Article (Comptabilité > Catégories, L52),
+    groupé par catégorie — sert à pré-remplir la création d'un actif
+    d'inventaire au lieu de retaper nom/caractéristiques à chaque fois."""
+    _require_admin(user)
+    categories = db.from_("accounting_categories").select("id, name, code").order("name").execute().data or []
+    try:
+        articles = db.from_("accounting_category_articles").select(
+            "id, category_id, code_article, article, caracteristiques"
+        ).order("article").execute().data or []
+    except Exception:
+        articles = []
+    by_cat: dict[str, list[dict]] = {}
+    for a in articles:
+        by_cat.setdefault(a["category_id"], []).append(a)
+    return [{**c, "articles": by_cat.get(c["id"], [])} for c in categories]
+
+
 @router.get("/{item_id}")
 async def get_inventory_item(
     item_id: str,
@@ -397,11 +422,11 @@ async def create_inventory_item(
     if body.status not in ITEM_STATUSES:
         raise HTTPException(400, "Invalid status")
 
-    data = body.model_dump(exclude={"purchase_date", *_L54_ITEM_FIELDS})
+    data = body.model_dump(exclude={"purchase_date", *_L54_ITEM_FIELDS, *_L62_ITEM_FIELDS})
     data["purchase_date"] = body.purchase_date or date.today().isoformat()
     data["created_by"] = user.id
-    # champs L54 : seulement si renseignés (compat pré-migration)
-    for f in _L54_ITEM_FIELDS:
+    # champs L54/L62 : seulement si renseignés (compat pré-migration)
+    for f in (*_L54_ITEM_FIELDS, *_L62_ITEM_FIELDS):
         v = getattr(body, f)
         if v is not None:
             data[f] = v
@@ -412,7 +437,12 @@ async def create_inventory_item(
         status_err = _status_check_error(ex)
         if status_err:
             raise status_err
-        raise
+        if any(f in str(ex) for f in _L62_ITEM_FIELDS):
+            for f in _L62_ITEM_FIELDS:
+                data.pop(f, None)
+            res = db.from_("inventory_items").insert(data).execute()
+        else:
+            raise
     new_item = res.data[0]
 
     # Create initial entree movement if quantity > 0
@@ -451,7 +481,8 @@ async def update_inventory_item(
     _require_admin(user)
     # Ces champs peuvent être remis à vide depuis la fiche.
     nullable = {"caracteristiques", "unite", "prix_unitaire_ttc", "niveau_alerte",
-                "location", "comment", "amortissement_duree_annees"}
+                "location", "comment", "amortissement_duree_annees",
+                "category_ref_id", "catalog_article_id", "code_article"}
     raw = body.model_dump(exclude_unset=True)
     updates = {k: v for k, v in raw.items() if k in nullable or v is not None}
     if not updates:
@@ -468,11 +499,11 @@ async def update_inventory_item(
         status_err = _status_check_error(ex)
         if status_err:
             raise status_err
-        if any(f in str(ex) for f in _L54_ITEM_FIELDS) or "does not exist" in str(ex):
-            for f in _L54_ITEM_FIELDS:
+        if any(f in str(ex) for f in (*_L54_ITEM_FIELDS, *_L62_ITEM_FIELDS)) or "does not exist" in str(ex):
+            for f in (*_L54_ITEM_FIELDS, *_L62_ITEM_FIELDS):
                 updates.pop(f, None)
             if not updates:
-                raise HTTPException(400, "Migration L54 requise pour ces champs.")
+                raise HTTPException(400, "Migration L54/L62 requise pour ces champs.")
             res = db.from_("inventory_items").update(updates).eq("id", item_id).execute()
         else:
             raise
@@ -491,11 +522,14 @@ async def set_allocations(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Remplace la ventilation par local d'un article. La somme des quantités
-    n'est pas forcée à égaler le stock : l'écart est renvoyé pour information."""
+    ne peut pas dépasser le stock de l'article — une sur-affectation rendrait
+    la ventilation incohérente avec la quantité réellement en stock (cf.
+    quantité de la commande / réception qui l'a créée)."""
     _require_admin(user)
     item = db.from_("inventory_items").select("id, quantity").eq("id", item_id).execute().data
     if not item:
         raise HTTPException(404, "Not found")
+    item_qty = float(item[0].get("quantity") or 0)
 
     agg: dict[str, float] = {}
     for a in body.allocations:
@@ -503,6 +537,11 @@ async def set_allocations(
         if not loc:
             continue
         agg[loc] = round(agg.get(loc, 0.0) + max(0.0, float(a.quantity or 0)), 4)
+
+    requested_total = round(sum(agg.values()), 2)
+    if requested_total - item_qty > 0.01:
+        raise HTTPException(400, f"La ventilation par local ({requested_total:g}) dépasse la quantité en stock "
+            f"de l'article ({item_qty:g}). Corrigez les quantités par local avant d'enregistrer.")
 
     try:
         db.from_("inventory_allocations").delete().eq("inventory_item_id", item_id).execute()
@@ -517,10 +556,9 @@ async def set_allocations(
         raise HTTPException(500, "Écriture de la ventilation impossible.")
 
     log_audit(db, user.id, "inventory_item.allocations", "inventory_item", item_id,
-              {"locations": list(agg.keys()), "total": round(sum(agg.values()), 2)})
+              {"locations": list(agg.keys()), "total": requested_total})
 
-    item_qty = float(item[0].get("quantity") or 0)
-    allocated = round(sum(agg.values()), 2)
+    allocated = requested_total
     return {
         "ok": True,
         "allocations": [{"location": k, "quantity": v} for k, v in sorted(agg.items())],

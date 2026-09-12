@@ -30,9 +30,12 @@ INSTALLMENT_MODES = {"ov_permanent", "ov_ponctuel", "cheque", "caisse_sociale"}
 # Plafond réglementaire d'un règlement en Caisse comptable (mêmes 4 500 MAD que
 # les notes de caisse) — ne s'applique pas aux modes bancaires (chèque, OV).
 CASH_REGISTER_MAX = 4500
-# Le mode/échéancier se saisit APRÈS le choix du devis (devis retenu) et reste
-# modifiable jusqu'à l'émission de la commande incluse.
-INSTALLMENT_EDIT_ALLOWED = {"devis_valide", "commande_emise"}
+# Le mode/échéancier se saisit APRÈS le choix du devis (devis retenu) et
+# jusqu'à la validation de la commande — au-delà (commande_emise), tout est
+# verrouillé : la validation exige déjà un échéancier complet qui couvre le
+# montant exact de la commande (voir accounting_purchases.validate_order),
+# le modifier ensuite romprait cette garantie.
+INSTALLMENT_EDIT_ALLOWED = {"devis_valide"}
 
 
 # Barème par montant (permissions.py, entité "accounting.purchase_requests") :

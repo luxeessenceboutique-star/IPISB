@@ -1592,7 +1592,7 @@ def render_mission_note_pdf(note: dict) -> bytes:
     `note` = ligne mission_notes (reference, note_date, beneficiary_name,
     beneficiary_cin, accompanied_by, objet, mission_from, mission_to, accorded_by,
     days[], amounts{clé:[montants]}, total). La matrice reproduit la grille
-    Thème/Article × jours (J1..J7) avec totaux journaliers et total global."""
+    Thème/Article × jours (J1..J10) avec totaux journaliers et total global."""
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
@@ -1655,7 +1655,7 @@ def render_mission_note_pdf(note: dict) -> bytes:
     days = list(note.get("days") or [])
     if not days:
         days = [""]                        # au moins une colonne pour la grille
-    n = min(len(days), 7)
+    n = min(len(days), 10)  # doit rester égal à MAX_DAYS (accounting_mission_notes.py)
     days = days[:n]
     amounts = note.get("amounts") or {}
     day_totals = [0.0] * n

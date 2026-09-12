@@ -34,8 +34,10 @@ CASH_SOURCE = "mission_note"
 BUCKET = "accounting"
 SIGNED_URL_TTL = 60 * 60  # 1 heure
 ATTACHMENT_KINDS = {"invoice", "receipt", "document"}
-# Nombre maximal de colonnes-jour (le modèle bébleo en prévoit 7 : J1..J7).
-MAX_DAYS = 7
+# Nombre maximal de colonnes-jour. Le modèle bébleo original en prévoyait 7
+# (J1..J7) ; porté à 10 pour couvrir les missions un peu plus longues sans
+# rendre les colonnes du PDF illisibles (au-delà, faire une 2e note).
+MAX_DAYS = 10
 # Clés d'article valides, dans l'ordre du modèle (dérivées du catalogue partagé).
 MISSION_KEYS = [key for _, articles in MISSION_CATALOG for key, _ in articles]
 
@@ -62,7 +64,7 @@ def _now() -> str:
 
 def _clean_matrix(days, amounts) -> tuple[list[str], dict[str, list[float]], float]:
     """Normalise la matrice frais de mission :
-      - `days`    : ≤ 7 dates (chaînes 'AAAA-MM-JJ' ou '' pour une colonne sans date) ;
+      - `days`    : ≤ MAX_DAYS dates (chaînes 'AAAA-MM-JJ' ou '' pour une colonne sans date) ;
       - `amounts` : uniquement les clés d'article connues, chaque ligne alignée sur
                     la longueur de `days` (complétée/tronquée) ; les lignes tout à
                     zéro sont retirées pour garder le JSONB compact ;

@@ -12,7 +12,14 @@ const sans = '"Manrope", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 const MONTHS =["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1];
+// Exercices ouverts au budget : 2024 (premier exercice suivi) jusqu'à 2 ans
+// d'avance — plus large que l'ancien "année ± 1" qui bloquait la saisie sur
+// les exercices antérieurs (ex. 2024) ou trop lointains.
+const FIRST_BUDGET_YEAR = 2024;
+const YEARS = Array.from(
+  { length: CURRENT_YEAR + 2 - FIRST_BUDGET_YEAR + 1 },
+  (_, i) => FIRST_BUDGET_YEAR + i,
+);
 
 type Category = { id: string; name: string };
 type Budget = {

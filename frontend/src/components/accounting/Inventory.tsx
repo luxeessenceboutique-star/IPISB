@@ -61,6 +61,7 @@ type InventoryItem = {
   amortization_percentage: number;
   yearly_amortization: number;
   comment?: string | null;
+  code_article?: string | null;
 };
 
 type TableRow = {
@@ -334,6 +335,9 @@ function CategoriesManagerModal({ onClose, onChanged }: { onClose: () => void; o
   );
 }
 
+type CatalogArticle = { id: string; category_id: string; code_article: string | null; article: string; caracteristiques: string | null };
+type CatalogCategory = { id: string; name: string; code: string | null; articles: CatalogArticle[] };
+
 function CreateEditModal({ editing, categories, locaux, reloadLocaux, onClose, onSaved }: { editing: InventoryItem | null; categories: InvCategory[]; locaux: Local[]; reloadLocaux: () => Promise<void> | void; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     name: editing?.name ?? "",
@@ -352,10 +356,31 @@ function CreateEditModal({ editing, categories, locaux, reloadLocaux, onClose, o
     comment: editing?.comment ?? "",
   });
   const [busy, setBusy] = useState(false);
+  const [catalog, setCatalog] = useState<CatalogCategory[]>([]);
+  const [catalogCatId, setCatalogCatId] = useState("");
+  const [catalogArticleId, setCatalogArticleId] = useState("");
+
+  useEffect(() => {
+    api.get("/api/accounting/inventory/catalog").then(setCatalog).catch(() => setCatalog([]));
+  }, []);
+
+  const catalogArticles = catalog.find(c => c.id === catalogCatId)?.articles ?? [];
+
+  function pickCatalogArticle(articleId: string) {
+    setCatalogArticleId(articleId);
+    const a = catalogArticles.find(x => x.id === articleId);
+    if (!a) return;
+    setForm(f => ({
+      ...f,
+      name: f.name.trim() ? f.name : a.article,
+      caracteristiques: f.caracteristiques.trim() ? f.caracteristiques : (a.caracteristiques || ""),
+    }));
+  }
 
   async function submit() {
     if (!form.name.trim()) { toast.error("Le nom est requis."); return; }
     setBusy(true);
+    const catalogArticle = catalogArticles.find(a => a.id === catalogArticleId);
     const payload: Record<string, unknown> = {
       name: form.name,
       asset_category: form.asset_category,
@@ -371,6 +396,11 @@ function CreateEditModal({ editing, categories, locaux, reloadLocaux, onClose, o
       tva_percent: form.tva_percent ? parseFloat(form.tva_percent) : null,
       comment: form.comment || null,
     };
+    if (!editing && catalogCatId) payload.category_ref_id = catalogCatId;
+    if (!editing && catalogArticle) {
+      payload.catalog_article_id = catalogArticle.id;
+      payload.code_article = catalogArticle.code_article || null;
+    }
     // À la création seulement : la quantité de départ. Ensuite elle ne bouge
     // que par les mouvements de stock.
     if (!editing) payload.quantity = parseFloat(form.quantity) || 0;
@@ -393,6 +423,25 @@ function CreateEditModal({ editing, categories, locaux, reloadLocaux, onClose, o
         <h2 style={{ fontFamily: titleFont, fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>
           {editing ? "Modifier l'actif" : "Nouvel actif inventaire"}
         </h2>
+
+        {!editing && catalog.length > 0 && (
+          <div style={{ background: "var(--pal-pale)", border: `1px dashed ${PAL.line}`, borderRadius: 10, padding: 10, marginBottom: 12 }}>
+            <div style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL.muted, letterSpacing: ".06em", textTransform: "uppercase", marginBottom: 8 }}>
+              Piocher dans le catalogue (code article)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select value={catalogCatId} onChange={e => { setCatalogCatId(e.target.value); setCatalogArticleId(""); }} className="u-input" style={fieldStyle}>
+                <option value="">Catégorie du catalogue…</option>
+                {catalog.map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} · ${c.name}` : c.name}</option>)}
+              </select>
+              <select value={catalogArticleId} onChange={e => pickCatalogArticle(e.target.value)} className="u-input" style={fieldStyle} disabled={!catalogCatId}>
+                <option value="">Article…</option>
+                {catalogArticles.map(a => <option key={a.id} value={a.id}>{a.code_article ? `${a.code_article} · ${a.article}` : a.article}</option>)}
+              </select>
+            </div>
+            {catalogArticleId && <div style={{ fontSize: 11, color: PAL.muted, marginTop: 6 }}>Nom et caractéristiques pré-remplis ci-dessous — modifiables.</div>}
+          </div>
+        )}
 
         <label style={labelStyle}>Nom *</label>
         <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="u-input" style={fieldStyle} />
@@ -486,8 +535,13 @@ function AllocationsEditor({ item, locaux, reloadLocaux, onSaved }: { item: Inve
 
   const total = rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
   const gap = Math.round((item.quantity - total) * 100) / 100;
+  const overAllocated = gap < -0.01;
 
   async function save() {
+    if (overAllocated) {
+      toast.error(`La ventilation (${num(total)}) dépasse la quantité en stock (${num(item.quantity)}).`);
+      return;
+    }
     setBusy(true);
     try {
       await api.put(`/api/accounting/inventory/${item.id}/allocations`, {
@@ -524,8 +578,12 @@ function AllocationsEditor({ item, locaux, reloadLocaux, onSaved }: { item: Inve
         </button>
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: gap === 0 ? PAL.muted : "var(--pal-danger)" }}>
-        <span>Ventilé : <strong>{num(total)}</strong> / {num(item.quantity)} {item.unite || ""}{gap !== 0 ? ` · écart ${gap > 0 ? "+" : ""}${num(gap)}` : ""}</span>
-        <button onClick={save} disabled={busy} className="btn-c btn-c-primary btn-c-sm">{busy ? "…" : "Enregistrer"}</button>
+        <span>
+          Ventilé : <strong>{num(total)}</strong> / {num(item.quantity)} {item.unite || ""}
+          {gap !== 0 ? ` · écart ${gap > 0 ? "+" : ""}${num(gap)}` : ""}
+          {overAllocated ? " — dépasse le stock !" : ""}
+        </span>
+        <button onClick={save} disabled={busy || overAllocated} className="btn-c btn-c-primary btn-c-sm" title={overAllocated ? "Réduisez les quantités : le total dépasse le stock" : undefined}>{busy ? "…" : "Enregistrer"}</button>
       </div>
     </div>
   );
@@ -625,7 +683,9 @@ function DetailsPanel({ item, wide, locaux, reloadLocaux, onClose, onEdit, onCha
     <div className="dash-card" style={{ flex: wide ? "1 1 100%" : "1 1 360px", minWidth: 0, padding: "20px 22px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
         <div>
-          <div style={{ fontFamily: mono, fontSize: 11, color: PAL.muted }}>{full.code_unique}</div>
+          <div style={{ fontFamily: mono, fontSize: 11, color: PAL.muted }}>
+            {full.code_unique}{full.code_article ? ` · Cat. ${full.code_article}` : ""}
+          </div>
           <div style={{ fontSize: 17, fontWeight: 700, color: PAL.ink }}>{full.name}</div>
           {full.caracteristiques && <div style={{ fontSize: 12, color: PAL.muted, marginTop: 2 }}>{full.caracteristiques}</div>}
         </div>
@@ -1057,7 +1117,7 @@ export function AccountingInventory() {
               {items.map(item => {
                 const isUnderAlert = item.niveau_alerte !== null && item.quantity <= item.niveau_alerte;
                 return (
-                  <div key={item.id} className="row-c" onClick={() => setSelected(item)}
+                  <div key={item.id} className="row-c" onClick={() => openItem(item.id)}
                     style={{ cursor: "pointer", background: selected?.id === item.id ? "var(--pal-pale)" : undefined }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
                       <span style={{ color: isUnderAlert ? "var(--pal-danger)" : PAL.primary }}><Package size={18} /></span>

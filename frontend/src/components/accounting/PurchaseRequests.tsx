@@ -831,7 +831,8 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
             <div style={{ fontSize: 12, color: PAL.muted }}>
               Conditions de règlement convenues avec le fournisseur retenu (avance, jalons, échelonnement).
             </div>
-            <PaymentSchedule prId={prId} total={schedTotal} totalLabel={schedLabel} canEdit={canDecide} />
+            <PaymentSchedule prId={prId} total={schedTotal} totalLabel={schedLabel} canEdit={canDecide && !locked}
+              lockedHint={locked ? "Verrouillé — commande émise" : undefined} />
           </div>
         </div>
       )}
@@ -939,7 +940,7 @@ function ScheduleTotals({ total, rows, label = "Commande" }: { total: number; ro
   );
 }
 
-function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { prId: string; total: number; canEdit: boolean; totalLabel?: string }) {
+function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande", lockedHint }: { prId: string; total: number; canEdit: boolean; totalLabel?: string; lockedHint?: string }) {
   const [saved, setSaved] = useState<IRow[]>([]);
   const [rows, setRows] = useState<IRow[]>([]);
   const [editing, setEditing] = useState(false);
@@ -1005,6 +1006,9 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande" }: { pr
         </span>
         {canEdit && !editing && (
           <button onClick={startEdit} className="btn-c btn-c-sm btn-c-ghost"><Pencil size={12} />{saved.length ? "Modifier" : "Planifier"}</button>
+        )}
+        {!canEdit && lockedHint && (
+          <span style={{ fontSize: 11, color: PAL.muted, fontStyle: "italic" }}>{lockedHint}</span>
         )}
       </div>
 

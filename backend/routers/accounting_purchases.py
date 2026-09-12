@@ -344,6 +344,35 @@ async def validate_order(
     if p.get("valide_responsable_at"):
         raise HTTPException(400, "Commande déjà validée.")
 
+    # L'échéancier de paiement est obligatoire et doit couvrir exactement le
+    # montant de la commande AVANT de valider/émettre — une fois émise, il est
+    # verrouillé (INSTALLMENT_EDIT_ALLOWED), donc c'est la dernière occasion
+    # de le corriger. Sans cette porte, une commande pouvait être émise sans
+    # aucun mode de règlement planifié, ou avec un total qui ne colle plus.
+    pr_id = p.get("purchase_request_id")
+    if pr_id:
+        installments = (
+            db.from_("purchase_installments").select("amount")
+            .eq("purchase_request_id", pr_id).execute().data or []
+        )
+        if not installments:
+            raise HTTPException(
+                400,
+                "Aucun échéancier de paiement n'est planifié pour cette commande. "
+                "Renseignez le mode & l'échéancier de règlement avant de valider.",
+            )
+        planned_total = sum(float(r.get("amount") or 0) for r in installments)
+        order_total = float(p.get("total_incl_vat") or 0)
+        if abs(planned_total - order_total) > 0.01:
+            ecart = planned_total - order_total
+            verbe = "dépasse" if ecart > 0 else "est inférieur à"
+            raise HTTPException(
+                400,
+                f"L'échéancier planifié ({planned_total:.2f} MAD) {verbe} le montant de la commande "
+                f"({order_total:.2f} MAD) — écart de {abs(ecart):.2f} MAD. Corrigez l'échéancier avant "
+                f"de valider : une fois la commande émise, il ne sera plus modifiable.",
+            )
+
     now = datetime.now(timezone.utc).isoformat()
     # On pose les deux marqueurs en une fois (compat. avec l'affichage existant).
     res = db.from_("purchases").update({

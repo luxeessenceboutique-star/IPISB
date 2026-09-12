@@ -88,6 +88,12 @@ TRANSITIONS: dict[str, set[str]] = {
 }
 # Statuts qui clôturent le chèque (exclus des alertes d'échéance).
 CLOSED = {"encaisse", "rejete", "annule"}
+# Étape avancée : la pièce a déjà été remise à la banque (ou l'ordre transmis)
+# — modifier après coup son n°/banque/bénéficiaire/échéance ne refléterait
+# plus ce qui a réellement été déposé/exécuté. Seuls "en_attente" et
+# "a_remettre" restent éditables ; le statut lui-même continue de progresser
+# via /status (remise, encaissement…), qui n'est pas concerné par ce verrou.
+FIELD_EDIT_LOCKED = CLOSED | {"remis"}
 
 SOURCE_TYPES = {
     "manual", "purchase_payment", "cash_note", "mission_note",
@@ -864,7 +870,10 @@ async def update_cheque(
     """Complète ou corrige les informations du chèque (n°, banque, échéance,
     bénéficiaire, observation). Ne change PAS le statut — cf. /status."""
     _require_admin(user)
-    _load(db, cheque_id)
+    cheque = _load(db, cheque_id)
+    if cheque.get("status") in FIELD_EDIT_LOCKED:
+        raise HTTPException(400, "Chèque/OV verrouillé : la pièce a déjà été remise ou "
+            "clôturée (étape avancée), ses informations ne sont plus modifiables.")
     # exclude_unset : seuls les champs réellement envoyés sont touchés. On garde
     # les null explicites — c'est ainsi qu'on efface une échéance ou une banque.
     updates = body.model_dump(exclude_unset=True)

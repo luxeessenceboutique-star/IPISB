@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plane, Plus, Trash2, X, FileDown, Pencil, Check, Ban } from "lucide-react";
+import { Plane, Plus, Trash2, X, FileDown, Pencil, Check, Ban, CalendarClock } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { useDeepLinkFocus } from "@/lib/deep-link";
@@ -37,7 +37,9 @@ const MISSION_CATALOG: { theme: string; articles: { key: string; label: string }
   ] },
 ];
 const ALL_ARTICLES = MISSION_CATALOG.flatMap(g => g.articles);
-const MAX_DAYS = 7;
+// 10 j (au-delà, les colonnes du PDF deviennent trop étroites pour rester
+// lisibles sur une page A4 — une mission plus longue se scinde en 2 notes).
+const MAX_DAYS = 10;
 
 type NoteStatus = "pending" | "approved" | "rejected" | "paid";
 type Note = {
@@ -162,6 +164,24 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     setDays(prev => prev.filter((_, i) => i !== di));
     setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, r.filter((_, i) => i !== di)])));
   }
+  // Remplit une colonne par jour de la mission (Du → Au) au lieu de cliquer
+  // "Ajouter un jour" pour chacun. Les montants déjà saisis pour une date
+  // conservée sont repris ; le reste est plafonné à MAX_DAYS.
+  function fillFromRange() {
+    if (!form.mission_from || !form.mission_to) { toast.error("Renseignez la période de mission (Du / … au) d'abord."); return; }
+    if (form.mission_to < form.mission_from) { toast.error("La date de fin doit suivre la date de début."); return; }
+    const range: string[] = [];
+    for (let d = form.mission_from; d <= form.mission_to && range.length < MAX_DAYS; d = shiftDate(d, 1)) range.push(d);
+    setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, row]) => [k, range.map(d => {
+      const idx = days.indexOf(d);
+      return idx >= 0 ? (row[idx] ?? "") : "";
+    })])));
+    setDays(range);
+    const spanDays = Math.round((new Date(form.mission_to).getTime() - new Date(form.mission_from).getTime()) / 86400000) + 1;
+    if (spanDays > MAX_DAYS) {
+      toast.warning(`Mission de ${spanDays} jours : seuls les ${MAX_DAYS} premiers sont pré-remplis (limite d'une note) — faites une 2e note pour la suite.`);
+    }
+  }
 
   const dayTotal = (di: number) => ALL_ARTICLES.reduce((s, a) => s + (parseFloat(cellVal(a.key, di)) || 0), 0);
   const grandTotal = days.reduce((s, _, di) => s + dayTotal(di), 0);
@@ -276,11 +296,16 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       </div>
 
       {/* Grille matricielle Thème / Article × jours */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4, marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4, marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <label style={labelStyle}>Frais par thème / article et par jour (DH)</label>
-        <button type="button" onClick={addDay} disabled={days.length >= MAX_DAYS} className="btn-c btn-c-soft btn-c-sm" style={{ opacity: days.length >= MAX_DAYS ? 0.5 : 1 }}>
-          <Plus size={13} />Ajouter un jour
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" onClick={fillFromRange} className="btn-c btn-c-ghost btn-c-sm" title="Génère une colonne par jour entre « Mission du » et « … au »">
+            <CalendarClock size={13} />Générer les jours de la mission
+          </button>
+          <button type="button" onClick={addDay} disabled={days.length >= MAX_DAYS} className="btn-c btn-c-soft btn-c-sm" style={{ opacity: days.length >= MAX_DAYS ? 0.5 : 1 }}>
+            <Plus size={13} />Ajouter un jour
+          </button>
+        </div>
       </div>
       <div style={{ overflowX: "auto", border: `1px solid ${PAL.line}`, borderRadius: 10, marginBottom: 14 }}>
         <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>

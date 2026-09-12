@@ -657,7 +657,7 @@ class CashNotePay(BaseModel):
 class MissionNoteCreate(BaseModel):
     """Création d'une note de frais de mission (modèle bébleo « Note des frais de mission »).
     La matrice est ventilée par thème/article (clés fixes, cf. MISSION_CATALOG) et par jour :
-      - days    : dates ordonnées des colonnes (≤ 7)
+      - days    : dates ordonnées des colonnes (≤ 10)
       - amounts : {clé_article: [montant J1, montant J2, ...]} aligné sur days."""
     note_date: Optional[str] = None                  # défaut = aujourd'hui
     beneficiary_name: str                            # Nom et Prénom
@@ -667,7 +667,7 @@ class MissionNoteCreate(BaseModel):
     mission_from: Optional[str] = None               # Mission du ...
     mission_to: Optional[str] = None                 # ... au ...
     accorded_by: Optional[str] = None                # Accordée par
-    days: list[str] = []                             # ["AAAA-MM-JJ", ...] (≤ 7)
+    days: list[str] = []                             # ["AAAA-MM-JJ", ...] (≤ 10)
     amounts: dict[str, list[float]] = {}             # {article: [montant par jour]}
     nc: str = "comptable"                            # nature journal : 'noir' | 'comptable'
     caisse: str = "caisse_sociale"                   # caisse visée : caisse_sociale=Comptable | caisse_secondaire=Sociale
@@ -799,6 +799,10 @@ class InventoryItemCreate(BaseModel):
     unite: Optional[str] = None
     prix_unitaire_ttc: Optional[float] = None
     tva_percent: Optional[float] = None
+    # L62 : origine catalogue (Comptabilité > Catégories) — optionnel.
+    category_ref_id: Optional[str] = None
+    catalog_article_id: Optional[str] = None
+    code_article: Optional[str] = None
 
 
 class InventoryItemUpdate(BaseModel):
@@ -816,6 +820,9 @@ class InventoryItemUpdate(BaseModel):
     unite: Optional[str] = None
     prix_unitaire_ttc: Optional[float] = None
     tva_percent: Optional[float] = None
+    category_ref_id: Optional[str] = None
+    catalog_article_id: Optional[str] = None
+    code_article: Optional[str] = None
 
 
 class InventoryMovementCreate(BaseModel):
