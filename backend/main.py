@@ -2,10 +2,12 @@ import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager
+import httpcore
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from deps import FRONTEND_URL, get_db
+from deps import FRONTEND_URL, get_db, reset_db_client
 from utils.reminders import scan_and_notify
 from routers import courses, assignments, exams, meetings, agenda, notifications, users, dashboard
 from routers import chatbot, resources, classes
@@ -186,10 +188,42 @@ async def health():
 # "Failed to fetch" instead of the real error. Catching it ourselves in a
 # middleware — with CORS headers attached by hand — sidesteps that ordering
 # entirely, regardless of where CORSMiddleware sits in the stack.
+# Le client Supabase (deps._client) est un singleton mis en cache pour tout
+# le process : son pool de connexions HTTP/2 survit entre les requêtes. Après
+# une période d'inactivité, Supabase referme la connexion de son côté ; httpx
+# ne le détecte qu'en la réutilisant, et la requête suivante meurt avec ce
+# type d'erreur au lieu de rouvrir une connexion. On le traite à part : on
+# jette le client en cache (nouvelle connexion à la prochaine requête) et,
+# pour les lectures (GET/HEAD, sans risque de double-écriture), on retente
+# une fois avant d'abandonner.
+_TRANSIENT_DB_CONN_ERRORS = (
+    httpx.RemoteProtocolError,
+    httpcore.RemoteProtocolError,
+    httpx.ConnectError,
+    httpcore.ConnectError,
+)
+
+
 @app.middleware("http")
 async def cors_safe_error_handler(request: Request, call_next):
     try:
         return await call_next(request)
+    except _TRANSIENT_DB_CONN_ERRORS as exc:
+        logging.warning("Connexion Supabase coupée (idle) sur %s %s (%r) — reconnexion.",
+                         request.method, request.url.path, exc)
+        reset_db_client()
+        if request.method in ("GET", "HEAD"):
+            try:
+                return await call_next(request)
+            except Exception:
+                logging.exception("Échec après reconnexion sur %s %s", request.method, request.url.path)
+        response = JSONResponse(status_code=503, content={"detail": "Service temporairement indisponible, réessayez."})
+        origin = request.headers.get("origin")
+        if origin and (origin in ALLOWED_ORIGINS or ALLOWED_ORIGIN_REGEX.match(origin)):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Vary"] = "Origin"
+        return response
     except Exception:
         logging.exception("Unhandled exception on %s %s", request.method, request.url.path)
         response = JSONResponse(status_code=500, content={"detail": "Internal server error"})

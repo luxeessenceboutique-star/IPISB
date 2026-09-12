@@ -25,6 +25,16 @@ def get_db() -> Client:
     return _client()
 
 
+def reset_db_client() -> None:
+    """Jette le client Supabase mis en cache pour forcer une nouvelle connexion
+    à la prochaine requête. Le client (et son pool de connexions HTTP/2 sous-
+    jacent) est un singleton réutilisé pour toute la durée de vie du process ;
+    quand Supabase ferme une connexion inactive de son côté, httpx ne s'en
+    aperçoit qu'en la réutilisant, ce qui fait échouer la requête suivante
+    avec un RemoteProtocolError. Voir le handler dans main.py."""
+    _client.cache_clear()
+
+
 _bearer = HTTPBearer(auto_error=True)
 
 
