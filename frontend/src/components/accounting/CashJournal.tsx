@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Wallet, Landmark, Plus, Trash2, X, TrendingUp, TrendingDown, Paperclip, Pencil } from "lucide-react";
@@ -43,6 +43,21 @@ const CASH_REGISTERS: [string, string][] = [
   ["caisse_sociale", "Caisse comptable"],
   ["caisse_secondaire", "Caisse sociale"],
 ];
+
+// Filtre par registre (Journal de caisse uniquement — la banque n'a pas cette
+// notion). Même logique de détection que l'affichage de la puce par ligne :
+// payment_mode fait foi, avec repli sur l'axe n/c historique pour les lignes
+// antérieures à son introduction.
+const REGISTER_FILTERS = [
+  { key: "all", label: "Toutes" },
+  { key: "comptable", label: "Caisse comptable" },
+  { key: "sociale", label: "Caisse sociale" },
+] as const;
+type RegisterFilter = (typeof REGISTER_FILTERS)[number]["key"];
+
+function isEntrySociale(e: { payment_mode: string | null; nc: string }): boolean {
+  return e.payment_mode === "caisse_secondaire" || (!e.payment_mode && e.nc === "noir");
+}
 
 const COPY = {
   caisse: {
@@ -318,6 +333,7 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
   const [data, setData] = useState<JournalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [registerFilter, setRegisterFilter] = useState<RegisterFilter>("all");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachTarget = useRef<Entry | null>(null);
   function startAttach(e: Entry) { attachTarget.current = e; fileInputRef.current?.click(); }
@@ -392,7 +408,31 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
   const canDelete = (e: Entry) => e.source_type === "manual" && (isBank ? canWriteBank : (isAdmin || isCashier));
   const canAttach = (e: Entry) => isBank ? canWriteBank : (isAdmin || isCashier || (isAccountant && e.nc === "comptable"));
 
-  const items = data?.items ?? [];
+  const allItems = data?.items ?? [];
+  // Filtre par registre — Journal de caisse uniquement. `allItems` arrive du
+  // plus récent au plus ancien (cf. backend) ; en filtrant sur un seul
+  // registre, le solde cumulé de chaque ligne (calculé côté backend sur
+  // l'ensemble des deux registres) n'a plus de sens — on le recalcule ici en
+  // parcourant chronologiquement le sous-ensemble filtré, comme s'il s'agissait
+  // d'un tiroir-caisse séparé.
+  const isFiltered = channel === "caisse" && registerFilter !== "all";
+  const items = useMemo(() => {
+    if (!isFiltered) return allItems;
+    const wantSociale = registerFilter === "sociale";
+    const filtered = allItems.filter(e => isEntrySociale(e) === wantSociale);
+    let bal = 0;
+    const chrono = [...filtered].reverse().map(e => {
+      bal += e.type === "entree" ? e.amount : -e.amount;
+      return { ...e, balance: Math.round(bal * 100) / 100 };
+    });
+    return chrono.reverse();
+  }, [allItems, isFiltered, registerFilter]);
+
+  const registerLabel = REGISTER_FILTERS.find(r => r.key === registerFilter)?.label;
+  const balanceLabel = isFiltered ? `${copy.balance} — ${registerLabel}` : copy.balance;
+  const balanceValue = isFiltered ? (items[0]?.balance ?? 0) : (data?.balance ?? 0);
+  const totalInValue = isFiltered ? items.reduce((s, e) => s + (e.type === "entree" ? e.amount : 0), 0) : (data?.total_in ?? 0);
+  const totalOutValue = isFiltered ? items.reduce((s, e) => s + (e.type !== "entree" ? e.amount : 0), 0) : (data?.total_out ?? 0);
 
   return (
     <div style={{ fontFamily: sans }}>
@@ -412,11 +452,27 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
             <Wallet size={14} strokeWidth={1.8} />Caisse comptable
           </button>
           <button
-            onClick={() => setChannel("banque")}
+            onClick={() => { setChannel("banque"); setRegisterFilter("all"); }}
             className={`btn-c btn-c-sm ${channel === "banque" ? "btn-c-primary" : "btn-c-ghost"}`}
           >
             <Landmark size={14} strokeWidth={1.8} />Opérations bancaires
           </button>
+        </div>
+      )}
+
+      {channel === "caisse" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          <span style={{ ...labelStyle, marginInlineEnd: 2 }}>Registre :</span>
+          {REGISTER_FILTERS.map(r => (
+            <button
+              key={r.key}
+              onClick={() => setRegisterFilter(r.key)}
+              className={`chip-c ${registerFilter === r.key ? "chip-c-blue" : ""}`}
+              style={{ cursor: "pointer", border: registerFilter === r.key ? "none" : `1px solid ${PAL.line}` }}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
       )}
 
@@ -435,9 +491,9 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
-        <StatTile label={copy.balance} value={fmtMAD(data?.balance ?? 0)} tone={(data?.balance ?? 0) >= 0 ? "ink" : "red"} />
-        <StatTile label="Total entrées" value={fmtMAD(data?.total_in ?? 0)} tone="green" />
-        <StatTile label="Total sorties" value={fmtMAD(data?.total_out ?? 0)} tone="red" />
+        <StatTile label={balanceLabel} value={fmtMAD(balanceValue)} tone={balanceValue >= 0 ? "ink" : "red"} />
+        <StatTile label="Total entrées" value={fmtMAD(totalInValue)} tone="green" />
+        <StatTile label="Total sorties" value={fmtMAD(totalOutValue)} tone="red" />
       </div>
 
       {loading ? (
@@ -502,7 +558,7 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
                           // anciennes sans mode retombent sur l'axe n/c historique pour ne
                           // pas perdre leur registre d'origine. Les deux registres restent
                           // intégralement comptabilisés — ce n'est qu'un nom de tiroir-caisse.
-                          const isSociale = e.payment_mode === "caisse_secondaire" || (!e.payment_mode && e.nc === "noir");
+                          const isSociale = isEntrySociale(e);
                           const label = MODE_LABELS[e.payment_mode || ""] || (isSociale ? "Caisse sociale" : "Caisse comptable");
                           return (
                             <span className={`chip-c ${isSociale ? "chip-c-amber" : "chip-c-blue"}`}
