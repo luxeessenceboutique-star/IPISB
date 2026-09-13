@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Wallet, Landmark, Plus, Trash2, X, TrendingUp, TrendingDown, Paperclip, Pencil } from "lucide-react";
+import { Wallet, Landmark, Plus, Trash2, X, TrendingUp, TrendingDown, Paperclip, Pencil, ArrowUpDown } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { fmtMAD } from "./Overview";
@@ -334,6 +334,8 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [registerFilter, setRegisterFilter] = useState<RegisterFilter>("all");
+  const [colFilter, setColFilter] = useState({ type: "", date: "", action: "", prestataire: "", justificatif: "", axe: "" });
+  const [colSort, setColSort] = useState<{ key: JournalSortKey; dir: 1 | -1 }>({ key: "entry_date", dir: -1 });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachTarget = useRef<Entry | null>(null);
   function startAttach(e: Entry) { attachTarget.current = e; fileInputRef.current?.click(); }
@@ -434,6 +436,39 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
   const totalInValue = isFiltered ? items.reduce((s, e) => s + (e.type === "entree" ? e.amount : 0), 0) : (data?.total_in ?? 0);
   const totalOutValue = isFiltered ? items.reduce((s, e) => s + (e.type !== "entree" ? e.amount : 0), 0) : (data?.total_out ?? 0);
 
+  // Recherche par colonne + tri (mêmes mécaniques que le tableau Inventaire) —
+  // vient s'ajouter au filtre par registre, sans le remplacer.
+  const view = useMemo(() => {
+    let out = items.filter(e =>
+      (!colFilter.type || e.type === colFilter.type) &&
+      fmtDate(e.entry_date).includes(colFilter.date) &&
+      e.action.toLowerCase().includes(colFilter.action.toLowerCase()) &&
+      (e.prestataire || "").toLowerCase().includes(colFilter.prestataire.toLowerCase()) &&
+      (e.justificatif || "").toLowerCase().includes(colFilter.justificatif.toLowerCase()) &&
+      (!colFilter.axe || (isBank ? e.payment_mode === colFilter.axe : true))
+    );
+    const { key, dir } = colSort;
+    out = [...out].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (typeof av === "number" || typeof bv === "number") {
+        return dir * ((typeof av === "number" ? av : -Infinity) - (typeof bv === "number" ? bv : -Infinity));
+      }
+      return dir * String(av ?? "").localeCompare(String(bv ?? ""));
+    });
+    return out;
+  }, [items, colFilter, colSort, isBank]);
+
+  function SortH({ k, label, right }: { k: JournalSortKey; label: string; right?: boolean }) {
+    return (
+      <th
+        style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: right ? "right" : "left", cursor: "pointer", ...labelStyle }}
+        onClick={() => setColSort(s => ({ key: k, dir: s.key === k ? (s.dir === 1 ? -1 : 1) : 1 }))}
+      >
+        {label} <ArrowUpDown size={11} style={{ verticalAlign: "-1px", opacity: colSort.key === k ? 1 : 0.3 }} />
+      </th>
+    );
+  }
+
   return (
     <div style={{ fontFamily: sans }}>
       {showModal && <ManualEntryModal channel={channel} onClose={() => setShowModal(false)} onSaved={load} />}
@@ -506,13 +541,48 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 900 }}>
               <thead>
                 <tr>
-                  {["Type", "Date", "Action", "Prestataire", "Montant (DH)", "Justificatif", "Pièce", copy.balanceCol, isBank ? "Mode" : "Caisse", ""].map((h, i) => (
-                    <th key={i} style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, textAlign: i === 4 || i === 7 ? "right" : "left", ...labelStyle }}>{h}</th>
-                  ))}
+                  <SortH k="type" label="Type" />
+                  <SortH k="entry_date" label="Date" />
+                  <SortH k="action" label="Action" />
+                  <SortH k="prestataire" label="Prestataire" />
+                  <SortH k="amount" label="Montant (DH)" right />
+                  <th style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, ...labelStyle }}>Justificatif</th>
+                  <th style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, ...labelStyle }}>Pièce</th>
+                  <SortH k="balance" label={copy.balanceCol} right />
+                  <th style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, ...labelStyle }}>{isBank ? "Mode" : "Caisse"}</th>
+                  <th style={{ padding: "11px 14px", borderBottom: `1px solid ${PAL.line}`, ...labelStyle }}></th>
+                </tr>
+                <tr>
+                  <td style={{ padding: "4px 8px", background: PAL.paper }}>
+                    <select style={filterInput} value={colFilter.type} onChange={e => setColFilter(s => ({ ...s, type: e.target.value }))}>
+                      <option value="">toutes</option>
+                      <option value="entree">Entrée</option>
+                      <option value="sortie">Sortie</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: "4px 8px", background: PAL.paper }}><input style={filterInput} placeholder="filtrer" value={colFilter.date} onChange={e => setColFilter(s => ({ ...s, date: e.target.value }))} /></td>
+                  <td style={{ padding: "4px 8px", background: PAL.paper }}><input style={filterInput} placeholder="filtrer" value={colFilter.action} onChange={e => setColFilter(s => ({ ...s, action: e.target.value }))} /></td>
+                  <td style={{ padding: "4px 8px", background: PAL.paper }}><input style={filterInput} placeholder="filtrer" value={colFilter.prestataire} onChange={e => setColFilter(s => ({ ...s, prestataire: e.target.value }))} /></td>
+                  <td style={{ background: PAL.paper }} />
+                  <td style={{ padding: "4px 8px", background: PAL.paper }}><input style={filterInput} placeholder="filtrer" value={colFilter.justificatif} onChange={e => setColFilter(s => ({ ...s, justificatif: e.target.value }))} /></td>
+                  <td style={{ background: PAL.paper }} />
+                  <td style={{ background: PAL.paper }} />
+                  <td style={{ padding: "4px 8px", background: PAL.paper }}>
+                    {isBank ? (
+                      <select style={filterInput} value={colFilter.axe} onChange={e => setColFilter(s => ({ ...s, axe: e.target.value }))}>
+                        <option value="">tous</option>
+                        {BANK_MODES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                    ) : null}
+                  </td>
+                  <td style={{ background: PAL.paper }} />
                 </tr>
               </thead>
               <tbody>
-                {items.map(e => {
+                {view.length === 0 && (
+                  <tr><td colSpan={10} style={{ ...cell, textAlign: "center", color: PAL.muted, padding: 28 }}>Aucun résultat pour ces filtres.</td></tr>
+                )}
+                {view.map(e => {
                   const isIn = e.type === "entree";
                   return (
                     <tr key={e.id}>
@@ -586,6 +656,14 @@ export function JournalView({ channel: initialChannel, switchable = false }: { c
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={10} style={{ padding: "10px 14px", fontFamily: sans, fontSize: 11.5, color: PAL.muted }}>
+                    {view.length} mouvement{view.length !== 1 ? "s" : ""}
+                    {view.length !== items.length ? ` (sur ${items.length})` : ""}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
@@ -600,3 +678,7 @@ export function AccountingCashJournal() {
 }
 
 const cell: React.CSSProperties = { padding: "10px 14px", borderBottom: `1px solid ${PAL.line}`, fontSize: 13, color: PAL.ink, whiteSpace: "nowrap", verticalAlign: "middle" };
+
+// ── Filtres + tri façon Inventaire (recherche par colonne, en-têtes triables) ──
+const filterInput: React.CSSProperties = { width: "100%", padding: "4px 6px", border: `1px solid ${PAL.line}`, borderRadius: 5, fontSize: 11.5, fontFamily: sans, background: PAL.paper, outline: "none", boxSizing: "border-box" };
+type JournalSortKey = "type" | "entry_date" | "action" | "prestataire" | "amount" | "balance";
