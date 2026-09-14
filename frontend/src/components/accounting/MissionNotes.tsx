@@ -166,6 +166,17 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     });
     setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, [...r, ""]])));
   }
+  // Insère un nouveau jour AVANT le premier (ex. oubli d'un jour de trajet en
+  // amont) — daté veille du 1er jour actuel, symétrique de addDay() qui
+  // ajoute toujours après le dernier.
+  function prependDay() {
+    if (days.length >= MAX_DAYS) return;
+    const first = days[0];
+    const next = first ? shiftDate(first, -1) : shiftDate(form.note_date, 1);
+    if (dayMin && next < dayMin) { toast.error(`La veille de la mission (${fmtDate(dayMin)}) est déjà atteinte.`); return; }
+    setDays(prev => [next, ...prev]);
+    setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, ["", ...r]])));
+  }
   function removeDay(di: number) {
     if (days.length <= 1) return;
     setDays(prev => prev.filter((_, i) => i !== di));
@@ -368,6 +379,16 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                         +1j
                       </button>
                     </div>
+                    {di === 0 && (
+                      <button type="button" onClick={prependDay} disabled={days.length >= MAX_DAYS} title="Ajouter un jour avant celui-ci" style={{ background: "none", border: `1px dashed ${PAL.line}`, borderRadius: 5, cursor: days.length >= MAX_DAYS ? "not-allowed" : "pointer", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "3px 6px", lineHeight: 1, opacity: days.length >= MAX_DAYS ? 0.4 : 1 }}>
+                        ◀ +1j
+                      </button>
+                    )}
+                    {di === days.length - 1 && (
+                      <button type="button" onClick={addDay} disabled={days.length >= MAX_DAYS} title="Ajouter un jour après celui-ci" style={{ background: "none", border: `1px dashed ${PAL.line}`, borderRadius: 5, cursor: days.length >= MAX_DAYS ? "not-allowed" : "pointer", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "3px 6px", lineHeight: 1, opacity: days.length >= MAX_DAYS ? 0.4 : 1 }}>
+                        +1j ▶
+                      </button>
+                    )}
                   </div>
                 </th>
               ))}
