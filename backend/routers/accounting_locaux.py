@@ -1,5 +1,6 @@
+import secrets
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
@@ -11,6 +12,18 @@ router = APIRouter(prefix="/accounting/locaux", tags=["accounting"])
 # Étages connus + ordre d'affichage (du bas vers le haut). Non contraint en
 # base : on tolère une valeur libre, mais l'UI ne propose que celles-ci.
 FLOOR_ORDER = ["rdc", "1er", "2e", "3e", "4e", "terrasse"]
+
+# Photo du local — même bucket que le reste des pièces jointes comptables.
+PHOTO_BUCKET = "accounting"
+MAX_PHOTO_SIZE = 8 * 1024 * 1024  # 8 Mo
+# Affichée directement dans la liste des locaux : l'URL signée ne doit pas
+# expirer en pratique (mêmes conventions que employee_files.py).
+PHOTO_URL_TTL = 60 * 60 * 24 * 365 * 10
+ALLOWED_PHOTO_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -135,4 +148,85 @@ async def delete_local(
 
     db.from_("locaux").delete().eq("id", local_id).execute()
     log_audit(db, user.id, "local.delete", "local", local_id, {"name": name})
+    return {"ok": True}
+
+
+@router.post("/{local_id}/photo")
+async def upload_local_photo(
+    local_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    file: UploadFile = File(...),
+):
+    _require_admin(user)
+    rows = db.from_("locaux").select("id, photo_path").eq("id", local_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Local introuvable")
+
+    content_type = file.content_type or ""
+    ext = ALLOWED_PHOTO_TYPES.get(content_type)
+    if not ext:
+        raise HTTPException(400, "Seuls les fichiers JPG, PNG et WEBP sont acceptés")
+
+    data = await file.read()
+    if len(data) == 0:
+        raise HTTPException(400, "Fichier vide")
+    if len(data) > MAX_PHOTO_SIZE:
+        raise HTTPException(400, "L'image dépasse la limite de 8 Mo")
+
+    old_path = rows[0].get("photo_path")
+    file_path = f"locaux/{local_id}/{secrets.token_hex(8)}.{ext}"
+    try:
+        db.storage.from_(PHOTO_BUCKET).upload(file_path, data, {"content-type": content_type})
+    except Exception as e:
+        raise HTTPException(500, f"Échec du stockage : {str(e)}")
+
+    try:
+        signed = db.storage.from_(PHOTO_BUCKET).create_signed_url(file_path, PHOTO_URL_TTL)
+        photo_url = signed.get("signedURL") or signed.get("signed_url")
+        if not photo_url:
+            raise ValueError("no signed url")
+    except Exception:
+        db.storage.from_(PHOTO_BUCKET).remove([file_path])
+        raise HTTPException(500, "Échec de la génération de l'URL de la photo")
+
+    try:
+        res = db.from_("locaux").update({"photo_path": file_path, "photo_url": photo_url}).eq("id", local_id).execute()
+    except Exception:
+        db.storage.from_(PHOTO_BUCKET).remove([file_path])
+        raise HTTPException(500, "Mise à jour du local impossible.")
+    if not res.data:
+        db.storage.from_(PHOTO_BUCKET).remove([file_path])
+        raise HTTPException(404, "Not found")
+
+    if old_path:
+        try:
+            db.storage.from_(PHOTO_BUCKET).remove([old_path])
+        except Exception:
+            pass  # nettoyage best-effort — la nouvelle photo est déjà en place
+
+    log_audit(db, user.id, "local.photo_upload", "local", local_id, {"file_path": file_path})
+    return res.data[0]
+
+
+@router.delete("/{local_id}/photo")
+async def delete_local_photo(
+    local_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    rows = db.from_("locaux").select("photo_path").eq("id", local_id).execute().data
+    if not rows:
+        raise HTTPException(404, "Local introuvable")
+
+    old_path = rows[0].get("photo_path")
+    db.from_("locaux").update({"photo_path": None, "photo_url": None}).eq("id", local_id).execute()
+    if old_path:
+        try:
+            db.storage.from_(PHOTO_BUCKET).remove([old_path])
+        except Exception:
+            pass
+
+    log_audit(db, user.id, "local.photo_delete", "local", local_id, {})
     return {"ok": True}

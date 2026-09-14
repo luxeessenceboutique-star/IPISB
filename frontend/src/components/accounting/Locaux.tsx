@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, X, DoorClosed, Users, EyeOff, Eye } from "lucide-react";
+import { Plus, Trash2, Pencil, X, DoorClosed, Users, EyeOff, Eye, Camera, Loader2 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 /** Référentiel des locaux — types + helpers partagés avec Inventory.tsx. */
@@ -14,6 +14,7 @@ export type Local = {
   note: string | null;
   sort_order: number;
   active: boolean;
+  photo_url?: string | null;
   created_at?: string;
 };
 
@@ -54,6 +55,67 @@ const titleFont = '"Cormorant Garamond", Georgia, serif';
 const inputStyle: React.CSSProperties = { padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13.5, background: PAL.paper, outline: "none", boxSizing: "border-box" };
 const labelStyle: React.CSSProperties = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".05em", textTransform: "uppercase", marginBottom: 4, display: "block" };
 
+const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Miniature du local — clic pour ajouter/changer la photo (mêmes conventions que l'avatar employé). */
+function LocalPhoto({ local, size, onChanged }: { local: Local; size: number; onChanged: (photo_url: string | null) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function upload(file: File) {
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      toast.error("Seuls les fichiers JPG, PNG et WEBP sont acceptés.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const updated = await api.uploadFile(`/api/accounting/locaux/${local.id}/photo`, fd);
+      toast.success("Photo ajoutée.");
+      onChanged(updated?.photo_url ?? null);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'envoi de la photo.");
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <div style={{ position: "relative", flexShrink: 0, width: size, height: size }}>
+      <input ref={inputRef} type="file" accept=".jpg,.jpeg,.png,.webp" style={{ display: "none" }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) upload(f); }} />
+      {local.photo_url ? (
+        <img
+          src={local.photo_url}
+          alt={local.name}
+          style={{ width: size, height: size, borderRadius: 8, objectFit: "cover", border: `1px solid ${PAL.line}` }}
+          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+      ) : (
+        <div style={{ width: size, height: size, borderRadius: 8, background: PAL.paper, border: `1px solid ${PAL.line}`, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--pal-primary)" }}>
+          <DoorClosed size={Math.round(size * 0.45)} strokeWidth={1.7} />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => !uploading && inputRef.current?.click()}
+        disabled={uploading}
+        title={local.photo_url ? "Changer la photo" : "Ajouter une photo"}
+        style={{
+          position: "absolute", bottom: -4, right: -4, width: 18, height: 18, borderRadius: 999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "var(--pal-ink)", color: "var(--pal-paper)", border: `2px solid ${PAL.paper}`,
+          cursor: uploading ? "wait" : "pointer",
+        }}
+      >
+        {uploading ? <Loader2 size={9} strokeWidth={2} className="animate-spin" /> : <Camera size={9} strokeWidth={2} />}
+      </button>
+    </div>
+  );
+}
+
 function EditModal({ local, onClose, onSaved }: { local: Local; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     name: local.name,
@@ -63,6 +125,22 @@ function EditModal({ local, onClose, onSaved }: { local: Local; onClose: () => v
     note: local.note ?? "",
   });
   const [busy, setBusy] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(local.photo_url ?? null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  async function removePhoto() {
+    setPhotoBusy(true);
+    try {
+      await api.delete(`/api/accounting/locaux/${local.id}/photo`);
+      setPhotoUrl(null);
+      toast.success("Photo supprimée.");
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression de la photo.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
 
   async function save() {
     if (!form.name.trim()) { toast.error("Le nom est requis."); return; }
@@ -91,6 +169,15 @@ function EditModal({ local, onClose, onSaved }: { local: Local; onClose: () => v
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <h2 style={{ fontFamily: titleFont, fontSize: 23, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>Modifier le local</h2>
           <button onClick={onClose} style={{ border: 0, background: "none", cursor: "pointer", color: PAL.muted }}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <LocalPhoto local={{ ...local, photo_url: photoUrl }} size={56} onChanged={url => { setPhotoUrl(url); onSaved(); }} />
+          {photoUrl && (
+            <button type="button" onClick={removePhoto} disabled={photoBusy} className="btn-c btn-c-ghost btn-c-sm" style={{ opacity: photoBusy ? 0.6 : 1 }}>
+              <Trash2 size={12} strokeWidth={1.7} /> Retirer la photo
+            </button>
+          )}
         </div>
 
         <label style={labelStyle}>Nom *</label>
@@ -234,7 +321,7 @@ export function AccountingLocaux() {
               <div className="dash-card overflow-hidden">
                 {g.rooms.map(l => (
                   <div key={l.id} className="row-c flex-wrap" style={{ opacity: l.active ? 1 : 0.5 }}>
-                    <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}><DoorClosed size={18} strokeWidth={1.7} /></span>
+                    <LocalPhoto local={l} size={36} onChanged={() => load()} />
                     <div className="min-w-0 flex-1">
                       <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>
                         {l.name} {!l.active && <span className="chip-c" style={{ fontSize: 10 }}>désactivé</span>}
