@@ -132,7 +132,10 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   });
 
   // Colonnes-jour + matrice des montants (chaînes alignées sur l'index de jour).
-  const initDays = note?.days?.length ? note.days.map(d => (d || "").slice(0, 10)) : [form.note_date];
+  // La note est généralement remplie la veille du départ : le 1er jour de
+  // mission par défaut est donc le lendemain de la date de la note, pas le
+  // jour même — modifiable ensuite comme n'importe quelle date de la grille.
+  const initDays = note?.days?.length ? note.days.map(d => (d || "").slice(0, 10)) : [shiftDate(form.note_date, 1)];
   const initAmounts: Record<string, string[]> = {};
   if (note?.amounts) {
     for (const a of ALL_ARTICLES) {
@@ -156,7 +159,11 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
   const setDayDate = (di: number, v: string) => setDays(prev => prev.map((d, i) => (i === di ? v : d)));
   function addDay() {
     if (days.length >= MAX_DAYS) return;
-    setDays(prev => [...prev, ""]);
+    setDays(prev => {
+      const last = prev[prev.length - 1];
+      const next = last ? shiftDate(last, 1) : shiftDate(form.note_date, 1);
+      return [...prev, next];
+    });
     setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, [...r, ""]])));
   }
   function removeDay(di: number) {
@@ -205,7 +212,28 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       const row = days.map((_, di) => parseFloat(cellVal(a.key, di)) || 0);
       if (row.some(v => v)) payloadAmounts[a.key] = row;
     }
-    if (grandTotal <= 0) { toast.error("Saisissez au moins un montant dans la grille."); return; }
+    if (grandTotal <= 0) {
+      // Une note existante vidée de tous ses montants (total global à 0) n'a
+      // plus lieu d'être : on la supprime plutôt que d'enregistrer une note
+      // vide — la suppression/modification manuelle depuis la liste reste
+      // par ailleurs disponible comme avant.
+      if (editing) {
+        setBusy(true);
+        try {
+          await api.delete(`/api/accounting/mission-notes/${note!.id}`);
+          toast.success("Total global à 0 : la note a été supprimée.");
+          onSaved();
+          onClose();
+        } catch (e: any) {
+          toast.error(e?.message ?? "Suppression impossible.");
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      toast.error("Saisissez au moins un montant dans la grille.");
+      return;
+    }
     const payload = {
       note_date: form.note_date,
       beneficiary_name: form.beneficiary_name.trim(),
@@ -324,7 +352,22 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                         </button>
                       )}
                     </div>
-                    <input type="date" value={d} min={dayMin || undefined} max={dayMax || undefined} onChange={e => setDayDate(di, e.target.value)} style={{ width: 118, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                      <input type="date" value={d} min={dayMin || undefined} max={dayMax || undefined} onChange={e => setDayDate(di, e.target.value)} style={{ width: 100, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
+                      <button
+                        type="button"
+                        disabled={!d}
+                        onClick={() => {
+                          const next = shiftDate(d, 1);
+                          if (dayMax && next > dayMax) { toast.error(`Le jour J${di + 1} dépasse la fin de mission (${fmtDate(dayMax)}).`); return; }
+                          setDayDate(di, next);
+                        }}
+                        title="+1 jour"
+                        style={{ background: "none", border: `1px solid ${PAL.line}`, borderRadius: 5, cursor: d ? "pointer" : "not-allowed", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "4px 5px", lineHeight: 1, opacity: d ? 1 : 0.4 }}
+                      >
+                        +1j
+                      </button>
+                    </div>
                   </div>
                 </th>
               ))}
