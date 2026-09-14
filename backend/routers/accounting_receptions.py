@@ -228,8 +228,21 @@ async def update_reception(
 ):
     """Édition d'une réception : essentiellement les contrôles QHSE / CG et le
     statut qualité après coup. La quantité liée à un article d'inventaire déjà
-    créé n'est pas resynchronisée ici (édition ciblée sur le contrôle)."""
+    créé n'est pas resynchronisée ici (édition ciblée sur le contrôle).
+
+    Une réception « Conforme » a déjà créé son article d'inventaire
+    automatiquement (voir create_reception) : la modifier après coup la
+    désynchroniserait du stock sans recours, donc elle est verrouillée. Une
+    réception « Retourné » (ou une anomalie encore en attente/rejetée) n'a
+    jamais touché le stock et reste modifiable."""
     _require_admin(user)
+    existing_rows = db.from_("purchase_receptions").select("*").eq("id", reception_id).execute().data
+    if not existing_rows:
+        raise HTTPException(404, "Not found")
+    existing = existing_rows[0]
+    if existing.get("quality_status") == "conforme":
+        raise HTTPException(409, "Livraison conforme : modification impossible.")
+
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -240,9 +253,8 @@ async def update_reception(
     if "received_quantity" in updates:
         if updates["received_quantity"] <= 0:
             raise HTTPException(400, "La quantité reçue doit être supérieure à zéro.")
-        rec_rows = db.from_("purchase_receptions").select("purchase_id").eq("id", reception_id).execute().data
-        if rec_rows:
-            pid = rec_rows[0]["purchase_id"]
+        pid = existing["purchase_id"]
+        if pid:
             pr_rows = db.from_("purchases").select("quantity").eq("id", pid).execute().data
             ordered_qty = float((pr_rows[0].get("quantity") if pr_rows else 0) or 0)
             if ordered_qty > 0:
@@ -272,9 +284,11 @@ async def delete_reception(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    existing = db.from_("purchase_receptions").select("id").eq("id", reception_id).execute().data
+    existing = db.from_("purchase_receptions").select("id, quality_status").eq("id", reception_id).execute().data
     if not existing:
         raise HTTPException(404, "Not found")
+    if existing[0].get("quality_status") == "conforme":
+        raise HTTPException(409, "Livraison conforme : suppression impossible.")
 
     # Delete related inventory items if created
     items = db.from_("inventory_items").select("id").eq("reception_id", reception_id).execute().data or []

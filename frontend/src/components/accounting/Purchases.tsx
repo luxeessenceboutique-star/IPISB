@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Search, Truck, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Pencil, ShieldCheck } from "lucide-react";
+import { Plus, Search, Truck, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Pencil, ShieldCheck, Lock } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { fmtMAD } from "./Overview";
 
@@ -396,6 +396,7 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
   }
 
   function startEditReception(r: any) {
+    if (r.quality_status === "conforme") return;
     setEditingRecId(r.id);
     setEditForm({
       quality_status: r.quality_status ?? "conforme",
@@ -422,8 +423,10 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
     }
   }
 
-  async function handleDeleteReception(id: string) {
+  async function handleDeleteReception(r: any) {
+    if (r.quality_status === "conforme") return;
     if (!window.confirm("Supprimer cette livraison ? L'article entré en inventaire sera retiré.")) return;
+    const id = r.id;
     try {
       await api.delete(`/api/accounting/receptions/${id}`);
       toast.success("Livraison supprimée.");
@@ -596,12 +599,20 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
                   <div style={{ color: PAL.muted, fontSize: 11, marginTop: 4, display: "flex", justifyContent: "space-between" }}>
                     <span>{new Date(r.received_at).toLocaleDateString("fr-FR")}</span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <button onClick={() => startEditReception(r)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, padding: 0 }} title="Modifier">
-                        <Pencil size={12} />
-                      </button>
-                      <button onClick={() => handleDeleteReception(r.id)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", padding: 0 }} title="Supprimer">
-                        <Trash2 size={12} />
-                      </button>
+                      {r.quality_status === "conforme" ? (
+                        <span title="Livraison conforme — verrouillée, modification impossible" style={{ color: PAL.muted, display: "flex", alignItems: "center" }}>
+                          <Lock size={12} />
+                        </span>
+                      ) : (
+                        <>
+                          <button onClick={() => startEditReception(r)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, padding: 0 }} title="Modifier">
+                            <Pencil size={12} />
+                          </button>
+                          <button onClick={() => handleDeleteReception(r)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", padding: 0 }} title="Supprimer">
+                            <Trash2 size={12} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                   {r.comment && <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 4, color: PAL.ink }}>Note : {r.comment}</div>}
