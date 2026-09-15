@@ -37,6 +37,24 @@ type Row = {
 
 const ALL_ROLES: AppRole[] = ["admin", "professor", "student", "rh", "assistant_rh", "comptabilite"];
 
+// Canal de permission Comptabilité (questionnaire des canaux) — dérivé des
+// rôles réels, jamais stocké : un même rôle sert à d'autres modules (RH,
+// cours…), donc on n'y superpose qu'un badge d'information, sans renommer
+// ni remplacer les rôles eux-mêmes. V2 (admin) prime sur V1 (comptabilite),
+// qui prime sur V0 (professor/assistant_rh/accountant).
+type Channel = "v0" | "v1" | "v2";
+function channelFor(roles: AppRole[]): Channel | null {
+  if (roles.includes("admin")) return "v2";
+  if (roles.includes("comptabilite")) return "v1";
+  if (roles.includes("professor") || roles.includes("assistant_rh") || roles.includes("accountant")) return "v0";
+  return null;
+}
+const CHANNEL_STYLE: Record<Channel, string> = {
+  v2: "bg-gradient-brand text-white",
+  v1: "bg-primary/15 text-primary",
+  v0: "bg-muted text-foreground/70",
+};
+
 const PAL = {
   ink:     "oklch(22% 0.025 175)",
   text:    "oklch(34% 0.03 180)",
@@ -381,6 +399,22 @@ function UsersPage() {
           </div>
         )}
 
+        {!loading && isAdmin && (
+          <div className="dash-card" style={{ padding: "12px 18px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--pal-muted)", fontWeight: 600, fontFamily: sans, letterSpacing: ".05em", textTransform: "uppercase" as const }}>
+              {lang === "fr" ? "Canal de permission Comptabilité" : lang === "ar" ? "قناة صلاحيات المحاسبة" : "Accounting permission channel"}
+            </div>
+            {(["v2", "v1", "v0"] as Channel[]).map(ch => (
+              <div key={ch} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5 }}>
+                <Badge className={`${CHANNEL_STYLE[ch]} border-dashed font-mono text-[10px] shrink-0`} variant="outline">
+                  {t(`users.channel.${ch}.label`)}
+                </Badge>
+                <span style={{ color: "var(--pal-muted)", lineHeight: 1.5 }}>{t(`users.channel.${ch}.desc`)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="dash-card" style={{ overflow: "hidden" }}>
           {loading ? (
             <div className="flex items-center justify-center p-12 text-muted-foreground">
@@ -420,7 +454,7 @@ function UsersPage() {
                       </TableCell>
                       <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{r.email}</TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           {r.roles.length === 0 && <span className="text-xs text-muted-foreground">—</span>}
                           {r.roles.map(role => (
                             <Badge key={role} className={`${roleColor(role)} gap-1 border-0 hover:opacity-90`}>
@@ -432,6 +466,19 @@ function UsersPage() {
                               )}
                             </Badge>
                           ))}
+                          {(() => {
+                            const ch = channelFor(r.roles);
+                            if (!ch) return null;
+                            return (
+                              <Badge
+                                variant="outline"
+                                className={`${CHANNEL_STYLE[ch]} border-dashed font-mono text-[10px]`}
+                                title={t(`users.channel.${ch}.desc`)}
+                              >
+                                {t(`users.channel.${ch}.label`)}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell">
