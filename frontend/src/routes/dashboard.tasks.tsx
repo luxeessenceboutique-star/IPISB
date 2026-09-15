@@ -94,7 +94,7 @@ function TasksPage() {
               </button>
             </div>
             {canCreate && (
-              <button type="button" onClick={() => setShowCreate(true)} className="btn-c-primary" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-primary">
                 <Plus size={15} strokeWidth={2} /> Nouvelle tâche
               </button>
             )}
