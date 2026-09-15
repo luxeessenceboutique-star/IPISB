@@ -35,6 +35,18 @@ const SUGGESTIONS_BY_ROLE: Record<string, Record<Lang, string[]>> = {
     en: ["How do I approve a leave request?", "What is the RH module?", "Where do I generate payroll?"],
     darija: ["Kifach nwafeq 3la conge?", "Shno houwa module RH?", "Fin ngenere paie?"],
   },
+  comptabilite: {
+    fr: ["Comment approuver une note de caisse ?", "Où voir le journal de caisse ?", "Comment créer une tâche Comptabilité ?"],
+    ar: ["كيف أوافق على مذكرة صندوق؟", "أين أرى سجل الصندوق؟", "كيف أنشئ مهمة محاسبة؟"],
+    en: ["How do I approve a cash note?", "Where do I see the cash journal?", "How do I create an Accounting task?"],
+    darija: ["Kifach nwafeq 3la note de caisse?", "Fin nshouf journal de caisse?", "Kifach ndir task f comptabilite?"],
+  },
+  rh: {
+    fr: ["Comment approuver un congé ?", "Où générer la paie ?", "Comment voir la fiche d'un employé ?"],
+    ar: ["كيف أوافق على طلب إجازة؟", "أين أولد كشف الرواتب؟", "كيف أرى ملف موظف؟"],
+    en: ["How do I approve a leave request?", "Where do I generate payroll?", "How do I see an employee's file?"],
+    darija: ["Kifach nwafeq 3la conge?", "Fin ngenere paie?", "Kifach nshouf fiche dyal employé?"],
+  },
   professor: {
     fr: ["Comment créer un contrôle continu ?", "Où publier un examen ?", "Comment voir mes classes ?"],
     ar: ["كيف أنشئ مراقبة مستمرة؟", "أين أنشر امتحانًا؟", "كيف أرى أقسامي؟"],
@@ -67,7 +79,11 @@ async function authHeaders(): Promise<Record<string, string>> {
 export function PlatformCopilot() {
   const { roles } = useAuth();
   const { isMobile } = useBreakpoint();
-  const roleKey = roles.includes("admin") ? "admin" : roles.includes("professor") ? "professor" : "student";
+  const roleKey = roles.includes("admin") ? "admin"
+    : roles.includes("comptabilite") || roles.includes("cashier") || roles.includes("accountant") ? "comptabilite"
+    : roles.includes("rh") || roles.includes("assistant_rh") ? "rh"
+    : roles.includes("professor") ? "professor"
+    : "student";
 
   const [open, setOpen] = useState(false);
   const [lang, setLang] = useState<Lang | null>(null);

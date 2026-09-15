@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
-from .knowledge import sections_for_role, render_sections, ROLE_LABEL
+from .knowledge import sections_for_role, render_sections, role_label_for
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ Intent = Literal["howto", "explain", "troubleshoot", "general"]
 
 class CopilotState(TypedDict):
     messages: list[dict]        # [{"role": "user"|"assistant", "content": str}]
-    role: str                   # admin | professor | student
+    roles: list[str]            # tous les rôles réels de l'utilisateur (admin, comptabilite, rh, …)
     language: str
     intent: str
     system_prompt: str
@@ -69,10 +69,10 @@ def classify_node(state: CopilotState) -> dict:
 
 
 def _base_prompt(state: CopilotState) -> str:
-    role = state.get("role", "student")
-    sections = sections_for_role(role)
+    roles = state.get("roles") or ["student"]
+    sections = sections_for_role(roles)
     knowledge = render_sections(sections)
-    role_label = ROLE_LABEL.get(role, role)
+    role_label = role_label_for(roles)
     return (
         "Tu es le Copilote IPISB Connect, l'assistant intégré à la plateforme qui aide les "
         f"utilisateurs à s'en servir. Tu parles à un utilisateur avec le rôle **{role_label}**.\n\n"

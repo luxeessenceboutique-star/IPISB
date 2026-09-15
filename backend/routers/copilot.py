@@ -18,12 +18,6 @@ class CopilotRequest(BaseModel):
     language: str = "fr"
 
 
-def _role_of(user: CurrentUser) -> str:
-    if user.is_admin():
-        return "admin"
-    if user.is_prof():
-        return "professor"
-    return "student"
 
 
 def _openai_client() -> AsyncOpenAI:
@@ -37,12 +31,10 @@ async def copilot_stream(
 ):
     """SSE streaming endpoint for the in-app platform copilot, available to every
     authenticated role. Yields `data: {"text": "..."}` chunks then `data: [DONE]`."""
-    role = _role_of(user)
-
     try:
         state = await copilot_graph.ainvoke({
             "messages": req.messages,
-            "role": role,
+            "roles": user.roles or ["student"],
             "language": req.language,
             "intent": "",
             "system_prompt": "",
