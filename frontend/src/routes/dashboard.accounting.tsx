@@ -73,13 +73,17 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
 ];
 
 // Onglets visibles par rôle.
-//  - admin      : tout (dont Validations N+1)
-//  - comptable  : lecture seule (données + calculs) — pas de CRUD transactionnel
+//  - admin        : tout (dont Validations N+1)
+//  - comptabilite (V1) : accès complet, identique à admin — même règle que
+//    le reste du backend (can_access_accounting_full() = admin OU
+//    comptabilite à égalité, cf. G2 du questionnaire des canaux).
+//  - comptable (accountant) : lecture seule (données + calculs) — pas de CRUD transactionnel
 //  - caissier   : saisie de scolarité + suivi de ses saisies
 // Le journal des comptes (trésorerie : virements, OV, chèques) relève de
 // l'administration et de la comptabilité — le caissier tient la caisse espèces.
-const TABS_BY_ROLE: Record<"admin" | "accountant" | "cashier", Tab[]> = {
+const TABS_BY_ROLE: Record<"admin" | "comptabilite" | "accountant" | "cashier", Tab[]> = {
   admin: ["validations", "overview", "tuition", "revenues", "expenses", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
+  comptabilite: ["validations", "overview", "tuition", "revenues", "expenses", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
   accountant: ["overview", "tuition", "purchase_requests", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
   cashier: ["tuition", "purchase_requests", "cash_journal", "cash_notes", "mission_notes", "mine"],
 };
@@ -91,8 +95,12 @@ function AccountingPage() {
   // Aperçu admin : voir la page exactement comme la voit le comptable externe
   // (onglets limités, lecture seule) sans se déconnecter de son propre compte.
   const [previewAccountant, setPreviewAccountant] = useState(false);
-  const role: "admin" | "accountant" | "cashier" =
-    previewAccountant ? "accountant" : isAdmin ? "admin" : roles.includes("accountant") ? "accountant" : "cashier";
+  const role: "admin" | "comptabilite" | "accountant" | "cashier" =
+    previewAccountant ? "accountant"
+      : isAdmin ? "admin"
+      : roles.includes("comptabilite") ? "comptabilite"
+      : roles.includes("accountant") ? "accountant"
+      : "cashier";
   const readOnly = role === "accountant";
   const visibleKeys = TABS_BY_ROLE[role];
   const visibleTabs = TABS.filter(t => visibleKeys.includes(t.key));
@@ -110,7 +118,7 @@ function AccountingPage() {
     });
   }
 
-  const sub = role === "admin"
+  const sub = role === "admin" || role === "comptabilite"
     ? "Demandes d'achat, livraisons, fournisseurs et suivi budgétaire — centralisés."
     : role === "accountant"
       ? "Consultation des données et calculs — lecture seule."
