@@ -35,14 +35,18 @@ type Row = {
   roles: AppRole[];
 };
 
-const ALL_ROLES: AppRole[] = ["admin", "professor", "student", "rh", "assistant_rh", "comptabilite"];
-
-// Canal de permission Comptabilité (questionnaire des canaux) — dérivé des
-// rôles réels, jamais stocké : un même rôle sert à d'autres modules (RH,
-// cours…), donc on n'y superpose qu'un badge d'information, sans renommer
-// ni remplacer les rôles eux-mêmes. V2 (admin) prime sur V1 (comptabilite),
-// qui prime sur V0 (professor/assistant_rh/accountant).
+// Canal de permission Comptabilité (questionnaire des canaux) — c'est
+// désormais le SEUL vocabulaire du sélecteur "Ajouter un rôle" (à la
+// demande explicite : plus de liste de rôles bruts dans ce menu). Choisir
+// V0 ajoute d'un coup les 3 rôles qu'il regroupe (ceux qui manquent), V1
+// ajoute comptabilite, V2 ajoute admin. V2 prime sur V1, qui prime sur V0
+// pour l'affichage du badge (channelFor) — un compte peut cumuler les 3.
 type Channel = "v0" | "v1" | "v2";
+const CHANNEL_ROLES: Record<Channel, AppRole[]> = {
+  v0: ["professor", "assistant_rh", "accountant"],
+  v1: ["comptabilite"],
+  v2: ["admin"],
+};
 function channelFor(roles: AppRole[]): Channel | null {
   if (roles.includes("admin")) return "v2";
   if (roles.includes("comptabilite")) return "v1";
@@ -266,10 +270,12 @@ function UsersPage() {
 
   useEffect(() => { if (!authLoading) load(); }, [authLoading]);
 
-  async function addRole(userId: string, role: AppRole) {
+  async function addChannel(userId: string, channel: Channel, existingRoles: AppRole[]) {
     if (!isAdmin) return;
+    const toAdd = CHANNEL_ROLES[channel].filter(role => !existingRoles.includes(role));
+    if (toAdd.length === 0) return;
     setBusyId(userId);
-    const { error } = await supabase.from("user_roles").insert({ user_id: userId, role });
+    const { error } = await supabase.from("user_roles").insert(toAdd.map(role => ({ user_id: userId, role })));
     setBusyId(null);
     if (error) { toast.error(error.message); return; }
     toast.success(t("users.role_added"));
@@ -440,7 +446,9 @@ function UsersPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map(r => {
-                  const available = ALL_ROLES.filter(role => !r.roles.includes(role));
+                  const availableChannels = (["v2", "v1", "v0"] as Channel[]).filter(ch =>
+                    CHANNEL_ROLES[ch].some(role => !r.roles.includes(role))
+                  );
                   return (
                     <TableRow key={r.id}>
                       <TableCell>
@@ -490,13 +498,17 @@ function UsersPage() {
                       {isAdmin && (
                         <TableCell className="text-right">
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                            {available.length > 0 && (
-                              <Select onValueChange={v => addRole(r.id, v as AppRole)} disabled={busyId === r.id}>
+                            {availableChannels.length > 0 && (
+                              <Select onValueChange={v => addChannel(r.id, v as Channel, r.roles)} disabled={busyId === r.id}>
                                 <SelectTrigger className="h-8 w-auto gap-1 border-dashed text-xs">
                                   <Plus className="h-3 w-3" /><SelectValue placeholder={t("users.add_role")} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {available.map(role => <SelectItem key={role} value={role}>{t(`dash.role.${role}`)}</SelectItem>)}
+                                  {availableChannels.map(ch => (
+                                    <SelectItem key={ch} value={ch} title={t(`users.channel.${ch}.desc`)}>
+                                      {t(`users.channel.${ch}.label`)}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             )}
