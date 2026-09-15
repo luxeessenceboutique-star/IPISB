@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { useBreakpoint } from "@/lib/useBreakpoint";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { Sparkles, X, Send, ChevronDown } from "lucide-react";
+import { Sparkles, X, Send, ChevronDown, Check, Loader2 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 const sans = '"Manrope", system-ui, sans-serif';
 
 type Lang = "fr" | "ar" | "en" | "darija";
-interface Msg { role: "user" | "assistant"; content: string }
+// Une action proposée par le copilote (créer/modifier/supprimer/approuver…)
+// n'est JAMAIS exécutée à l'affichage — seul un clic explicite sur
+// "Confirmer" déclenche /copilot/actions/{id}/confirm côté serveur.
+type ActionProposal = {
+  id: string; label: string; summary: string;
+  status: "pending" | "confirming" | "confirmed" | "cancelled" | "failed";
+  error?: string;
+};
+interface Msg { role: "user" | "assistant"; content: string; action?: ActionProposal }
 
 const LANGS: { code: Lang; flag: string; label: string; rtl: boolean }[] = [
   { code: "fr", flag: "🇫🇷", label: "Français", rtl: false },
@@ -144,6 +152,16 @@ export function PlatformCopilot() {
                 next[next.length - 1] = { role: "assistant", content: full };
                 return next;
               });
+            } else if (parsed.action_proposal) {
+              const { id, label, summary } = parsed.action_proposal;
+              setMessages(prev => {
+                const next = [...prev];
+                next[next.length - 1] = {
+                  role: "assistant", content: "",
+                  action: { id, label, summary, status: "pending" },
+                };
+                return next;
+              });
             }
           } catch { /* ignore parse errors */ }
         }
@@ -158,6 +176,32 @@ export function PlatformCopilot() {
     } finally {
       setStreaming(false);
     }
+  }
+
+  function setActionStatus(id: string, patch: Partial<ActionProposal>) {
+    setMessages(prev => prev.map(m => m.action?.id === id ? { ...m, action: { ...m.action, ...patch } } : m));
+  }
+
+  async function confirmAction(id: string) {
+    setActionStatus(id, { status: "confirming" });
+    try {
+      const res = await fetch(`${API}/api/copilot/actions/${id}/confirm`, {
+        method: "POST",
+        headers: await authHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.detail ?? `HTTP ${res.status}`);
+      setActionStatus(id, { status: "confirmed" });
+    } catch (err) {
+      setActionStatus(id, { status: "failed", error: err instanceof Error ? err.message : "Erreur inconnue" });
+    }
+  }
+
+  async function cancelAction(id: string) {
+    setActionStatus(id, { status: "cancelled" });
+    try {
+      await fetch(`${API}/api/copilot/actions/${id}/cancel`, { method: "POST", headers: await authHeaders() });
+    } catch { /* déjà marquée annulée côté UI — best-effort côté serveur */ }
   }
 
   function handleKey(e: React.KeyboardEvent) {
@@ -234,17 +278,63 @@ export function PlatformCopilot() {
               <div style={{ flex: 1, overflowY: "auto", padding: "14px 12px" }}>
                 {messages.map((m, i) => (
                   <div key={i} style={{ display: "flex", justifyContent: m.role === "assistant" ? "flex-start" : "flex-end", marginBottom: 10 }}>
-                    <div style={{
-                      maxWidth: "82%", padding: "9px 12px",
-                      background: m.role === "assistant" ? "var(--pal-pale)" : "var(--pal-primary)",
-                      color: m.role === "assistant" ? "var(--pal-ink)" : "var(--pal-paper)",
-                      borderRadius: m.role === "assistant" ? "4px 14px 14px 14px" : "14px 4px 14px 14px",
-                      fontSize: 13, lineHeight: 1.55, direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
-                    }}>
-                      {m.role === "assistant"
-                        ? <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) || "…" }} />
-                        : m.content}
-                    </div>
+                    {m.action ? (
+                      <div style={{
+                        maxWidth: "88%", padding: "12px 14px", background: "var(--pal-paper)",
+                        border: "1px solid var(--pal-line)", borderRadius: "4px 14px 14px 14px",
+                        direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
+                      }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--pal-primary-deep)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+                          {lang === "en" ? "Proposed action" : lang === "ar" ? "إجراء مقترح" : lang === "darija" ? "Action mqtar7a" : "Action proposée"}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: "var(--pal-ink)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}
+                          dangerouslySetInnerHTML={{ __html: renderMarkdown(m.action.summary) }} />
+                        {m.action.status === "pending" && (
+                          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                            <button onClick={() => confirmAction(m.action!.id)} className="pc-focus" style={{
+                              display: "flex", alignItems: "center", gap: 5, background: "var(--pal-primary)", color: "var(--pal-paper)",
+                              border: 0, borderRadius: 999, padding: "6px 13px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                            }}><Check size={12} strokeWidth={2.5} />{lang === "en" ? "Confirm" : lang === "ar" ? "تأكيد" : lang === "darija" ? "Wafeq" : "Confirmer"}</button>
+                            <button onClick={() => cancelAction(m.action!.id)} className="pc-focus" style={{
+                              background: "transparent", color: "var(--pal-muted)", border: "1px solid var(--pal-line)",
+                              borderRadius: 999, padding: "6px 13px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                            }}>{lang === "en" ? "Cancel" : lang === "ar" ? "إلغاء" : lang === "darija" ? "Lgha" : "Annuler"}</button>
+                          </div>
+                        )}
+                        {m.action.status === "confirming" && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 12, color: "var(--pal-muted)" }}>
+                            <Loader2 size={13} className="animate-spin" />{lang === "en" ? "Executing…" : lang === "ar" ? "جارٍ التنفيذ…" : lang === "darija" ? "Kaydir…" : "Exécution…"}
+                          </div>
+                        )}
+                        {m.action.status === "confirmed" && (
+                          <div style={{ marginTop: 10, fontSize: 12, fontWeight: 600, color: "var(--pal-primary-deep)" }}>
+                            ✓ {lang === "en" ? "Done." : lang === "ar" ? "تم." : lang === "darija" ? "Twa9ef, sifta." : "Effectué."}
+                          </div>
+                        )}
+                        {m.action.status === "cancelled" && (
+                          <div style={{ marginTop: 10, fontSize: 12, color: "var(--pal-muted)" }}>
+                            {lang === "en" ? "Cancelled." : lang === "ar" ? "أُلغي." : lang === "darija" ? "Tlgha." : "Annulé."}
+                          </div>
+                        )}
+                        {m.action.status === "failed" && (
+                          <div style={{ marginTop: 10, fontSize: 12, color: "var(--pal-danger, #c0392b)" }}>
+                            {m.action.error ?? (lang === "en" ? "Failed." : "Échec.")}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{
+                        maxWidth: "82%", padding: "9px 12px",
+                        background: m.role === "assistant" ? "var(--pal-pale)" : "var(--pal-primary)",
+                        color: m.role === "assistant" ? "var(--pal-ink)" : "var(--pal-paper)",
+                        borderRadius: m.role === "assistant" ? "4px 14px 14px 14px" : "14px 4px 14px 14px",
+                        fontSize: 13, lineHeight: 1.55, direction: rtl ? "rtl" : "ltr", textAlign: rtl ? "right" : "left",
+                      }}>
+                        {m.role === "assistant"
+                          ? <span dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) || "…" }} />
+                          : m.content}
+                      </div>
+                    )}
                   </div>
                 ))}
                 <div ref={bottomRef} />

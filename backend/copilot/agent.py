@@ -26,7 +26,7 @@ LANG_SYSTEM: dict[str, str] = {
     ),
 }
 
-Intent = Literal["howto", "explain", "troubleshoot", "general"]
+Intent = Literal["howto", "explain", "troubleshoot", "action", "general"]
 
 
 class CopilotState(TypedDict):
@@ -53,9 +53,13 @@ def classify_node(state: CopilotState) -> dict:
         "- explain      : asking WHAT a feature/module/term does or means "
         "(e.g. 'c'est quoi le module RH ?', 'what is the 9-box grid?').\n"
         "- troubleshoot : reporting something broken, missing, or not working as expected.\n"
+        "- action       : asking the assistant to actually CREATE, MODIFY, DELETE, APPROVE, REJECT "
+        "or otherwise CHANGE real data on the platform, not just explain it "
+        "(e.g. 'ajoute une dépense de 200 MAD pour le matériel', 'approuve la note de caisse de Fatima', "
+        "'supprime le fournisseur X', 'crée une demande d'achat pour 3 ordinateurs').\n"
         "- general      : greeting, thanks, small talk, or unclear.\n\n"
         f'Message: "{last}"\n\n'
-        "Reply with exactly one word (howto / explain / troubleshoot / general):"
+        "Reply with exactly one word (howto / explain / troubleshoot / action / general):"
     )
     try:
         resp = _fast_llm().invoke([HumanMessage(content=prompt)])
@@ -63,7 +67,7 @@ def classify_node(state: CopilotState) -> dict:
     except Exception as e:
         log.warning("Copilot classify failed: %s", e)
         intent = "general"
-    if intent not in ("howto", "explain", "troubleshoot", "general"):
+    if intent not in ("howto", "explain", "troubleshoot", "action", "general"):
         intent = "general"
     return {"intent": intent}
 
@@ -115,6 +119,26 @@ def troubleshoot_node(state: CopilotState) -> dict:
     return {"system_prompt": prompt}
 
 
+def action_node(state: CopilotState) -> dict:
+    prompt = _base_prompt(state) + (
+        "\nL'utilisateur souhaite EFFECTUER une action réelle (créer, modifier, supprimer, "
+        "approuver, rejeter, payer, valider…) sur un module auquel il a accès d'après la liste "
+        "ci-dessus. Un outil (tool) correspondant t'est fourni pour chaque action possible.\n"
+        "- Si tu as assez d'informations pour remplir les champs obligatoires de l'outil approprié, "
+        "appelle-le. N'invente JAMAIS une valeur que l'utilisateur n'a pas donnée (montant, "
+        "identifiant, catégorie…) — laisse le champ absent plutôt que de deviner, sauf s'il a une "
+        "valeur par défaut évidente indiquée dans le schéma.\n"
+        "- S'il manque une information essentielle (montant, bénéficiaire, catégorie, motif "
+        "obligatoire…), N'APPELLE AUCUN outil : pose une question de clarification courte à la "
+        "place.\n"
+        "- N'appelle jamais un outil pour un module qui n'est pas dans la liste des modules "
+        "accessibles à cet utilisateur — explique-lui plutôt qu'il n'y a pas accès.\n"
+        "- Tu ne fais qu'appeler l'outil ; l'action réelle n'est exécutée qu'après confirmation "
+        "explicite de l'utilisateur dans l'interface — ne dis donc jamais que c'est déjà fait."
+    )
+    return {"system_prompt": prompt}
+
+
 def general_node(state: CopilotState) -> dict:
     prompt = _base_prompt(state) + (
         "\nSTYLE DE RÉPONSE : sois bref et chaleureux. Si c'est une salutation, présente-toi en une "
@@ -134,6 +158,7 @@ def build_graph():
     g.add_node("howto",        howto_node)
     g.add_node("explain",      explain_node)
     g.add_node("troubleshoot", troubleshoot_node)
+    g.add_node("action",       action_node)
     g.add_node("general",      general_node)
 
     g.add_edge(START, "classify")
@@ -141,9 +166,10 @@ def build_graph():
         "howto":        "howto",
         "explain":      "explain",
         "troubleshoot": "troubleshoot",
+        "action":       "action",
         "general":      "general",
     })
-    for node in ("howto", "explain", "troubleshoot", "general"):
+    for node in ("howto", "explain", "troubleshoot", "action", "general"):
         g.add_edge(node, END)
 
     return g.compile()
