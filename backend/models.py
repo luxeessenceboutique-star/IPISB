@@ -1590,6 +1590,11 @@ class TaskCommentCreate(BaseModel):
     text: str
 
 
+# ── Groupes de discussion (Communication) ────────────────────────────────────
+class GroupMessageCreate(BaseModel):
+    text: str
+
+
 class RosterCreate(BaseModel):
     academic_year: str = "2025-2026"
     departement: Optional[str] = None

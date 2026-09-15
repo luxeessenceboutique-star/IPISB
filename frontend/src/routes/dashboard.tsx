@@ -175,8 +175,11 @@ function DashboardLayout() {
             ],
           }),
         ] : []),
+        // Communication : visible à tout le staff (pas juste admin) — un
+        // groupe de discussion lié à une tâche multi-assignés peut concerner
+        // n'importe quel rôle, pas seulement les administrateurs.
+        leaf({ key: "dash.communication", to: "/dashboard/communication", icon: MessageCircle }),
         ...(isAdmin ? [
-          leaf({ key: "dash.communication", to: "/dashboard/communication", icon: MessageCircle }),
           leaf({ key: "dash.reunionsInstances", to: "/dashboard/reunions-instances", icon: Landmark }),
         ] : []),
         ...(showDocuments ? [leaf({ key: "dash.documents", to: "/dashboard/documents", icon: FileText })] : []),

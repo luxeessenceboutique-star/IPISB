@@ -74,6 +74,44 @@ def _get_or_404(db: Client, task_id: str) -> dict:
     return rows[0]
 
 
+def _sync_communication_group(db: Client, task: dict, actor_id: str) -> None:
+    """Un groupe de discussion (page Communication) est lié 1:1 à une tâche
+    dès qu'elle compte 2 assignés ou plus, pour qu'ils puissent en discuter
+    sans quitter la page Communication. Une fois créé, l'appartenance reste
+    synchronisée avec la liste d'assignés (ajouts ET retraits) même si elle
+    repasse sous 2 ; seule la CRÉATION du groupe exige 2+ assignés — on ne
+    supprime jamais un groupe existant (historique des messages conservé)."""
+    assignee_ids = task.get("assignee_ids") or []
+    existing = db.from_("communication_groups").select("id").eq("task_id", task["id"]).execute().data
+    group_id = existing[0]["id"] if existing else None
+
+    if not group_id:
+        if len(assignee_ids) < 2:
+            return
+        res = db.from_("communication_groups").insert({
+            "task_id": task["id"],
+            "name": f"Tâche : {task['title']}",
+            "created_by": actor_id,
+        }).execute()
+        group_id = res.data[0]["id"]
+
+    current = {m["user_id"] for m in db.from_("communication_group_members").select("user_id").eq("group_id", group_id).execute().data or []}
+    target = set(assignee_ids)
+    to_add = target - current
+    to_remove = current - target
+    if to_add:
+        db.from_("communication_group_members").insert([{"group_id": group_id, "user_id": uid} for uid in to_add]).execute()
+        notify_users(
+            db, list(to_add - {actor_id}),
+            title="Ajouté à un groupe de discussion 💬",
+            message=f"Vous avez été ajouté au groupe « {task['title']} » (page Communication).",
+            type="info",
+            link=f"/dashboard/communication?tab=groups&focus={group_id}",
+        )
+    if to_remove:
+        db.from_("communication_group_members").delete().eq("group_id", group_id).in_("user_id", list(to_remove)).execute()
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -192,6 +230,7 @@ async def create_task(
             type="info",
             link=f"/dashboard/tasks?focus={task['id']}",
         )
+    _sync_communication_group(db, task, user.id)
     return task
 
 
@@ -294,6 +333,7 @@ async def assign_task(
             type="info",
             link=f"/dashboard/tasks?focus={task_id}",
         )
+    _sync_communication_group(db, res.data[0], user.id)
     return res.data[0]
 
 
