@@ -6,8 +6,9 @@ import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
 import {
   type Task, type TaskComment, type AuditEntry, type AssignableUser, type TaskChannel,
-  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC, userLabel,
+  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC,
 } from "./types";
+import { AssigneePicker } from "./AssigneePicker";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -75,10 +76,10 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
   }
 
   const canEdit = can("tasks.tasks", "edit");
-  // Suppression : réservée au créateur, à l'assigné, ou à l'admin — reflète
+  // Suppression : réservée au créateur, à un assigné, ou à l'admin — reflète
   // côté UI la même règle que _require_owner_or_admin() côté backend (voir
   // routers/tasks.py). Le backend reste la source de vérité en cas d'écart.
-  const showDelete = !!user && !!task && (task.created_by === user.id || task.assignee_id === user.id || isAdmin);
+  const showDelete = !!user && !!task && (task.created_by === user.id || task.assignee_ids.includes(user.id) || isAdmin);
 
   async function patch(body: Record<string, unknown>) {
     setBusy(true);
@@ -119,10 +120,10 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
     }
   }
 
-  async function setAssignee(assignee_id: string) {
+  async function setAssignees(assignee_ids: string[]) {
     setBusy(true);
     try {
-      const updated = await api.patch(`/api/tasks/${taskId}/assign`, { assignee_id: assignee_id || null });
+      const updated = await api.patch(`/api/tasks/${taskId}/assign`, { assignee_ids });
       setTask(updated);
       onChanged();
     } catch (err: any) {
@@ -205,16 +206,13 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
-            <label style={labelStyle}>Assigné à</label>
-            <select
-              value={task.assignee_id ?? ""}
+            <label style={labelStyle}>Assigné(s) — certains canaux demandent plusieurs personnes</label>
+            <AssigneePicker
+              selectedIds={task.assignee_ids}
+              options={task.domain === "comptabilite" ? channelUsers : users}
               disabled={!canEdit || busy || (task.domain === "comptabilite" && !isAdmin)}
-              onChange={e => setAssignee(e.target.value)}
-              className="u-input" style={fieldStyle}
-            >
-              <option value="">— Non assignée —</option>
-              {(task.domain === "comptabilite" ? channelUsers : users).map(u => <option key={u.id} value={u.id}>{userLabel(u)}</option>)}
-            </select>
+              onChange={setAssignees}
+            />
           </div>
           <div>
             <label style={labelStyle}>Échéance</label>

@@ -16,7 +16,9 @@ export type Task = {
   priority: TaskPriority;
   domain: TaskDomain | null;
   channel: TaskChannel | null;
-  assignee_id: string | null;
+  // Certains canaux (V0/V1/V2) demandent qu'une tâche soit portée par 2 ou
+  // 3 personnes à la fois — jamais un seul assigné forcé.
+  assignee_ids: string[];
   created_by: string | null;
   due_date: string | null;
   linked_entity_type: string | null;
@@ -90,4 +92,11 @@ export const CHANNEL_STYLE: Record<TaskChannel, string> = {
 export function userLabel(u: AssignableUser | undefined | null): string {
   if (!u) return "—";
   return u.full_name || u.email || "—";
+}
+
+/** Libellés des assignés d'une tâche, dans l'ordre de `ids` (peut être vide,
+ * un seul, ou plusieurs — certains canaux demandent 2-3 personnes à la fois). */
+export function assigneesLabel(users: AssignableUser[], ids: string[]): string {
+  if (ids.length === 0) return "—";
+  return ids.map(id => userLabel(users.find(u => u.id === id))).join(", ");
 }

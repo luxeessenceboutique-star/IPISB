@@ -39,13 +39,19 @@ def _require_edit(user: CurrentUser) -> None:
 
 
 def _require_owner_or_admin(user: CurrentUser, task: dict) -> None:
-    """Suppression : réservée au créateur, à l'assigné, ou à l'admin —
+    """Suppression : réservée au créateur, à un assigné, ou à l'admin —
     au-delà de ce que le canal autoriserait seul (Canal 1 = tout le staff)."""
     if user.is_admin():
         return
-    if task.get("created_by") == user.id or task.get("assignee_id") == user.id:
+    if task.get("created_by") == user.id or user.id in (task.get("assignee_ids") or []):
         return
-    raise HTTPException(403, "Seuls le créateur, l'assigné ou un administrateur peuvent supprimer cette tâche.")
+    raise HTTPException(403, "Seuls le créateur, un assigné ou un administrateur peuvent supprimer cette tâche.")
+
+
+def _invalid_assignees_for_channel(db: Client, assignee_ids: list[str], channel: Optional[str]) -> list[str]:
+    """Sous-liste de `assignee_ids` dont le canal Comptabilité ne correspond
+    pas à `channel` — vide si tous correspondent (ou si `assignee_ids` est vide)."""
+    return [uid for uid in assignee_ids if _accounting_channel_of(db, uid) != channel]
 
 
 def _require_channel_admin(user: CurrentUser) -> None:
@@ -122,7 +128,7 @@ async def list_tasks(
 
     query = db.from_("tasks").select("*", count="exact")
     if assignee_id:
-        query = query.eq("assignee_id", assignee_id)
+        query = query.contains("assignee_ids", [assignee_id])
     if status:
         query = query.eq("status", status)
     if priority:
@@ -161,8 +167,9 @@ async def create_task(
         _require_channel_admin(user)
         if body.channel not in TASK_CHANNELS:
             raise HTTPException(400, f"channel requis pour une tâche Comptabilité (valeurs possibles : {', '.join(sorted(TASK_CHANNELS))})")
-        if body.assignee_id and _accounting_channel_of(db, body.assignee_id) != body.channel:
-            raise HTTPException(400, "Cet utilisateur n'a pas le rôle requis pour le canal sélectionné.")
+        bad = _invalid_assignees_for_channel(db, body.assignee_ids, body.channel)
+        if bad:
+            raise HTTPException(400, "Un ou plusieurs utilisateurs sélectionnés n'ont pas le rôle requis pour le canal choisi.")
     elif body.channel is not None:
         raise HTTPException(400, "Le canal (V0/V1/V2) n'est pertinent que pour le domaine Comptabilité.")
 
@@ -176,9 +183,10 @@ async def create_task(
     task = res.data[0]
 
     log_audit(db, user.id, "task.create", "task", task["id"], {"title": task["title"]})
-    if task.get("assignee_id") and task["assignee_id"] != user.id:
+    notify_ids = [uid for uid in (task.get("assignee_ids") or []) if uid != user.id]
+    if notify_ids:
         notify_users(
-            db, [task["assignee_id"]],
+            db, notify_ids,
             title="Nouvelle tâche assignée 📋",
             message=f"« {task['title']} » vous a été assignée.",
             type="info",
@@ -210,9 +218,9 @@ async def update_task(
         eff_channel = updates.get("channel", existing.get("channel"))
         if eff_channel not in TASK_CHANNELS:
             raise HTTPException(400, f"channel requis pour une tâche Comptabilité (valeurs possibles : {', '.join(sorted(TASK_CHANNELS))})")
-        assignee_id = existing.get("assignee_id")
-        if assignee_id and _accounting_channel_of(db, assignee_id) != eff_channel:
-            raise HTTPException(400, "L'utilisateur actuellement assigné n'a pas le rôle requis pour ce nouveau canal.")
+        bad = _invalid_assignees_for_channel(db, existing.get("assignee_ids") or [], eff_channel)
+        if bad:
+            raise HTTPException(400, "Un ou plusieurs assignés actuels n'ont pas le rôle requis pour ce nouveau canal.")
     elif eff_domain != "comptabilite" and updates.get("channel") is not None:
         raise HTTPException(400, "Le canal (V0/V1/V2) n'est pertinent que pour le domaine Comptabilité.")
 
@@ -240,7 +248,7 @@ async def update_task_status(
         raise HTTPException(404, "Tâche introuvable")
     log_audit(db, user.id, f"task.status.{body.status}", "task", task_id)
 
-    notify_ids = {task.get("created_by"), task.get("assignee_id")} - {user.id, None}
+    notify_ids = {task.get("created_by"), *(task.get("assignee_ids") or [])} - {user.id, None}
     if notify_ids:
         notify_users(
             db, list(notify_ids),
@@ -264,21 +272,23 @@ async def assign_task(
 
     if task.get("domain") == "comptabilite":
         _require_channel_admin(user)
-        if body.assignee_id:
+        if body.assignee_ids:
             channel = task.get("channel")
             if not channel:
                 raise HTTPException(400, "Cette tâche Comptabilité n'a pas de canal défini — définissez-le avant d'assigner.")
-            if _accounting_channel_of(db, body.assignee_id) != channel:
-                raise HTTPException(400, "Cet utilisateur n'a pas le rôle requis pour le canal de cette tâche.")
+            bad = _invalid_assignees_for_channel(db, body.assignee_ids, channel)
+            if bad:
+                raise HTTPException(400, "Un ou plusieurs utilisateurs sélectionnés n'ont pas le rôle requis pour le canal de cette tâche.")
 
-    res = db.from_("tasks").update({"assignee_id": body.assignee_id}).eq("id", task_id).execute()
+    res = db.from_("tasks").update({"assignee_ids": body.assignee_ids}).eq("id", task_id).execute()
     if not res.data:
         raise HTTPException(404, "Tâche introuvable")
-    log_audit(db, user.id, "task.assign", "task", task_id, {"assignee_id": body.assignee_id})
+    log_audit(db, user.id, "task.assign", "task", task_id, {"assignee_ids": body.assignee_ids})
 
-    if body.assignee_id and body.assignee_id != user.id:
+    notify_ids = [uid for uid in body.assignee_ids if uid != user.id]
+    if notify_ids:
         notify_users(
-            db, [body.assignee_id],
+            db, notify_ids,
             title="Tâche assignée 📋",
             message=f"« {task['title']} » vous a été assignée.",
             type="info",

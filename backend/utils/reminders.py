@@ -65,7 +65,7 @@ def compute_agenda_items(db: Client) -> list[dict]:
 
     # ── Tâches avec échéance ────────────────────────────────────────────────
     tasks = (
-        _safe(lambda: db.from_("tasks").select("id, title, status, priority, domain, assignee_id, due_date")
+        _safe(lambda: db.from_("tasks").select("id, title, status, priority, domain, assignee_ids, due_date")
               .not_.is_("due_date", "null").not_.in_("status", ["done", "cancelled"])
               .execute().data)
         or []
@@ -80,7 +80,7 @@ def compute_agenda_items(db: Client) -> list[dict]:
         items.append({
             "category": "task", "domain": t.get("domain") or "general",
             "title": t["title"], "due_date": t["due_date"], "severity": severity_for(delta),
-            "responsible": [t["assignee_id"]] if t.get("assignee_id") else [],
+            "responsible": t.get("assignee_ids") or [],
             "link": f"/dashboard/tasks?focus={t['id']}",
         })
 

@@ -9,7 +9,7 @@ import { CalendarClock } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import {
   type Task, type TaskStatus, type AssignableUser,
-  STATUS_COLUMNS, PRIORITY_META, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, userLabel,
+  STATUS_COLUMNS, PRIORITY_META, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, assigneesLabel,
 } from "./types";
 
 const PAL = {
@@ -19,7 +19,7 @@ const sans = '"Manrope", system-ui, sans-serif';
 
 function TaskCard({ task, users, onOpen }: { task: Task; users: AssignableUser[]; onOpen: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: task.id });
-  const assignee = users.find(u => u.id === task.assignee_id);
+  const assigneesText = assigneesLabel(users, task.assignee_ids);
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
     : {};
@@ -46,9 +46,9 @@ function TaskCard({ task, users, onOpen }: { task: Task; users: AssignableUser[]
           </span>
         )}
       </div>
-      {(assignee || task.channel) && (
+      {(task.assignee_ids.length > 0 || task.channel) && (
         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          {assignee && <span style={{ fontSize: 11.5, color: PAL.muted }}>{userLabel(assignee)}</span>}
+          {task.assignee_ids.length > 0 && <span style={{ fontSize: 11.5, color: PAL.muted }}>{assigneesText}</span>}
           {task.channel && (
             <span className={CHANNEL_STYLE[task.channel]} style={{ fontSize: 10 }} title={CHANNEL_DESC[task.channel]}>
               {CHANNEL_LABEL[task.channel]}

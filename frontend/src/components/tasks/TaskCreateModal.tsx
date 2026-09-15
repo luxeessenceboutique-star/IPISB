@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import type { AssignableUser, TaskChannel, TaskDomain } from "./types";
 import { CHANNEL_LABEL, CHANNEL_DESC } from "./types";
+import { AssigneePicker } from "./AssigneePicker";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -19,8 +20,9 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
   const isAdmin = roles.includes("admin");
   const [form, setForm] = useState({
     title: "", description: "", priority: "medium",
-    domain: fixedDomain ?? "", assignee_id: "", due_date: "",
+    domain: fixedDomain ?? "", due_date: "",
   });
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [channel, setChannel] = useState<TaskChannel | "">("");
   const [channelUsers, setChannelUsers] = useState<AssignableUser[]>([]);
   const [loadingChannelUsers, setLoadingChannelUsers] = useState(false);
@@ -50,7 +52,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
         priority: form.priority,
         domain: form.domain || null,
         channel: isComptabilite ? channel : null,
-        assignee_id: form.assignee_id || null,
+        assignee_ids: assigneeIds,
         due_date: form.due_date || null,
       });
       toast.success("Tâche créée !");
@@ -99,7 +101,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
             <label style={labelStyle}>Domaine</label>
             <select
               value={form.domain}
-              onChange={e => { setForm(f => ({ ...f, domain: e.target.value, assignee_id: "" })); setChannel(""); }}
+              onChange={e => { setForm(f => ({ ...f, domain: e.target.value })); setAssigneeIds([]); setChannel(""); }}
               className="u-input" style={fieldStyle}
             >
               <option value="">— Aucun —</option>
@@ -116,7 +118,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
             <label style={labelStyle}>Canal *</label>
             <select
               value={channel}
-              onChange={e => { setChannel(e.target.value as TaskChannel | ""); setForm(f => ({ ...f, assignee_id: "" })); }}
+              onChange={e => { setChannel(e.target.value as TaskChannel | ""); setAssigneeIds([]); }}
               className="u-input" style={{ ...fieldStyle, marginBottom: 6 }}
             >
               <option value="">— Choisir —</option>
@@ -128,19 +130,18 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
           </>
         )}
 
-        <label style={labelStyle}>Assigné à</label>
-        <select
-          value={form.assignee_id}
-          onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}
+        <label style={labelStyle}>Assigné(s) — certains canaux demandent plusieurs personnes</label>
+        <AssigneePicker
+          selectedIds={assigneeIds}
+          options={assigneeOptions}
           disabled={isComptabilite && (!channel || loadingChannelUsers)}
-          className="u-input" style={{ ...fieldStyle, marginBottom: 24 }}
-        >
-          <option value="">— Non assignée (backlog) —</option>
-          {assigneeOptions.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
-        </select>
+          placeholder="— Non assignée (backlog) —"
+          onChange={setAssigneeIds}
+        />
         {isComptabilite && !channel && (
-          <p style={{ margin: "-18px 0 20px", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord un canal pour voir les profils correspondants.</p>
+          <p style={{ margin: "8px 0 0", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord un canal pour voir les profils correspondants.</p>
         )}
+        <div style={{ marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>

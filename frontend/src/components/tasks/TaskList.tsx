@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import {
   type Task, type AssignableUser, type TaskStatus, type TaskPriority,
-  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, userLabel,
+  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, userLabel, assigneesLabel,
 } from "./types";
 
 const PAL = {
@@ -27,7 +27,7 @@ export function TaskList({ tasks, users, onOpen }: {
   const rows = useMemo(() => {
     let r = tasks;
     if (statusFilter) r = r.filter(t => t.status === statusFilter);
-    if (assigneeFilter) r = r.filter(t => t.assignee_id === assigneeFilter);
+    if (assigneeFilter) r = r.filter(t => t.assignee_ids.includes(assigneeFilter));
     r = [...r].sort((a, b) => {
       if (sortKey === "due_date") return (a.due_date ?? "9999") < (b.due_date ?? "9999") ? -1 : 1;
       if (sortKey === "priority") return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
@@ -81,7 +81,7 @@ export function TaskList({ tasks, users, onOpen }: {
                   </td>
                   <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span>{userLabel(users.find(u => u.id === t.assignee_id))}</span>
+                      <span>{assigneesLabel(users, t.assignee_ids)}</span>
                       {t.channel && (
                         <span className={CHANNEL_STYLE[t.channel]} style={{ fontSize: 10 }} title={CHANNEL_DESC[t.channel]}>
                           {CHANNEL_LABEL[t.channel]}

@@ -1559,14 +1559,14 @@ class TaskCreate(BaseModel):
     priority: str = "medium"
     domain: Optional[str] = None
     channel: Optional[str] = None
-    assignee_id: Optional[str] = None
+    assignee_ids: list[str] = []  # certains canaux (V0/V1/V2) demandent 2-3 personnes à la fois
     due_date: Optional[str] = None
     linked_entity_type: Optional[str] = None
     linked_entity_id: Optional[str] = None
 
 
 class TaskUpdate(BaseModel):
-    """PATCH générique — ne touche jamais status ni assignee_id, forcés via
+    """PATCH générique — ne touche jamais status ni assignee_ids, forcés via
     les endpoints dédiés /status et /assign (même garde-fou que rh_leaves.py)."""
     title: Optional[str] = None
     description: Optional[str] = None
@@ -1583,7 +1583,7 @@ class TaskStatusUpdate(BaseModel):
 
 
 class TaskAssign(BaseModel):
-    assignee_id: Optional[str] = None  # None = désassigner (retour au backlog)
+    assignee_ids: list[str] = []  # [] = désassigner (retour au backlog) ; plusieurs = tâche partagée
 
 
 class TaskCommentCreate(BaseModel):
