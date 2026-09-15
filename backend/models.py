@@ -537,6 +537,7 @@ class PurchaseRequestCreate(BaseModel):
     conformity_note: Optional[str] = None
     conformity_criteria: list[str] = []
     article_code: Optional[str] = None
+    article_identification: Optional[str] = None
     quantity: float = 1
     budget_estimate: float = 0
     duration: Optional[str] = None
@@ -557,6 +558,7 @@ class PurchaseRequestUpdate(BaseModel):
     conformity_note: Optional[str] = None
     conformity_criteria: Optional[list[str]] = None
     article_code: Optional[str] = None
+    article_identification: Optional[str] = None
     quantity: Optional[float] = None
     budget_estimate: Optional[float] = None
     duration: Optional[str] = None

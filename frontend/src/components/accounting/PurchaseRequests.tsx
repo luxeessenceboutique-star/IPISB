@@ -84,7 +84,7 @@ type PR = {
   request_type: string; asset_category: string; category_id: string | null; characteristics: string | null;
   cdc_attachment_name: string | null; cdc_attachment_path: string | null;
   conformity_note: string | null; conformity_criteria: string[] | null;
-  article_code: string | null; quantity: number; budget_estimate: number; duration: string | null;
+  article_code: string | null; article_identification: string | null; quantity: number; budget_estimate: number; duration: string | null;
   need_decision: string; need_decision_comment: string | null;
   quote_synthesis: string | null; payment_mode: string | null; payment_terms_days: number | null;
   quote_decision: string; status: string; created_at: string;
@@ -118,7 +118,7 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
   const [form, setForm] = useState({
     company: "", service: "", requester_name: ownerName, project: "", activity: "", justification: "",
     request_type: "nouveau_besoin", category_id: "", characteristics: "", conformity_note: "",
-    article_code: "", quantity: "1", budget_estimate: "0", duration: "",
+    article_code: "", article_identification: "", quantity: "1", budget_estimate: "0", duration: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
   const [criteria, setCriteria] = useState<string[]>([]);
@@ -216,6 +216,7 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
       <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
         <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
+        <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={form.article_identification} onChange={e => set("article_identification", e.target.value)} /></div>
         <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.quantity} onChange={e => set("quantity", e.target.value)} /></div>
         <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.budget_estimate} onChange={e => set("budget_estimate", e.target.value)} /></div>
         <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={form.duration} onChange={e => set("duration", e.target.value)} /></div>
@@ -471,6 +472,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
       project: p.project ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
       request_type: p.request_type, category_id: p.category_id ?? "", characteristics: p.characteristics ?? "",
       conformity_note: p.conformity_note ?? "", article_code: p.article_code ?? "",
+      article_identification: p.article_identification ?? "",
       quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0), duration: p.duration ?? "",
     });
     setEditCriteria(p.conformity_criteria ?? []);
@@ -677,6 +679,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
           <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 16 }}>
             <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
+            <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={editForm.article_identification} onChange={e => setEditField("article_identification", e.target.value)} /></div>
             <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} /></div>
             <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.budget_estimate} onChange={e => setEditField("budget_estimate", e.target.value)} /></div>
             <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} /></div>
@@ -693,6 +696,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
             {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
             {info("Activité", pr.activity)}
             {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
+            {info("Identification article", pr.article_identification)}
             {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
           </div>
           {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
