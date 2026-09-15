@@ -9,7 +9,7 @@ import { CalendarClock } from "lucide-react";
 import { usePermissions } from "@/lib/permissions";
 import {
   type Task, type TaskStatus, type AssignableUser,
-  STATUS_COLUMNS, PRIORITY_META, userLabel,
+  STATUS_COLUMNS, PRIORITY_META, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, userLabel,
 } from "./types";
 
 const PAL = {
@@ -46,8 +46,15 @@ function TaskCard({ task, users, onOpen }: { task: Task; users: AssignableUser[]
           </span>
         )}
       </div>
-      {assignee && (
-        <div style={{ marginTop: 8, fontSize: 11.5, color: PAL.muted }}>{userLabel(assignee)}</div>
+      {(assignee || task.channel) && (
+        <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {assignee && <span style={{ fontSize: 11.5, color: PAL.muted }}>{userLabel(assignee)}</span>}
+          {task.channel && (
+            <span className={CHANNEL_STYLE[task.channel]} style={{ fontSize: 10 }} title={CHANNEL_DESC[task.channel]}>
+              {CHANNEL_LABEL[task.channel]}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );

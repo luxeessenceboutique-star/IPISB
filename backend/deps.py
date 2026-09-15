@@ -1,6 +1,6 @@
 import os
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Iterable, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import create_client, Client
@@ -15,6 +15,21 @@ load_dotenv()
 SUPABASE_URL: str = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY: str = os.environ["SUPABASE_SERVICE_KEY"]
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:5178")
+
+
+def accounting_channel_for_roles(roles: Iterable[str]) -> Optional[str]:
+    """Canal de permission Comptabilité (questionnaire des canaux) déduit
+    d'un ensemble de rôles — même mapping que le frontend
+    (dashboard.users.tsx::channelFor). V2 (admin) prime sur V1
+    (comptabilite), qui prime sur V0 (professor/assistant_rh/accountant)."""
+    role_set = set(roles)
+    if "admin" in role_set:
+        return "v2"
+    if "comptabilite" in role_set:
+        return "v1"
+    if role_set & {"professor", "assistant_rh", "accountant"}:
+        return "v0"
+    return None
 
 
 def _force_http1(client: Client) -> None:
@@ -118,6 +133,11 @@ class CurrentUser:
     def can_read_accounting(self) -> bool:
         """Admin/comptabilité (plein accès), comptable (lecture seule), caissier (saisie→validation)."""
         return self.is_admin() or self.is_comptabilite() or self.is_accountant() or self.is_cashier()
+
+    def accounting_channel(self) -> Optional[str]:
+        """Canal de permission Comptabilité (V0/V1/V2, questionnaire des
+        canaux) de cet utilisateur — voir accounting_channel_for_roles()."""
+        return accounting_channel_for_roles(self.roles)
 
     def can_access_rh(self) -> bool:
         """Toute la plateforme RH (Employés, Congés, Recrutement…) — sauf Paie."""

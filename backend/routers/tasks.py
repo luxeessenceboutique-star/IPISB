@@ -2,10 +2,10 @@ from datetime import datetime, timezone
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
-from deps import get_current_user, get_db, CurrentUser
+from deps import get_current_user, get_db, CurrentUser, accounting_channel_for_roles
 from models import (
     TaskCreate, TaskUpdate, TaskStatusUpdate, TaskAssign, TaskCommentCreate,
-    TASK_STATUSES, TASK_PRIORITIES, TASK_DOMAINS,
+    TASK_STATUSES, TASK_PRIORITIES, TASK_DOMAINS, TASK_CHANNELS,
 )
 from utils.audit import log_audit
 from utils.notify import notify_users
@@ -48,6 +48,19 @@ def _require_owner_or_admin(user: CurrentUser, task: dict) -> None:
     raise HTTPException(403, "Seuls le créateur, l'assigné ou un administrateur peuvent supprimer cette tâche.")
 
 
+def _require_channel_admin(user: CurrentUser) -> None:
+    """Le canal V0/V1/V2 d'une tâche Comptabilité (et son assignation) ne se
+    choisit que par l'administrateur (V2) — demande explicite, distincte de
+    la règle générale Canal 1 (tout le staff) qui régit le reste du module."""
+    if not user.is_admin():
+        raise HTTPException(403, "Seul l'administrateur (V2) peut définir le canal et l'assigné d'une tâche Comptabilité.")
+
+
+def _accounting_channel_of(db: Client, user_id: str) -> Optional[str]:
+    roles = {r["role"] for r in db.from_("user_roles").select("role").eq("user_id", user_id).execute().data or []}
+    return accounting_channel_for_roles(roles)
+
+
 def _get_or_404(db: Client, task_id: str) -> dict:
     rows = db.from_("tasks").select("*").eq("id", task_id).execute().data
     if not rows:
@@ -63,15 +76,29 @@ def _now() -> str:
 async def list_assignable_users(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
+    channel: Optional[str] = None,
 ):
     """Comptes staff pouvant être assignés (tout rôle V1 du module Tâches).
     Indépendant de GET /users (réservé à admin/professor/cashier) — ce
     module doit rester utilisable par rh/assistant_rh/comptabilite/accountant
-    aussi, sans élargir l'accès de la gestion des comptes elle-même."""
+    aussi, sans élargir l'accès de la gestion des comptes elle-même.
+
+    `channel` (v0/v1/v2, optionnel) restreint aux comptes dont le canal
+    Comptabilité correspond — utilisé par la modale de création/assignation
+    d'une tâche Comptabilité pour ne proposer que les bons profils."""
     _require_view(user)
+    if channel is not None and channel not in TASK_CHANNELS:
+        raise HTTPException(400, "Invalid channel")
     _, v1_roles = ENTITY_CHANNELS[_ENTITY]
     role_rows = db.from_("user_roles").select("user_id, role").in_("role", v1_roles).execute().data or []
-    ids = list({r["user_id"] for r in role_rows if r.get("user_id")})
+    roles_by_user: dict[str, set] = {}
+    for r in role_rows:
+        if r.get("user_id"):
+            roles_by_user.setdefault(r["user_id"], set()).add(r["role"])
+    if channel is not None:
+        ids = [uid for uid, roles in roles_by_user.items() if accounting_channel_for_roles(roles) == channel]
+    else:
+        ids = list(roles_by_user.keys())
     if not ids:
         return []
     profiles = db.from_("profiles").select("id, full_name, email").in_("id", ids).execute().data or []
@@ -130,6 +157,15 @@ async def create_task(
     if body.domain is not None and body.domain not in TASK_DOMAINS:
         raise HTTPException(400, f"domain invalide (valeurs possibles : {', '.join(sorted(TASK_DOMAINS))})")
 
+    if body.domain == "comptabilite":
+        _require_channel_admin(user)
+        if body.channel not in TASK_CHANNELS:
+            raise HTTPException(400, f"channel requis pour une tâche Comptabilité (valeurs possibles : {', '.join(sorted(TASK_CHANNELS))})")
+        if body.assignee_id and _accounting_channel_of(db, body.assignee_id) != body.channel:
+            raise HTTPException(400, "Cet utilisateur n'a pas le rôle requis pour le canal sélectionné.")
+    elif body.channel is not None:
+        raise HTTPException(400, "Le canal (V0/V1/V2) n'est pertinent que pour le domaine Comptabilité.")
+
     data = body.model_dump()
     data["status"] = "todo"
     data["created_by"] = user.id
@@ -159,7 +195,7 @@ async def update_task(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_edit(user)
-    _get_or_404(db, task_id)
+    existing = _get_or_404(db, task_id)
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "Aucun champ à modifier")
@@ -167,6 +203,18 @@ async def update_task(
         raise HTTPException(400, f"priority invalide (valeurs possibles : {', '.join(sorted(TASK_PRIORITIES))})")
     if "domain" in updates and updates["domain"] is not None and updates["domain"] not in TASK_DOMAINS:
         raise HTTPException(400, f"domain invalide (valeurs possibles : {', '.join(sorted(TASK_DOMAINS))})")
+
+    eff_domain = updates.get("domain", existing.get("domain"))
+    if eff_domain == "comptabilite" and ("channel" in updates or ("domain" in updates and existing.get("domain") != "comptabilite")):
+        _require_channel_admin(user)
+        eff_channel = updates.get("channel", existing.get("channel"))
+        if eff_channel not in TASK_CHANNELS:
+            raise HTTPException(400, f"channel requis pour une tâche Comptabilité (valeurs possibles : {', '.join(sorted(TASK_CHANNELS))})")
+        assignee_id = existing.get("assignee_id")
+        if assignee_id and _accounting_channel_of(db, assignee_id) != eff_channel:
+            raise HTTPException(400, "L'utilisateur actuellement assigné n'a pas le rôle requis pour ce nouveau canal.")
+    elif eff_domain != "comptabilite" and updates.get("channel") is not None:
+        raise HTTPException(400, "Le canal (V0/V1/V2) n'est pertinent que pour le domaine Comptabilité.")
 
     res = db.from_("tasks").update(updates).eq("id", task_id).execute()
     if not res.data:
@@ -213,6 +261,15 @@ async def assign_task(
 ):
     _require_edit(user)
     task = _get_or_404(db, task_id)
+
+    if task.get("domain") == "comptabilite":
+        _require_channel_admin(user)
+        if body.assignee_id:
+            channel = task.get("channel")
+            if not channel:
+                raise HTTPException(400, "Cette tâche Comptabilité n'a pas de canal défini — définissez-le avant d'assigner.")
+            if _accounting_channel_of(db, body.assignee_id) != channel:
+                raise HTTPException(400, "Cet utilisateur n'a pas le rôle requis pour le canal de cette tâche.")
 
     res = db.from_("tasks").update({"assignee_id": body.assignee_id}).eq("id", task_id).execute()
     if not res.data:

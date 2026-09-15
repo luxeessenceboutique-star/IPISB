@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import type { AssignableUser } from "./types";
+import { useAuth } from "@/lib/auth";
+import type { AssignableUser, TaskChannel, TaskDomain } from "./types";
+import { CHANNEL_LABEL, CHANNEL_DESC } from "./types";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -10,14 +12,36 @@ const sans = '"Manrope", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
-export function TaskCreateModal({ users, onClose, onSaved }: { users: AssignableUser[]; onClose: () => void; onSaved: () => void }) {
+export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
+  users: AssignableUser[]; fixedDomain?: TaskDomain; onClose: () => void; onSaved: () => void;
+}) {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [form, setForm] = useState({
-    title: "", description: "", priority: "medium", domain: "", assignee_id: "", due_date: "",
+    title: "", description: "", priority: "medium",
+    domain: fixedDomain ?? "", assignee_id: "", due_date: "",
   });
+  const [channel, setChannel] = useState<TaskChannel | "">("");
+  const [channelUsers, setChannelUsers] = useState<AssignableUser[]>([]);
+  const [loadingChannelUsers, setLoadingChannelUsers] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  const isComptabilite = form.domain === "comptabilite";
+
+  useEffect(() => {
+    if (!isComptabilite || !channel) { setChannelUsers([]); return; }
+    let active = true;
+    setLoadingChannelUsers(true);
+    api.get(`/api/tasks/assignable-users?channel=${channel}`)
+      .then((u: AssignableUser[]) => { if (active) setChannelUsers(u); })
+      .catch(() => { if (active) setChannelUsers([]); })
+      .finally(() => { if (active) setLoadingChannelUsers(false); });
+    return () => { active = false; };
+  }, [isComptabilite, channel]);
 
   async function submit() {
     if (!form.title.trim()) { toast.error("Le titre est requis."); return; }
+    if (isComptabilite && !channel) { toast.error("Choisissez un canal (V0, V1 ou V2) pour une tâche Comptabilité."); return; }
     setBusy(true);
     try {
       await api.post("/api/tasks", {
@@ -25,6 +49,7 @@ export function TaskCreateModal({ users, onClose, onSaved }: { users: Assignable
         description: form.description.trim() || null,
         priority: form.priority,
         domain: form.domain || null,
+        channel: isComptabilite ? channel : null,
         assignee_id: form.assignee_id || null,
         due_date: form.due_date || null,
       });
@@ -37,6 +62,8 @@ export function TaskCreateModal({ users, onClose, onSaved }: { users: Assignable
       setBusy(false);
     }
   }
+
+  const assigneeOptions = isComptabilite ? channelUsers : users;
 
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
@@ -67,20 +94,53 @@ export function TaskCreateModal({ users, onClose, onSaved }: { users: Assignable
           </div>
         </div>
 
-        <label style={labelStyle}>Domaine</label>
-        <select value={form.domain} onChange={e => setForm(f => ({ ...f, domain: e.target.value }))} className="u-input" style={fieldStyle}>
-          <option value="">— Aucun —</option>
-          <option value="rh">RH</option>
-          <option value="comptabilite">Comptabilité</option>
-          <option value="scolarite">Scolarité</option>
-          <option value="general">Général</option>
-        </select>
+        {!fixedDomain && (
+          <>
+            <label style={labelStyle}>Domaine</label>
+            <select
+              value={form.domain}
+              onChange={e => { setForm(f => ({ ...f, domain: e.target.value, assignee_id: "" })); setChannel(""); }}
+              className="u-input" style={fieldStyle}
+            >
+              <option value="">— Aucun —</option>
+              <option value="rh">RH</option>
+              {isAdmin && <option value="comptabilite">Comptabilité</option>}
+              <option value="scolarite">Scolarité</option>
+              <option value="general">Général</option>
+            </select>
+          </>
+        )}
+
+        {isComptabilite && (
+          <>
+            <label style={labelStyle}>Canal *</label>
+            <select
+              value={channel}
+              onChange={e => { setChannel(e.target.value as TaskChannel | ""); setForm(f => ({ ...f, assignee_id: "" })); }}
+              className="u-input" style={{ ...fieldStyle, marginBottom: 6 }}
+            >
+              <option value="">— Choisir —</option>
+              {(["v2", "v1", "v0"] as TaskChannel[]).map(c => (
+                <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>
+              ))}
+            </select>
+            {channel && <p style={{ margin: "0 0 12px", fontSize: 11.5, color: PAL.muted, lineHeight: 1.5 }}>{CHANNEL_DESC[channel]}</p>}
+          </>
+        )}
 
         <label style={labelStyle}>Assigné à</label>
-        <select value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))} className="u-input" style={{ ...fieldStyle, marginBottom: 24 }}>
+        <select
+          value={form.assignee_id}
+          onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}
+          disabled={isComptabilite && (!channel || loadingChannelUsers)}
+          className="u-input" style={{ ...fieldStyle, marginBottom: 24 }}
+        >
           <option value="">— Non assignée (backlog) —</option>
-          {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
+          {assigneeOptions.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
         </select>
+        {isComptabilite && !channel && (
+          <p style={{ margin: "-18px 0 20px", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord un canal pour voir les profils correspondants.</p>
+        )}
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>

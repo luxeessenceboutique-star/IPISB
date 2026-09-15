@@ -1548,6 +1548,9 @@ class SessionFeedbackSubmit(BaseModel):
 TASK_STATUSES = {"todo", "in_progress", "in_review", "done", "blocked", "cancelled"}
 TASK_PRIORITIES = {"low", "medium", "high", "urgent"}
 TASK_DOMAINS = {"rh", "comptabilite", "scolarite", "general"}
+# Canal de permission Comptabilité (V0/V1/V2, questionnaire des canaux) —
+# pertinent uniquement pour domain="comptabilite" (voir routers/tasks.py).
+TASK_CHANNELS = {"v0", "v1", "v2"}
 
 
 class TaskCreate(BaseModel):
@@ -1555,6 +1558,7 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     priority: str = "medium"
     domain: Optional[str] = None
+    channel: Optional[str] = None
     assignee_id: Optional[str] = None
     due_date: Optional[str] = None
     linked_entity_type: Optional[str] = None
@@ -1568,6 +1572,7 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     priority: Optional[str] = None
     domain: Optional[str] = None
+    channel: Optional[str] = None
     due_date: Optional[str] = None
     linked_entity_type: Optional[str] = None
     linked_entity_id: Optional[str] = None

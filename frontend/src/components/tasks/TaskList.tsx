@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import {
   type Task, type AssignableUser, type TaskStatus, type TaskPriority,
-  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, userLabel,
+  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, userLabel,
 } from "./types";
 
 const PAL = {
@@ -79,7 +79,16 @@ export function TaskList({ tasks, users, onOpen }: {
                   <td style={{ padding: "10px 14px" }}>
                     <span className={PRIORITY_META[t.priority].chip}>{PRIORITY_META[t.priority].label}</span>
                   </td>
-                  <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>{userLabel(users.find(u => u.id === t.assignee_id))}</td>
+                  <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span>{userLabel(users.find(u => u.id === t.assignee_id))}</span>
+                      {t.channel && (
+                        <span className={CHANNEL_STYLE[t.channel]} style={{ fontSize: 10 }} title={CHANNEL_DESC[t.channel]}>
+                          {CHANNEL_LABEL[t.channel]}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>{t.domain ? DOMAIN_LABEL[t.domain] : "—"}</td>
                   <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>
                     {t.due_date ? (

@@ -4,6 +4,9 @@
 export type TaskStatus = "todo" | "in_progress" | "in_review" | "done" | "blocked" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type TaskDomain = "rh" | "comptabilite" | "scolarite" | "general";
+// Canal de permission Comptabilité (questionnaire des canaux) — pertinent
+// uniquement pour domain === "comptabilite" ; null pour les autres domaines.
+export type TaskChannel = "v0" | "v1" | "v2";
 
 export type Task = {
   id: string;
@@ -12,6 +15,7 @@ export type Task = {
   status: TaskStatus;
   priority: TaskPriority;
   domain: TaskDomain | null;
+  channel: TaskChannel | null;
   assignee_id: string | null;
   created_by: string | null;
   due_date: string | null;
@@ -67,6 +71,20 @@ export const DOMAIN_LABEL: Record<TaskDomain, string> = {
   comptabilite: "Comptabilité",
   scolarite: "Scolarité",
   general: "Général",
+};
+
+// Mêmes libellés/descriptions que la page Utilisateurs (dashboard.users.tsx)
+// — V2 (admin) > V1 (comptabilite) > V0 (professor/assistant_rh/accountant).
+export const CHANNEL_LABEL: Record<TaskChannel, string> = { v0: "V0", v1: "V1", v2: "V2" };
+export const CHANNEL_DESC: Record<TaskChannel, string> = {
+  v0: "Saisie/consultation limitée aux pages autorisées — toute opération doit être validée par un V1. Formateurs, Assistantes, Comptable.",
+  v1: "S'auto-valide entièrement sur ses tâches (Canal 1) ; garde un accès de supervision sur le Canal 2. Comptabilité.",
+  v2: "Validation finale sur le Canal 2 (Annuler/Supprimer inclus) + accès admin complet. Administrateur.",
+};
+export const CHANNEL_STYLE: Record<TaskChannel, string> = {
+  v2: "chip-c chip-c-blue",
+  v1: "chip-c chip-c-green",
+  v0: "chip-c",
 };
 
 export function userLabel(u: AssignableUser | undefined | null): string {

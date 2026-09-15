@@ -5,7 +5,7 @@ import {
   Users, LogOut, X, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   RefreshCw, Briefcase, Landmark, MessageCircle,
-  ChevronDown, ClipboardCheck,
+  ChevronDown, ClipboardCheck, Kanban,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -128,6 +128,9 @@ function DashboardLayout() {
   const showAccounting = isAdmin || hasFinanceRole;
   const showDocuments = isAdmin;
   const showUsers = isAdmin || isProf;
+  // Canal V0/V1/V2 (questionnaire des canaux Comptabilité) — cashier n'en
+  // fait pas partie (jamais mentionné dans le questionnaire).
+  const showAccountingTasks = isAdmin || isComptabilite || isAccountant || isProf || isAssistantRh;
 
   // Comptable externe (le cabinet ne fait pas partie de l'équipe) : aucun
   // autre rôle métier — sa barre latérale se réduit à son seul espace,
@@ -145,6 +148,10 @@ function DashboardLayout() {
     // Tâches quotidiennes — raccourci direct juste après Notifications
     // (demande explicite) plutôt que noyé dans les onglets internes de RH.
     ...(showRh ? [leaf({ key: "dash.dailyTasks", to: "/dashboard/rh-tasks", icon: ClipboardCheck })] : []),
+
+    // Tâches Comptabilité (canaux V0/V1/V2) — même raccourci direct, page
+    // isolée (pas de découpage par domaine dans le module Tâches générique).
+    ...(showAccountingTasks ? [leaf({ key: "dash.accountingTasks", to: "/dashboard/accounting-tasks", icon: Kanban })] : []),
 
     // Aperçu — page d'accueil (dashboard.index.tsx).
     leaf({ key: "dash.overview", to: "/dashboard", icon: Home, exact: true }),

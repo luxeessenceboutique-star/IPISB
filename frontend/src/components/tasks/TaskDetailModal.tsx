@@ -5,8 +5,8 @@ import { Trash2, Send, History } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { usePermissions } from "@/lib/permissions";
 import {
-  type Task, type TaskComment, type AuditEntry, type AssignableUser,
-  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, userLabel,
+  type Task, type TaskComment, type AuditEntry, type AssignableUser, type TaskChannel,
+  STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC, userLabel,
 } from "./types";
 
 const PAL = {
@@ -43,6 +43,16 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
   const [showHistory, setShowHistory] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [channelUsers, setChannelUsers] = useState<AssignableUser[]>([]);
+
+  useEffect(() => {
+    if (!task || task.domain !== "comptabilite" || !task.channel) { setChannelUsers([]); return; }
+    let active = true;
+    api.get(`/api/tasks/assignable-users?channel=${task.channel}`)
+      .then((u: AssignableUser[]) => { if (active) setChannelUsers(u); })
+      .catch(() => { if (active) setChannelUsers([]); });
+    return () => { active = false; };
+  }, [task?.domain, task?.channel]);
 
   async function load() {
     try {
@@ -91,6 +101,19 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
       onChanged();
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors du changement de statut.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setChannel(newChannel: string) {
+    setBusy(true);
+    try {
+      const updated = await api.patch(`/api/tasks/${taskId}`, { channel: newChannel || null });
+      setTask(updated);
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du changement de canal.");
     } finally {
       setBusy(false);
     }
@@ -183,9 +206,14 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <label style={labelStyle}>Assigné à</label>
-            <select value={task.assignee_id ?? ""} disabled={!canEdit || busy} onChange={e => setAssignee(e.target.value)} className="u-input" style={fieldStyle}>
+            <select
+              value={task.assignee_id ?? ""}
+              disabled={!canEdit || busy || (task.domain === "comptabilite" && !isAdmin)}
+              onChange={e => setAssignee(e.target.value)}
+              className="u-input" style={fieldStyle}
+            >
               <option value="">— Non assignée —</option>
-              {users.map(u => <option key={u.id} value={u.id}>{userLabel(u)}</option>)}
+              {(task.domain === "comptabilite" ? channelUsers : users).map(u => <option key={u.id} value={u.id}>{userLabel(u)}</option>)}
             </select>
           </div>
           <div>
@@ -195,11 +223,27 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
           </div>
         </div>
 
-        <label style={labelStyle}>Domaine</label>
-        <select value={task.domain ?? ""} disabled={!canEdit || busy} onChange={e => patch({ domain: e.target.value || null })} className="u-input" style={fieldStyle}>
-          <option value="">— Aucun —</option>
-          {Object.entries(DOMAIN_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-        </select>
+        <div style={{ display: "grid", gridTemplateColumns: task.domain === "comptabilite" ? "1fr 1fr" : "1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Domaine</label>
+            <select value={task.domain ?? ""} disabled={!canEdit || busy} onChange={e => patch({ domain: e.target.value || null })} className="u-input" style={fieldStyle}>
+              <option value="">— Aucun —</option>
+              {Object.entries(DOMAIN_LABEL).map(([k, l]) => (
+                (k !== "comptabilite" || isAdmin || task.domain === "comptabilite") &&
+                <option key={k} value={k}>{l}</option>
+              ))}
+            </select>
+          </div>
+          {task.domain === "comptabilite" && (
+            <div>
+              <label style={labelStyle}>Canal</label>
+              <select value={task.channel ?? ""} disabled={!isAdmin || busy} onChange={e => setChannel(e.target.value)} className="u-input" style={fieldStyle} title={task.channel ? CHANNEL_DESC[task.channel] : undefined}>
+                <option value="">— Choisir —</option>
+                {(["v2", "v1", "v0"] as TaskChannel[]).map(c => <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
 
         <label style={labelStyle}>Description</label>
         <textarea defaultValue={task.description ?? ""} disabled={!canEdit || busy} rows={3}
