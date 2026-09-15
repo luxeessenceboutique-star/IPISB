@@ -5,7 +5,7 @@ import {
   Users, LogOut, X, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   RefreshCw, Briefcase, Landmark, MessageCircle,
-  ChevronDown, ClipboardCheck, Kanban,
+  ChevronDown, Kanban,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -144,10 +144,6 @@ function DashboardLayout() {
   ] : [
     // Notifications en tout premier, visible par tous.
     leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
-
-    // Tâches quotidiennes — raccourci direct juste après Notifications
-    // (demande explicite) plutôt que noyé dans les onglets internes de RH.
-    ...(showRh ? [leaf({ key: "dash.dailyTasks", to: "/dashboard/rh-tasks", icon: ClipboardCheck })] : []),
 
     // Tâches Comptabilité (canaux V0/V1/V2) — même raccourci direct, page
     // isolée (pas de découpage par domaine dans le module Tâches générique).

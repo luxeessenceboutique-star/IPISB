@@ -16,7 +16,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardTasksRouteImport } from './routes/dashboard.tasks'
-import { Route as DashboardRhTasksRouteImport } from './routes/dashboard.rh-tasks'
 import { Route as DashboardRhRouteImport } from './routes/dashboard.rh'
 import { Route as DashboardReunionsInstancesRouteImport } from './routes/dashboard.reunions-instances'
 import { Route as DashboardPurchaseRequestsRouteImport } from './routes/dashboard.purchase-requests'
@@ -65,11 +64,6 @@ const DashboardUsersRoute = DashboardUsersRouteImport.update({
 const DashboardTasksRoute = DashboardTasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
-  getParentRoute: () => DashboardRoute,
-} as any)
-const DashboardRhTasksRoute = DashboardRhTasksRouteImport.update({
-  id: '/rh-tasks',
-  path: '/rh-tasks',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardRhRoute = DashboardRhRouteImport.update({
@@ -165,7 +159,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
-  '/dashboard/rh-tasks': typeof DashboardRhTasksRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -188,7 +181,6 @@ export interface FileRoutesByTo {
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
-  '/dashboard/rh-tasks': typeof DashboardRhTasksRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -213,7 +205,6 @@ export interface FileRoutesById {
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
-  '/dashboard/rh-tasks': typeof DashboardRhTasksRoute
   '/dashboard/tasks': typeof DashboardTasksRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -239,7 +230,6 @@ export interface FileRouteTypes {
     | '/dashboard/purchase-requests'
     | '/dashboard/reunions-instances'
     | '/dashboard/rh'
-    | '/dashboard/rh-tasks'
     | '/dashboard/tasks'
     | '/dashboard/users'
     | '/dashboard/'
@@ -262,7 +252,6 @@ export interface FileRouteTypes {
     | '/dashboard/purchase-requests'
     | '/dashboard/reunions-instances'
     | '/dashboard/rh'
-    | '/dashboard/rh-tasks'
     | '/dashboard/tasks'
     | '/dashboard/users'
     | '/dashboard'
@@ -286,7 +275,6 @@ export interface FileRouteTypes {
     | '/dashboard/purchase-requests'
     | '/dashboard/reunions-instances'
     | '/dashboard/rh'
-    | '/dashboard/rh-tasks'
     | '/dashboard/tasks'
     | '/dashboard/users'
     | '/dashboard/'
@@ -350,13 +338,6 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/dashboard/tasks'
       preLoaderRoute: typeof DashboardTasksRouteImport
-      parentRoute: typeof DashboardRoute
-    }
-    '/dashboard/rh-tasks': {
-      id: '/dashboard/rh-tasks'
-      path: '/rh-tasks'
-      fullPath: '/dashboard/rh-tasks'
-      preLoaderRoute: typeof DashboardRhTasksRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/rh': {
@@ -473,7 +454,6 @@ interface DashboardRouteChildren {
   DashboardPurchaseRequestsRoute: typeof DashboardPurchaseRequestsRoute
   DashboardReunionsInstancesRoute: typeof DashboardReunionsInstancesRoute
   DashboardRhRoute: typeof DashboardRhRoute
-  DashboardRhTasksRoute: typeof DashboardRhTasksRoute
   DashboardTasksRoute: typeof DashboardTasksRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -494,7 +474,6 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPurchaseRequestsRoute: DashboardPurchaseRequestsRoute,
   DashboardReunionsInstancesRoute: DashboardReunionsInstancesRoute,
   DashboardRhRoute: DashboardRhRoute,
-  DashboardRhTasksRoute: DashboardRhTasksRoute,
   DashboardTasksRoute: DashboardTasksRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardIndexRoute: DashboardIndexRoute,
