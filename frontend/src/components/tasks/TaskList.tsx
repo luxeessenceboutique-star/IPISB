@@ -82,11 +82,11 @@ export function TaskList({ tasks, users, onOpen }: {
                   <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       <span>{assigneesLabel(users, t.assignee_ids)}</span>
-                      {t.channel && (
-                        <span className={CHANNEL_STYLE[t.channel]} style={{ fontSize: 10 }} title={CHANNEL_DESC[t.channel]}>
-                          {CHANNEL_LABEL[t.channel]}
+                      {t.channels.map(c => (
+                        <span key={c} className={CHANNEL_STYLE[c]} style={{ fontSize: 10 }} title={CHANNEL_DESC[c]}>
+                          {CHANNEL_LABEL[c]}
                         </span>
-                      )}
+                      ))}
                     </div>
                   </td>
                   <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>{t.domain ? DOMAIN_LABEL[t.domain] : "—"}</td>

@@ -1559,8 +1559,8 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     priority: str = "medium"
     domain: Optional[str] = None
-    channel: Optional[str] = None
-    assignee_ids: list[str] = []  # certains canaux (V0/V1/V2) demandent 2-3 personnes à la fois
+    channels: list[str] = []  # une tâche peut réunir V0/V1/V2 à la fois
+    assignee_ids: list[str] = []  # chaque assigné doit correspondre à l'un des channels
     due_date: Optional[str] = None
     linked_entity_type: Optional[str] = None
     linked_entity_id: Optional[str] = None
@@ -1573,7 +1573,7 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     priority: Optional[str] = None
     domain: Optional[str] = None
-    channel: Optional[str] = None
+    channels: Optional[list[str]] = None
     due_date: Optional[str] = None
     linked_entity_type: Optional[str] = None
     linked_entity_id: Optional[str] = None

@@ -10,6 +10,14 @@ import {
 } from "./types";
 import { AssigneePicker } from "./AssigneePicker";
 
+const ALL_CHANNELS: TaskChannel[] = ["v2", "v1", "v0"];
+
+function assignableUrl(channels: TaskChannel[]): string {
+  const qs = new URLSearchParams();
+  for (const c of channels) qs.append("channels", c);
+  return `/api/tasks/assignable-users?${qs.toString()}`;
+}
+
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
@@ -47,13 +55,13 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
   const [channelUsers, setChannelUsers] = useState<AssignableUser[]>([]);
 
   useEffect(() => {
-    if (!task || task.domain !== "comptabilite" || !task.channel) { setChannelUsers([]); return; }
+    if (!task || task.domain !== "comptabilite" || task.channels.length === 0) { setChannelUsers([]); return; }
     let active = true;
-    api.get(`/api/tasks/assignable-users?channel=${task.channel}`)
+    api.get(assignableUrl(task.channels))
       .then((u: AssignableUser[]) => { if (active) setChannelUsers(u); })
       .catch(() => { if (active) setChannelUsers([]); });
     return () => { active = false; };
-  }, [task?.domain, task?.channel]);
+  }, [task?.domain, task?.channels]);
 
   async function load() {
     try {
@@ -107,10 +115,10 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
     }
   }
 
-  async function setChannel(newChannel: string) {
+  async function setChannels(newChannels: TaskChannel[]) {
     setBusy(true);
     try {
-      const updated = await api.patch(`/api/tasks/${taskId}`, { channel: newChannel || null });
+      const updated = await api.patch(`/api/tasks/${taskId}`, { channels: newChannels });
       setTask(updated);
       onChanged();
     } catch (err: any) {
@@ -118,6 +126,12 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
     } finally {
       setBusy(false);
     }
+  }
+
+  function toggleChannel(c: TaskChannel) {
+    if (!task) return;
+    const next = task.channels.includes(c) ? task.channels.filter(x => x !== c) : [...task.channels, c];
+    setChannels(next);
   }
 
   async function setAssignees(assignee_ids: string[]) {
@@ -221,27 +235,35 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: task.domain === "comptabilite" ? "1fr 1fr" : "1fr", gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Domaine</label>
-            <select value={task.domain ?? ""} disabled={!canEdit || busy} onChange={e => patch({ domain: e.target.value || null })} className="u-input" style={fieldStyle}>
-              <option value="">— Aucun —</option>
-              {Object.entries(DOMAIN_LABEL).map(([k, l]) => (
-                (k !== "comptabilite" || isAdmin || task.domain === "comptabilite") &&
-                <option key={k} value={k}>{l}</option>
+        <label style={labelStyle}>Domaine</label>
+        <select value={task.domain ?? ""} disabled={!canEdit || busy} onChange={e => patch({ domain: e.target.value || null })} className="u-input" style={fieldStyle}>
+          <option value="">— Aucun —</option>
+          {Object.entries(DOMAIN_LABEL).map(([k, l]) => (
+            (k !== "comptabilite" || isAdmin || task.domain === "comptabilite") &&
+            <option key={k} value={k}>{l}</option>
+          ))}
+        </select>
+
+        {task.domain === "comptabilite" && (
+          <>
+            <label style={labelStyle}>Canaux — une tâche peut en réunir plusieurs à la fois</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, marginBottom: 16 }}>
+              {ALL_CHANNELS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  disabled={!isAdmin || busy}
+                  onClick={() => toggleChannel(c)}
+                  className={`chip-c ${task.channels.includes(c) ? "chip-c-green" : ""}`}
+                  style={{ cursor: (!isAdmin || busy) ? "not-allowed" : "pointer", border: `1px solid ${task.channels.includes(c) ? "transparent" : PAL.line}`, opacity: (!isAdmin || busy) ? 0.6 : 1 }}
+                  title={CHANNEL_DESC[c]}
+                >
+                  {CHANNEL_LABEL[c]}
+                </button>
               ))}
-            </select>
-          </div>
-          {task.domain === "comptabilite" && (
-            <div>
-              <label style={labelStyle}>Canal</label>
-              <select value={task.channel ?? ""} disabled={!isAdmin || busy} onChange={e => setChannel(e.target.value)} className="u-input" style={fieldStyle} title={task.channel ? CHANNEL_DESC[task.channel] : undefined}>
-                <option value="">— Choisir —</option>
-                {(["v2", "v1", "v0"] as TaskChannel[]).map(c => <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>)}
-              </select>
             </div>
-          )}
-        </div>
+          </>
+        )}
 
         <label style={labelStyle}>Description</label>
         <textarea defaultValue={task.description ?? ""} disabled={!canEdit || busy} rows={3}

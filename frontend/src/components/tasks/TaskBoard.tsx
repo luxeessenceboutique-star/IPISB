@@ -46,14 +46,14 @@ function TaskCard({ task, users, onOpen }: { task: Task; users: AssignableUser[]
           </span>
         )}
       </div>
-      {(task.assignee_ids.length > 0 || task.channel) && (
+      {(task.assignee_ids.length > 0 || task.channels.length > 0) && (
         <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           {task.assignee_ids.length > 0 && <span style={{ fontSize: 11.5, color: PAL.muted }}>{assigneesText}</span>}
-          {task.channel && (
-            <span className={CHANNEL_STYLE[task.channel]} style={{ fontSize: 10 }} title={CHANNEL_DESC[task.channel]}>
-              {CHANNEL_LABEL[task.channel]}
+          {task.channels.map(c => (
+            <span key={c} className={CHANNEL_STYLE[c]} style={{ fontSize: 10 }} title={CHANNEL_DESC[c]}>
+              {CHANNEL_LABEL[c]}
             </span>
-          )}
+          ))}
         </div>
       )}
     </div>

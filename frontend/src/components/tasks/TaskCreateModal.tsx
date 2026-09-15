@@ -13,6 +13,14 @@ const sans = '"Manrope", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
+const ALL_CHANNELS: TaskChannel[] = ["v2", "v1", "v0"];
+
+function assignableUrl(channels: TaskChannel[]): string {
+  const qs = new URLSearchParams();
+  for (const c of channels) qs.append("channels", c);
+  return `/api/tasks/assignable-users?${qs.toString()}`;
+}
+
 export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
   users: AssignableUser[]; fixedDomain?: TaskDomain; onClose: () => void; onSaved: () => void;
 }) {
@@ -23,7 +31,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
     domain: fixedDomain ?? "", due_date: "",
   });
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-  const [channel, setChannel] = useState<TaskChannel | "">("");
+  const [channels, setChannels] = useState<TaskChannel[]>([]);
   const [channelUsers, setChannelUsers] = useState<AssignableUser[]>([]);
   const [loadingChannelUsers, setLoadingChannelUsers] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -31,19 +39,24 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
   const isComptabilite = form.domain === "comptabilite";
 
   useEffect(() => {
-    if (!isComptabilite || !channel) { setChannelUsers([]); return; }
+    if (!isComptabilite || channels.length === 0) { setChannelUsers([]); return; }
     let active = true;
     setLoadingChannelUsers(true);
-    api.get(`/api/tasks/assignable-users?channel=${channel}`)
+    api.get(assignableUrl(channels))
       .then((u: AssignableUser[]) => { if (active) setChannelUsers(u); })
       .catch(() => { if (active) setChannelUsers([]); })
       .finally(() => { if (active) setLoadingChannelUsers(false); });
     return () => { active = false; };
-  }, [isComptabilite, channel]);
+  }, [isComptabilite, channels]);
+
+  function toggleChannel(c: TaskChannel) {
+    setChannels(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
+    setAssigneeIds([]);
+  }
 
   async function submit() {
     if (!form.title.trim()) { toast.error("Le titre est requis."); return; }
-    if (isComptabilite && !channel) { toast.error("Choisissez un canal (V0, V1 ou V2) pour une tâche Comptabilité."); return; }
+    if (isComptabilite && channels.length === 0) { toast.error("Choisissez au moins un canal (V0, V1 ou V2) pour une tâche Comptabilité."); return; }
     setBusy(true);
     try {
       await api.post("/api/tasks", {
@@ -51,7 +64,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
         description: form.description.trim() || null,
         priority: form.priority,
         domain: form.domain || null,
-        channel: isComptabilite ? channel : null,
+        channels: isComptabilite ? channels : [],
         assignee_ids: assigneeIds,
         due_date: form.due_date || null,
       });
@@ -101,7 +114,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
             <label style={labelStyle}>Domaine</label>
             <select
               value={form.domain}
-              onChange={e => { setForm(f => ({ ...f, domain: e.target.value })); setAssigneeIds([]); setChannel(""); }}
+              onChange={e => { setForm(f => ({ ...f, domain: e.target.value })); setAssigneeIds([]); setChannels([]); }}
               className="u-input" style={fieldStyle}
             >
               <option value="">— Aucun —</option>
@@ -115,18 +128,29 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
 
         {isComptabilite && (
           <>
-            <label style={labelStyle}>Canal *</label>
-            <select
-              value={channel}
-              onChange={e => { setChannel(e.target.value as TaskChannel | ""); setAssigneeIds([]); }}
-              className="u-input" style={{ ...fieldStyle, marginBottom: 6 }}
-            >
-              <option value="">— Choisir —</option>
-              {(["v2", "v1", "v0"] as TaskChannel[]).map(c => (
-                <option key={c} value={c}>{CHANNEL_LABEL[c]}</option>
+            <label style={labelStyle}>Canaux * — une tâche peut en réunir plusieurs à la fois</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, marginBottom: 6 }}>
+              {ALL_CHANNELS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => toggleChannel(c)}
+                  className={`chip-c ${channels.includes(c) ? "chip-c-green" : ""}`}
+                  style={{ cursor: "pointer", border: `1px solid ${channels.includes(c) ? "transparent" : PAL.line}` }}
+                >
+                  {CHANNEL_LABEL[c]}
+                </button>
               ))}
-            </select>
-            {channel && <p style={{ margin: "0 0 12px", fontSize: 11.5, color: PAL.muted, lineHeight: 1.5 }}>{CHANNEL_DESC[channel]}</p>}
+            </div>
+            {channels.length > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                {channels.map(c => (
+                  <p key={c} style={{ margin: "2px 0", fontSize: 11.5, color: PAL.muted, lineHeight: 1.5 }}>
+                    <strong>{CHANNEL_LABEL[c]}</strong> — {CHANNEL_DESC[c]}
+                  </p>
+                ))}
+              </div>
+            )}
           </>
         )}
 
@@ -134,12 +158,12 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
         <AssigneePicker
           selectedIds={assigneeIds}
           options={assigneeOptions}
-          disabled={isComptabilite && (!channel || loadingChannelUsers)}
+          disabled={isComptabilite && (channels.length === 0 || loadingChannelUsers)}
           placeholder="— Non assignée (backlog) —"
           onChange={setAssigneeIds}
         />
-        {isComptabilite && !channel && (
-          <p style={{ margin: "8px 0 0", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord un canal pour voir les profils correspondants.</p>
+        {isComptabilite && channels.length === 0 && (
+          <p style={{ margin: "8px 0 0", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord au moins un canal pour voir les profils correspondants.</p>
         )}
         <div style={{ marginBottom: 24 }} />
 

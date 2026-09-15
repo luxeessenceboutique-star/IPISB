@@ -15,7 +15,9 @@ export type Task = {
   status: TaskStatus;
   priority: TaskPriority;
   domain: TaskDomain | null;
-  channel: TaskChannel | null;
+  // Une tâche peut réunir plusieurs canaux à la fois (ex. un V0 saisit, un
+  // V1 supervise, un V2 valide, tous sur la même tâche).
+  channels: TaskChannel[];
   // Certains canaux (V0/V1/V2) demandent qu'une tâche soit portée par 2 ou
   // 3 personnes à la fois — jamais un seul assigné forcé.
   assignee_ids: string[];
