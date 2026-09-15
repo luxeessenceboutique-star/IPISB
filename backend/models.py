@@ -163,7 +163,8 @@ class CreateUserRequest(BaseModel):
     email: str
     full_name: str
     password: str  # Temporary password set by creator
-    role: Optional[str] = None  # must be one of the caller's assignable_roles(); professor callers may omit it (always "student")
+    role: Optional[str] = None  # legacy single-role path — professor creating a student (always "student")
+    channel: Optional[str] = None  # v0/v1/v2 — admin creating a staff account; assigns the channel's role bundle
 
 
 class ClassCreate(BaseModel):

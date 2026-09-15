@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from supabase import Client
-from deps import get_current_user, get_db, CurrentUser
+from deps import get_current_user, get_db, CurrentUser, ACCOUNTING_CHANNELS, ACCOUNTING_CHANNEL_ROLES
 from models import RoleAction, CreateUserRequest
 from datetime import datetime, timezone
 
@@ -72,12 +72,22 @@ async def create_user(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    allowed = user.assignable_roles()
-    if not allowed:
-        raise HTTPException(403, "Students cannot create accounts")
-    assigned_role = body.role or allowed[0]
-    if assigned_role not in allowed:
-        raise HTTPException(400, f"Role must be one of: {', '.join(allowed)}")
+    if body.channel is not None:
+        # Création par canal (V0/V1/V2) — réservée à l'administrateur (V2),
+        # même règle que le canal d'une tâche Comptabilité (routers/tasks.py).
+        if not user.is_admin():
+            raise HTTPException(403, "Seul l'administrateur (V2) peut créer un compte par canal.")
+        if body.channel not in ACCOUNTING_CHANNELS:
+            raise HTTPException(400, f"channel doit être l'un de : {', '.join(ACCOUNTING_CHANNELS)}")
+        assigned_roles = ACCOUNTING_CHANNEL_ROLES[body.channel]
+    else:
+        allowed = user.assignable_roles()
+        if not allowed:
+            raise HTTPException(403, "Students cannot create accounts")
+        assigned_role = body.role or allowed[0]
+        if assigned_role not in allowed:
+            raise HTTPException(400, f"Role must be one of: {', '.join(allowed)}")
+        assigned_roles = [assigned_role]
 
     # Create the auth user via admin API
     try:
@@ -127,12 +137,12 @@ async def create_user(
             pass
         raise HTTPException(500, f"Failed to create profile: {str(e)}")
 
-    # Assign role — upsert in case a trigger already inserted the default role
+    # Assign role(s) — upsert in case a trigger already inserted the default role
     try:
-        db.from_("user_roles").upsert({
-            "user_id": uid,
-            "role": assigned_role,
-        }, on_conflict="user_id,role").execute()
+        db.from_("user_roles").upsert(
+            [{"user_id": uid, "role": r} for r in assigned_roles],
+            on_conflict="user_id,role",
+        ).execute()
     except Exception as e:
         try:
             db.auth.admin.delete_user(uid)
@@ -144,7 +154,9 @@ async def create_user(
         "id": uid,
         "email": body.email,
         "full_name": body.full_name,
-        "role": assigned_role,
+        "role": assigned_roles[0],
+        "roles": assigned_roles,
+        "channel": body.channel,
         "temporary_password": body.password,
     }
 

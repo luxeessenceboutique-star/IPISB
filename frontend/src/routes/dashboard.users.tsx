@@ -75,7 +75,8 @@ const sans = '"Manrope", system-ui, sans-serif';
 // ── Create Account Modal ──────────────────────────────────────────────────────
 
 type ModalProps = {
-  creatableRoles: AppRole[];
+  isAdmin: boolean;
+  creatableRoles: AppRole[]; // rôle brut — seulement utilisé quand !isAdmin (professeur → étudiant)
   onClose: () => void;
   onCreated: () => void;
 };
@@ -85,23 +86,27 @@ const ROLE_CREATE_LABELS: Partial<Record<AppRole, string>> = {
   rh: "RH", assistant_rh: "Assistant RH", comptabilite: "Comptabilité",
 };
 
-function CreateAccountModal({ creatableRoles, onClose, onCreated }: ModalProps) {
+function CreateAccountModal({ isAdmin, creatableRoles, onClose, onCreated }: ModalProps) {
   const { t } = useI18n();
   const [fullName, setFullName] = useState("");
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole]         = useState<AppRole>(creatableRoles[0]);
+  const [channel, setChannel]   = useState<Channel>("v1");
   const [busy, setBusy]         = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
 
-  const label = ROLE_CREATE_LABELS[role] ?? role;
-  const showPicker = creatableRoles.length > 1;
+  const label = isAdmin ? t(`users.channel.${channel}.label`) : (ROLE_CREATE_LABELS[role] ?? role);
+  const showPicker = !isAdmin && creatableRoles.length > 1;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await api.post("/api/users/create", { email, full_name: fullName, password, role });
+      const body = isAdmin
+        ? { email, full_name: fullName, password, channel }
+        : { email, full_name: fullName, password, role };
+      const res = await api.post("/api/users/create", body);
       toast.success(`Compte ${label} créé : ${res.email}`);
       onCreated();
       onClose();
@@ -156,6 +161,26 @@ function CreateAccountModal({ creatableRoles, onClose, onCreated }: ModalProps) 
         </p>
 
         <form onSubmit={handleSubmit}>
+          {isAdmin && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
+                Canal
+              </label>
+              <select
+                value={channel}
+                onChange={e => setChannel(e.target.value as Channel)}
+                style={{
+                  width: "100%", padding: "10px 14px",
+                  background: PAL.cream, border: `1px solid ${PAL.line}`,
+                  borderRadius: 10, fontFamily: sans, fontSize: 14,
+                  color: PAL.ink, outline: "none", boxSizing: "border-box" as const,
+                }}
+              >
+                {(["v2", "v1", "v0"] as Channel[]).map(c => <option key={c} value={c}>{t(`users.channel.${c}.label`)}</option>)}
+              </select>
+              <p style={{ margin: "8px 0 0", fontSize: 12, color: PAL.muted, lineHeight: 1.5 }}>{t(`users.channel.${channel}.desc`)}</p>
+            </div>
+          )}
           {showPicker && (
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: "block", fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const, marginBottom: 6 }}>
@@ -343,6 +368,7 @@ function UsersPage() {
     <>
       {showModal && creatableRoles.length > 0 && (
         <CreateAccountModal
+          isAdmin={isAdmin}
           creatableRoles={creatableRoles}
           onClose={() => setShowModal(false)}
           onCreated={load}

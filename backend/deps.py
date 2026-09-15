@@ -32,6 +32,17 @@ def accounting_channel_for_roles(roles: Iterable[str]) -> Optional[str]:
     return None
 
 
+# Sens inverse — quels rôles un canal donné regroupe. V0 en couvre 3 d'un
+# coup (Formateurs/Assistantes/Comptable) ; V1/V2 n'en couvrent qu'un.
+# Même mapping que le frontend (dashboard.users.tsx::CHANNEL_ROLES).
+ACCOUNTING_CHANNELS = ("v0", "v1", "v2")
+ACCOUNTING_CHANNEL_ROLES: dict[str, list[str]] = {
+    "v0": ["professor", "assistant_rh", "accountant"],
+    "v1": ["comptabilite"],
+    "v2": ["admin"],
+}
+
+
 def _force_http1(client: Client) -> None:
     """postgrest-py ET gotrue-py forcent http2=True pour leurs sessions HTTP
     (voir postgrest/_sync/client.py::SyncPostgrestClient.create_session et
