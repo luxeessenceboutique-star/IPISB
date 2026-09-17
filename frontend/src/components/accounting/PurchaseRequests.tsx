@@ -193,6 +193,16 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
             </select>
           </div>
         </div>
+
+        <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
+          <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
+          <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={form.article_identification} onChange={e => set("article_identification", e.target.value)} /></div>
+          <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.quantity} onChange={e => set("quantity", e.target.value)} /></div>
+          <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.budget_estimate} onChange={e => set("budget_estimate", e.target.value)} /></div>
+          <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={form.duration} onChange={e => set("duration", e.target.value)} /></div>
+        </div>
+
         <label style={labelStyle}>Caractéristiques / CDC</label>
         <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}><Paperclip size={12} /> Cahier des charges (fichier, facultatif)</label>
@@ -204,22 +214,13 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
       <label style={{ ...labelStyle, display: "block", marginTop: 12 }}>Exigences (texte libre)</label>
       <textarea className="u-input" style={{ ...fieldStyle, minHeight: 52, resize: "vertical" }} placeholder="ex. bœuf congelé, produit frais du jour…" value={form.conformity_note} onChange={e => set("conformity_note", e.target.value)} />
       <label style={{ ...labelStyle, display: "block" }}>Critères standard</label>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8, marginBottom: 8 }}>
         {Object.entries(CONFORMITY).map(([k, v]) => (
           <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer" }}>
             <input type="checkbox" checked={criteria.includes(k)} onChange={() => toggleCriterion(k)} style={{ width: 16, height: 16, accentColor: "var(--pal-primary)" }} />
             {v}
           </label>
         ))}
-      </div>
-
-      <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
-        <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
-        <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={form.article_identification} onChange={e => set("article_identification", e.target.value)} /></div>
-        <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.quantity} onChange={e => set("quantity", e.target.value)} /></div>
-        <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.budget_estimate} onChange={e => set("budget_estimate", e.target.value)} /></div>
-        <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={form.duration} onChange={e => set("duration", e.target.value)} /></div>
       </div>
 
       <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 18 }}>
@@ -659,6 +660,16 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
                 </select>
               </div>
             </div>
+
+            <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
+              <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
+              <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={editForm.article_identification} onChange={e => setEditField("article_identification", e.target.value)} /></div>
+              <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} /></div>
+              <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.budget_estimate} onChange={e => setEditField("budget_estimate", e.target.value)} /></div>
+              <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} /></div>
+            </div>
+
             <label style={labelStyle}>Caractéristiques / CDC</label>
             <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={editForm.characteristics} onChange={e => setEditField("characteristics", e.target.value)} />
           </div>
@@ -667,22 +678,13 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
           <label style={{ ...labelStyle, display: "block", marginTop: 12 }}>Exigences (texte libre)</label>
           <textarea className="u-input" style={{ ...fieldStyle, minHeight: 52, resize: "vertical" }} placeholder="ex. bœuf congelé, produit frais du jour…" value={editForm.conformity_note} onChange={e => setEditField("conformity_note", e.target.value)} />
           <label style={{ ...labelStyle, display: "block" }}>Critères standard</label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px", marginTop: 8, marginBottom: 16 }}>
             {Object.entries(CONFORMITY).map(([k, v]) => (
               <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer" }}>
                 <input type="checkbox" checked={editCriteria.includes(k)} onChange={() => toggleEditCriterion(k)} style={{ width: 16, height: 16, accentColor: "var(--pal-primary)" }} />
                 {v}
               </label>
             ))}
-          </div>
-
-          <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 16 }}>
-            <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
-            <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={editForm.article_identification} onChange={e => setEditField("article_identification", e.target.value)} /></div>
-            <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} /></div>
-            <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.budget_estimate} onChange={e => setEditField("budget_estimate", e.target.value)} /></div>
-            <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} /></div>
           </div>
         </>
       ) : (
