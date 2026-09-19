@@ -93,142 +93,6 @@ async function authHeaders(): Promise<Record<string, string>> {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
 
-const emptyForm = {
-  title: "", description: "", category_id: "", supplier_id: "",
-  quantity: "1", unit_price: "0", vat_percent: "20", currency: "MAD",
-  purchase_date: new Date().toISOString().slice(0, 10),
-  payment_status: "pending", payment_method: "", notes: "", comment: "",
-};
-
-function FormModal({ categories, suppliers, onClose, onSaved }: { categories: Category[]; suppliers: Supplier[]; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState(emptyForm);
-  const [busy, setBusy] = useState(false);
-
-  const qty = parseFloat(form.quantity) || 0;
-  const unitPrice = parseFloat(form.unit_price) || 0;
-  const vat = parseFloat(form.vat_percent) || 0;
-  const totalHT = qty * unitPrice;
-  const totalTTC = totalHT * (1 + vat / 100);
-
-  async function submit() {
-    if (!form.title.trim()) { toast.error("Le titre est requis."); return; }
-    setBusy(true);
-    try {
-      await api.post("/api/accounting/purchases", {
-        title: form.title,
-        description: form.description || null,
-        category_id: form.category_id || null,
-        supplier_id: form.supplier_id || null,
-        quantity: qty,
-        unit_price: unitPrice,
-        vat_percent: vat,
-        currency: form.currency,
-        purchase_date: form.purchase_date,
-        payment_status: form.payment_status,
-        payment_method: form.payment_method || null,
-        notes: form.notes || null,
-        comment: form.comment || null,
-      });
-      toast.success("Commande créée — à réceptionner à la livraison.");
-      onSaved();
-      onClose();
-    } catch (err: any) {
-      toast.error(err?.message ?? "Erreur lors de la création.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
-  const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
-
-  return (
-    <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
-      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 520, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
-          Nouvelle commande
-        </h2>
-        <p style={{ fontSize: 12.5, color: PAL.muted, margin: "-12px 0 20px", lineHeight: 1.5 }}>
-          Commande hors demande d'achat. Celles issues d'une DA arrivent ici automatiquement
-          à la validation du devis — il reste à les réceptionner à la livraison.
-        </p>
-
-        <label style={labelStyle}>Titre *</label>
-        <input type="text" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="u-input" style={fieldStyle} />
-
-        <label style={labelStyle}>Description</label>
-        <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Catégorie</label>
-            <select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))} className="u-input" style={fieldStyle}>
-              <option value="">— Aucune —</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Fournisseur</label>
-            <select value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))} className="u-input" style={fieldStyle}>
-              <option value="">— Aucun —</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Quantité</label>
-            <input type="number" min="0" step="any" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} className="u-input" style={fieldStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Prix unitaire</label>
-            <input type="number" min="0" step="any" value={form.unit_price} onChange={e => setForm(f => ({ ...f, unit_price: e.target.value }))} className="u-input" style={fieldStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>TVA (%)</label>
-            <input type="number" min="0" step="any" value={form.vat_percent} onChange={e => setForm(f => ({ ...f, vat_percent: e.target.value }))} className="u-input" style={fieldStyle} />
-          </div>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: PAL.muted, marginBottom: 16, padding: "10px 14px", background: "var(--pal-pale)", borderRadius: 10 }}>
-          <span>Total HT : <strong style={{ color: PAL.ink }}>{fmtMAD(totalHT)}</strong></span>
-          <span>Total TTC : <strong style={{ color: PAL.ink }}>{fmtMAD(totalTTC)}</strong></span>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Date de commande</label>
-            <input type="date" value={form.purchase_date} onChange={e => setForm(f => ({ ...f, purchase_date: e.target.value }))} className="u-input" style={fieldStyle} />
-          </div>
-          <div>
-            <label style={labelStyle}>Statut de paiement</label>
-            <select value={form.payment_status} onChange={e => setForm(f => ({ ...f, payment_status: e.target.value }))} className="u-input" style={fieldStyle}>
-              {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <label style={labelStyle}>Méthode de paiement</label>
-        <input type="text" value={form.payment_method} onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))} placeholder="Virement, chèque, espèces…" className="u-input" style={fieldStyle} />
-
-        <label style={labelStyle}>Notes</label>
-        <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
-
-        <label style={labelStyle}>Commentaire</label>
-        <textarea value={form.comment} onChange={e => setForm(f => ({ ...f, comment: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 24 }} />
-
-        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={onClose} className="u-ghost" style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "10px 18px", cursor: "pointer" }}>Annuler</button>
-          <button onClick={submit} disabled={busy} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "10px 24px", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>
-            {busy ? "Création…" : "Créer la commande"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onClose: () => void; onChanged: () => void }) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -728,7 +592,6 @@ export function AccountingPurchases() {
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
   const [selected, setSelected] = useState<Purchase | null>(null);
 
   const [q, setQ] = useState("");
@@ -771,10 +634,6 @@ export function AccountingPurchases() {
 
   return (
     <div>
-      {showCreate && (
-        <FormModal categories={categories} suppliers={suppliers} onClose={() => setShowCreate(false)} onSaved={load} />
-      )}
-
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 220px" }}>
           <Search size={15} strokeWidth={1.7} style={{ position: "absolute", insetInlineStart: 14, top: "50%", transform: "translateY(-50%)", color: PAL.muted }} />
@@ -803,9 +662,6 @@ export function AccountingPurchases() {
           <option value="">Tous paiements</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <button type="button" onClick={() => setShowCreate(true)} className="btn-c btn-c-primary">
-          <Plus size={15} strokeWidth={1.7} />Nouvelle commande
-        </button>
       </div>
 
       <SectionLabel>{total} livraison{total !== 1 ? "s" : ""} à suivre</SectionLabel>

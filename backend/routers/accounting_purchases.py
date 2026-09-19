@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form, Respons
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import PurchaseCreate, PurchaseUpdate
+from models import PurchaseUpdate
 from utils.audit import log_audit
 from utils.uploads import validate_and_read
 from utils.pdf_generators import render_purchase_order_pdf
@@ -245,28 +245,6 @@ async def get_purchase(
         "delivery_status": status,
         "delivery_status_label": DELIVERY_LABELS[status],
     }
-
-
-@router.post("")
-async def create_purchase(
-    body: PurchaseCreate,
-    user: Annotated[CurrentUser, Depends(get_current_user)],
-    db: Annotated[Client, Depends(get_db)],
-):
-    _require_admin(user)
-    if body.payment_status not in ("pending", "partially_paid", "paid"):
-        raise HTTPException(400, "Invalid payment_status")
-
-    data = body.model_dump(exclude={"purchase_date"})
-    data["purchase_date"] = body.purchase_date or datetime.now(timezone.utc).date().isoformat()
-    data["requested_by"] = user.id
-    data["created_by"] = user.id
-
-    res = db.from_("purchases").insert(data).execute()
-    new_purchase = res.data[0]
-    log_audit(db, user.id, "purchase.create", "purchase", new_purchase["id"],
-              {"title": body.title, "reference": new_purchase.get("reference") or new_purchase.get("purchase_number")})
-    return new_purchase
 
 
 @router.patch("/{purchase_id}")

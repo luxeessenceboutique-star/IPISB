@@ -369,23 +369,6 @@ class SupplierUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-class PurchaseCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    category_id: Optional[str] = None
-    supplier_id: Optional[str] = None
-    quantity: float = 1
-    unit_price: float = 0
-    vat_percent: float = 20
-    currency: str = "MAD"
-    purchase_date: Optional[str] = None
-    payment_status: str = "pending"  # 'pending' | 'partially_paid' | 'paid'
-    payment_method: Optional[str] = None
-    approved_by: Optional[str] = None
-    notes: Optional[str] = None
-    comment: Optional[str] = None
-
-
 class TemplateGenerate(BaseModel):
     student_id: Optional[str] = None
     employee_id: Optional[str] = None

@@ -38,7 +38,7 @@ from routers import (
 from models import (
     CategoryCreate, CategoryUpdate, CategoryArticleCreate, CategoryArticleUpdate,
     SupplierCreate, SupplierUpdate,
-    PurchaseCreate, PurchaseUpdate,
+    PurchaseUpdate,
     InvoiceCreate, InvoiceUpdate,
     ExpenseCreate, ExpenseUpdate,
     BudgetCreate, BudgetUpdate,
@@ -100,7 +100,6 @@ ACTIONS: dict[str, ActionSpec] = {
     "quotation.create": ActionSpec("quotation.create", accounting_quotations.create_quotation, "Créer un devis pour une demande d'achat", QuotationCreate),
     "quotation.update": ActionSpec("quotation.update", accounting_quotations.update_quotation, "Modifier un devis", QuotationUpdate, ("quotation_id",)),
     "quotation.delete": ActionSpec("quotation.delete", accounting_quotations.delete_quotation, "Supprimer un devis", None, ("quotation_id",)),
-    "purchase.create": ActionSpec("purchase.create", accounting_purchases.create_purchase, "Créer une commande/achat", PurchaseCreate),
     "purchase.update": ActionSpec("purchase.update", accounting_purchases.update_purchase, "Modifier une commande", PurchaseUpdate, ("purchase_id",)),
     "purchase.delete": ActionSpec("purchase.delete", accounting_purchases.delete_purchase, "Supprimer une commande", None, ("purchase_id",)),
     "purchase.validate_order": ActionSpec("purchase.validate_order", accounting_purchases.validate_order, "Valider une commande", None, ("purchase_id",)),
