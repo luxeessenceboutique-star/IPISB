@@ -137,12 +137,12 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
         {form.scope === "range" && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
-              <label style={labelStyle}>Du</label>
+              <label style={labelStyle}>Agenda début</label>
               <input type="date" value={form.start_date} max={form.end_date || undefined}
                 onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className="u-input" style={fieldStyle} />
             </div>
             <div>
-              <label style={labelStyle}>Au</label>
+              <label style={labelStyle}>Agenda fin</label>
               <input type="date" value={form.end_date} min={form.start_date || undefined}
                 onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="u-input" style={fieldStyle} />
             </div>
