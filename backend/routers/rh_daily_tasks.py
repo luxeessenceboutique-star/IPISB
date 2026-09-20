@@ -52,6 +52,7 @@ async def list_daily_tasks(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
     employee_id: Optional[str] = None,
+    heading_id: Optional[str] = None,
     department: Optional[str] = None,
     position: Optional[str] = None,
     status: Optional[str] = None,
@@ -73,6 +74,8 @@ async def list_daily_tasks(
             if not ids:
                 return {"items": [], "total": 0, "page": page, "page_size": page_size}
             query = query.in_("employee_id", ids)
+    if heading_id:
+        query = query.eq("heading_id", heading_id)
     if status:
         if status not in DAILY_TASK_STATUSES:
             raise HTTPException(400, "Invalid status")

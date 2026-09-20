@@ -455,21 +455,229 @@ function fmtMADShort(v: number | null | undefined) {
   return `${(v ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD`;
 }
 
-function HeadingRows({ items, depth = 0 }: { items: JobHeading[]; depth?: number }) {
+type DailyTask = {
+  id: string; label: string; status: string; task_date: string; due_date: string | null;
+  employee_comment: string | null; note: number | null; manager_comment: string | null;
+};
+const TASK_STATUS_LABEL: Record<string, string> = { submitted: "Soumise", validated: "Validée", returned: "Retournée" };
+const TASK_STATUS_TONE: Record<string, string> = { submitted: "", validated: "chip-c-green", returned: "chip-c-red" };
+const smallFieldStyle = { padding: "7px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, background: PAL.paper };
+
+function AddTaskRow({ employeeId, headingId, onClose, onSaved }: { employeeId: string; headingId: string; onClose: () => void; onSaved: () => void }) {
+  const [label, setLabel] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!label.trim()) { toast.error("Le libellé est requis."); return; }
+    setBusy(true);
+    try {
+      await api.post("/api/rh/daily-tasks", { employee_id: employeeId, heading_id: headingId, label: label.trim(), due_date: dueDate || null, employee_comment: comment || null });
+      toast.success("Tâche ajoutée.");
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <>
-      {items.map(h => (
-        <div key={h.id}>
-          <div className="row-c flex-wrap" style={{ paddingInlineStart: 12 + depth * 20 }}>
-            <div className="min-w-0 flex-1" style={{ fontWeight: depth === 0 ? 700 : 500, fontSize: depth === 0 ? 13.5 : 12.5, color: PAL.ink }}>
-              {h.label}
-            </div>
-            <span className="chip-c" title="Coefficient (pondération dans la note mensuelle)">×{h.coefficient}</span>
-          </div>
-          {h.children?.length > 0 && <HeadingRows items={h.children} depth={depth + 1} />}
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "6px 0" }}>
+      <input type="text" placeholder="Libellé de la tâche" value={label} onChange={e => setLabel(e.target.value)} className="u-input" style={{ ...smallFieldStyle, flex: "1 1 160px" }} />
+      <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="u-input" style={smallFieldStyle} />
+      <input type="text" placeholder="Commentaire (optionnel)" value={comment} onChange={e => setComment(e.target.value)} className="u-input" style={{ ...smallFieldStyle, flex: "1 1 140px" }} />
+      <button type="button" onClick={submit} disabled={busy} className="btn-c btn-c-sm btn-c-primary">{busy ? "…" : "Ajouter"}</button>
+      <button type="button" onClick={onClose} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+    </div>
+  );
+}
+
+function EditTaskRow({ task, onClose, onSaved }: { task: DailyTask; onClose: () => void; onSaved: () => void }) {
+  const [label, setLabel] = useState(task.label);
+  const [dueDate, setDueDate] = useState(task.due_date ?? "");
+  const [comment, setComment] = useState(task.employee_comment ?? "");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!label.trim()) { toast.error("Le libellé est requis."); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/api/rh/daily-tasks/${task.id}`, { label: label.trim(), due_date: dueDate || null, employee_comment: comment || null });
+      toast.success("Tâche modifiée.");
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "6px 10px", background: "var(--pal-pale)", borderRadius: 8 }}>
+      <input type="text" value={label} onChange={e => setLabel(e.target.value)} className="u-input" style={{ ...smallFieldStyle, flex: "1 1 160px" }} />
+      <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="u-input" style={smallFieldStyle} />
+      <input type="text" placeholder="Commentaire" value={comment} onChange={e => setComment(e.target.value)} className="u-input" style={{ ...smallFieldStyle, flex: "1 1 140px" }} />
+      <button type="button" onClick={submit} disabled={busy} className="btn-c btn-c-sm btn-c-primary">{busy ? "…" : "Enregistrer"}</button>
+      <button type="button" onClick={onClose} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+    </div>
+  );
+}
+
+function AddHeadingRow({ parentId, ensureJdId, onClose, onSaved }: { parentId: string | null; ensureJdId: () => Promise<string>; onClose: () => void; onSaved: () => void }) {
+  const [label, setLabel] = useState("");
+  const [coefficient, setCoefficient] = useState("1");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!label.trim()) { toast.error("Le libellé est requis."); return; }
+    setBusy(true);
+    try {
+      const jdId = await ensureJdId();
+      await api.post(`/api/rh/job-descriptions/${jdId}/headings`, { parent_id: parentId, label: label.trim(), coefficient: parseFloat(coefficient) || 1 });
+      toast.success("Rubrique ajoutée.");
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", padding: "6px 0" }}>
+      <input type="text" placeholder="Libellé de la rubrique" value={label} onChange={e => setLabel(e.target.value)} className="u-input" style={{ ...smallFieldStyle, flex: "1 1 160px" }} />
+      <input type="number" min="0" step="any" placeholder="Coeff." value={coefficient} onChange={e => setCoefficient(e.target.value)} className="u-input" style={{ ...smallFieldStyle, width: 80 }} />
+      <button type="button" onClick={submit} disabled={busy} className="btn-c btn-c-sm btn-c-primary">{busy ? "…" : "Ajouter"}</button>
+      <button type="button" onClick={onClose} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+    </div>
+  );
+}
+
+/** Rubrique de fiche de poste, cliquable : révèle les tâches quotidiennes de
+ * l'employé rattachées à CETTE rubrique (modifier/supprimer si pas encore
+ * validées), avec possibilité d'en ajouter une, et d'ajouter une
+ * sous-rubrique. Les sous-rubriques restent toujours visibles dans l'arbre
+ * (seules les tâches sont repliées par défaut). */
+function HeadingNode({ heading, employeeId, jdId, depth, onReload }: {
+  heading: JobHeading; employeeId: string; jdId: string; depth: number; onReload: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tasks, setTasks] = useState<DailyTask[] | null>(null);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [addingTask, setAddingTask] = useState(false);
+  const [addingChild, setAddingChild] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  async function loadTasks() {
+    setLoadingTasks(true);
+    try {
+      const res = await api.get(`/api/rh/daily-tasks?employee_id=${employeeId}&heading_id=${heading.id}&page_size=100`);
+      setTasks(res.items ?? []);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors du chargement des tâches.");
+    } finally {
+      setLoadingTasks(false);
+    }
+  }
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && tasks === null) loadTasks();
+  }
+
+  async function removeHeading(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!window.confirm(`Supprimer « ${heading.label} » ? Les sous-rubriques et l'historique de tâches liés seront aussi retirés.`)) return;
+    try {
+      await api.delete(`/api/rh/job-descriptions/headings/${heading.id}`);
+      toast.success("Rubrique supprimée.");
+      onReload();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  async function removeTask(t: DailyTask) {
+    if (!window.confirm(`Supprimer la tâche « ${t.label} » ?`)) return;
+    try {
+      await api.delete(`/api/rh/daily-tasks/${t.id}`);
+      toast.success("Tâche supprimée.");
+      loadTasks();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  return (
+    <div>
+      <div className="row-c flex-wrap" style={{ paddingInlineStart: 12 + depth * 20, cursor: "pointer" }} onClick={toggle}>
+        <div className="min-w-0 flex-1" style={{ fontWeight: depth === 0 ? 700 : 500, fontSize: depth === 0 ? 13.5 : 12.5, color: PAL.ink }}>
+          {heading.label}
         </div>
+        <span className="chip-c" title="Coefficient (pondération dans la note mensuelle)">×{heading.coefficient}</span>
+        <button type="button" onClick={removeHeading} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer la rubrique">
+          <Trash2 size={13} strokeWidth={1.7} />
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ paddingInlineStart: 12 + (depth + 1) * 20, paddingBottom: 10 }}>
+          {loadingTasks ? (
+            <div className="shimmer" style={{ height: 24, borderRadius: 8, marginTop: 6 }} />
+          ) : (tasks ?? []).length === 0 ? (
+            <div style={{ fontSize: 12, color: PAL.muted, padding: "6px 0" }}>Aucune tâche.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+              {(tasks ?? []).map(t => (
+                editingTaskId === t.id ? (
+                  <EditTaskRow key={t.id} task={t} onClose={() => setEditingTaskId(null)} onSaved={() => { setEditingTaskId(null); loadTasks(); }} />
+                ) : (
+                  <div key={t.id} className="row-c flex-wrap" style={{ background: "var(--pal-pale)", borderRadius: 8, padding: "6px 10px" }}>
+                    <div className="min-w-0 flex-1" style={{ fontSize: 12.5, color: PAL.ink }}>
+                      {t.label}
+                      {t.due_date && <span style={{ color: PAL.muted }}> · échéance {new Date(t.due_date).toLocaleDateString("fr-FR")}</span>}
+                    </div>
+                    {t.note != null && <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 12, fontWeight: 700, color: PAL.ink }}>{t.note}/20</span>}
+                    <span className={`chip-c ${TASK_STATUS_TONE[t.status] ?? ""}`}>{TASK_STATUS_LABEL[t.status] ?? t.status}</span>
+                    {t.status !== "validated" && (
+                      <>
+                        <button onClick={() => setEditingTaskId(t.id)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={13} strokeWidth={1.7} /></button>
+                        <button onClick={() => removeTask(t)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={13} strokeWidth={1.7} /></button>
+                      </>
+                    )}
+                  </div>
+                )
+              ))}
+            </div>
+          )}
+
+          {addingTask ? (
+            <AddTaskRow employeeId={employeeId} headingId={heading.id} onClose={() => setAddingTask(false)} onSaved={() => { setAddingTask(false); loadTasks(); }} />
+          ) : (
+            <button type="button" onClick={() => setAddingTask(true)} className="btn-c btn-c-sm btn-c-ghost" style={{ marginTop: 6 }}>
+              <Plus size={12} strokeWidth={1.8} />Ajouter une tâche
+            </button>
+          )}
+
+          {addingChild ? (
+            <div style={{ marginTop: 6 }}>
+              <AddHeadingRow parentId={heading.id} ensureJdId={() => Promise.resolve(jdId)} onClose={() => setAddingChild(false)} onSaved={() => { setAddingChild(false); onReload(); }} />
+            </div>
+          ) : (
+            <button type="button" onClick={() => setAddingChild(true)} className="btn-c btn-c-sm btn-c-ghost" style={{ marginTop: 6, marginInlineStart: 8 }}>
+              <Plus size={12} strokeWidth={1.8} />Ajouter une sous-rubrique
+            </button>
+          )}
+        </div>
+      )}
+
+      {heading.children?.map(c => (
+        <HeadingNode key={c.id} heading={c} employeeId={employeeId} jdId={jdId} depth={depth + 1} onReload={onReload} />
       ))}
-    </>
+    </div>
   );
 }
 
@@ -505,14 +713,21 @@ function removeAtPath(items: ImportProposal["headings"], path: number[]): Import
 /* ─── Fiche de poste (rattachée au département/poste, partagée entre
    collègues occupant le même poste) — import d'un document + extraction IA
    des grands titres/sous-titres, revus avant application. ─── */
-function JobDescriptionCard({ department, position }: { department: string | null; position: string | null }) {
+function JobDescriptionCard({ employeeId, department, position }: { employeeId: string; department: string | null; position: string | null }) {
   const dept = department ?? "";
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [proposal, setProposal] = useState<ImportProposal | null>(null);
+  const [addingRoot, setAddingRoot] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  async function ensureJd(): Promise<string> {
+    if (jd) return jd.id;
+    const created = await api.post("/api/rh/job-descriptions", { department: dept, position, mission: null });
+    return created.id;
+  }
 
   async function load() {
     if (!position) { setLoading(false); return; }
@@ -602,14 +817,25 @@ function JobDescriptionCard({ department, position }: { department: string | nul
         </div>
       ) : loading ? (
         <div className="shimmer" style={{ height: 40, borderRadius: 10 }} />
-      ) : !jd || jd.headings.length === 0 ? (
-        <EmptyHint text="Aucune fiche de poste digitalisée pour ce poste — importez un document pour la générer." />
       ) : (
         <>
-          {jd.mission && <div style={{ fontSize: 13, fontStyle: "italic", color: PAL.muted, marginBottom: 10 }}>{jd.mission}</div>}
-          <div className="dash-card overflow-hidden">
-            <HeadingRows items={jd.headings} />
-          </div>
+          {jd?.mission && <div style={{ fontSize: 13, fontStyle: "italic", color: PAL.muted, marginBottom: 10 }}>{jd.mission}</div>}
+          {(!jd || jd.headings.length === 0) ? (
+            <EmptyHint text="Aucune fiche de poste digitalisée pour ce poste — importez un document ou ajoutez une responsabilité." />
+          ) : (
+            <div className="dash-card overflow-hidden" style={{ marginBottom: 10 }}>
+              {jd.headings.map(h => (
+                <HeadingNode key={h.id} heading={h} employeeId={employeeId} jdId={jd.id} depth={0} onReload={load} />
+              ))}
+            </div>
+          )}
+          {addingRoot ? (
+            <AddHeadingRow parentId={null} ensureJdId={ensureJd} onClose={() => setAddingRoot(false)} onSaved={() => { setAddingRoot(false); load(); }} />
+          ) : (
+            <button type="button" onClick={() => setAddingRoot(true)} className="btn-c btn-c-sm btn-c-ghost" style={{ marginTop: 4 }}>
+              <Plus size={12} strokeWidth={1.8} />Ajouter une responsabilité
+            </button>
+          )}
         </>
       )}
     </div>
@@ -675,7 +901,7 @@ function PerformanceTab({ employee }: { employee: Employee }) {
         <ReviewFormModal fixedEmployeeId={employeeId} editing={reviewModal.editing} onClose={() => setReviewModal({ open: false, editing: null })} onSaved={load} />
       )}
 
-      <JobDescriptionCard department={employee.department} position={employee.position} />
+      <JobDescriptionCard employeeId={employee.id} department={employee.department} position={employee.position} />
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: PAL.muted }}>Objectifs</div>
