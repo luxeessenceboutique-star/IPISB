@@ -15,7 +15,6 @@ const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 const PAYMENT_METHODS = ["Virement", "Chèque", "Espèces", "Carte bancaire", "Prélèvement"];
 
 const TYPE_LABEL: Record<string, string> = {
-  tuition: "Scolarité", subsidy: "Subvention", donation: "Don", service: "Prestation",
   compte_courant: "Compte courant (CC)", chiffre_affaires: "Chiffre d'affaires (CA)", credit: "Crédit (CR)",
   other: "Autre",
 };
@@ -66,7 +65,7 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
   const editingTypeKnown = !editing || Object.prototype.hasOwnProperty.call(TYPE_LABEL, editing.revenue_type);
   const [form, setForm] = useState({
     title: editing?.title ?? "",
-    revenue_type: editingTypeKnown ? (editing?.revenue_type ?? "tuition") : "other",
+    revenue_type: editingTypeKnown ? (editing?.revenue_type ?? "compte_courant") : "other",
     category_id: editing?.category_id ?? "",
     amount: editing ? String(editing.amount) : "0",
     vat_percent: editing ? String(editing.vat_percent) : "0",
