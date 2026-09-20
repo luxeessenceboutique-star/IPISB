@@ -8,7 +8,7 @@ import {
   CalendarClock, Pencil, Download,
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
-import { usePermissions } from "@/lib/permissions";
+import { usePermissions, channelFor } from "@/lib/permissions";
 import { useDeepLinkFocus } from "@/lib/deep-link";
 import { fmtMAD } from "./Overview";
 import { SupplierFormModal } from "./Suppliers";
@@ -87,7 +87,7 @@ type PR = {
   article_code: string | null; article_identification: string | null; quantity: number; budget_estimate: number; duration: string | null;
   need_decision: string; need_decision_comment: string | null;
   quote_synthesis: string | null; payment_mode: string | null; payment_terms_days: number | null;
-  quote_decision: string; status: string; created_at: string;
+  quote_decision: string; status: string; created_at: string; created_by: string | null;
 };
 type PRDetail = PR & { quotations: Quote[]; order: Order | null };
 
@@ -454,6 +454,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
   prId: string; suppliers: Supplier[]; categories: Category[]; onClose: () => void; onChanged: () => void;
 }) {
   const { can } = usePermissions();
+  const { user, roles } = useAuth();
   const [pr, setPr] = useState<PRDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [quoteForm, setQuoteForm] = useState(false);
@@ -574,7 +575,13 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
   // Miroir de LOCKED_STATUSES (backend) : la DA n'accepte plus d'écriture —
   // ni pièce jointe CDC, ni modification des champs saisis (bouton Modifier).
   const locked = pr.status === "commande_emise" || pr.status === "annulee";
-  const canDecide = can("accounting.purchase_requests", "validate_v2", pr.budget_estimate);
+  const isAdmin = roles.includes("admin");
+  // Canal 1 (<= 500 MAD) : « auto-validation » = l'auteur de la DA valide sa
+  // propre demande, pas n'importe quel autre comptable — miroir de
+  // _require_decide (accounting_purchase_requests.py). V2 (admin) décide toujours.
+  const selfValidated = channelFor("accounting.purchase_requests", pr.budget_estimate) === 1;
+  const canDecide = can("accounting.purchase_requests", "validate_v2", pr.budget_estimate)
+    && (isAdmin || !selfValidated || pr.created_by === user?.id);
   const canDecideNeed = canDecide && (pr.status === "brouillon" || pr.status === "retournee");
   const inQuoteStage = pr.status === "besoin_valide" || pr.status === "en_consultation";
   // Saisie des devis : ouverte au demandeur (il ne voit que ses DA) ET à l'admin.

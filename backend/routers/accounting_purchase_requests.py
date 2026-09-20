@@ -5,6 +5,7 @@ from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import PurchaseRequestCreate, PurchaseRequestUpdate, DecisionInput, QuoteSelectInput, PurchaseInstallmentsReplace
+from permissions import Channel, channel_for
 from utils.audit import log_audit
 from utils.pdf_generators import render_purchase_request_pdf
 from utils.uploads import validate_and_read
@@ -47,13 +48,23 @@ INSTALLMENT_EDIT_ALLOWED = {"devis_valide"}
 _ENTITY = "accounting.purchase_requests"
 
 
-def _require_decide(user: CurrentUser, amount: float) -> None:
+def _require_decide(user: CurrentUser, pr: dict) -> None:
+    amount = pr.get("budget_estimate") or 0
     if not user.can_act(_ENTITY, "validate_v2", amount=amount):
         raise HTTPException(
             403,
             "Ce montant nécessite une décision administrateur "
             "(comptabilité ne peut valider seule qu'en dessous de 500 MAD).",
         )
+    # Canal 1 (SELF_VALIDATED, <= 500 MAD) : « auto-validation » veut dire
+    # l'auteur de la DA valide sa propre demande — pas n'importe quel autre
+    # comptable. V2 (admin) garde toujours la main, comme sur les autres canaux.
+    if not user.is_admin() and channel_for(_ENTITY, amount) == Channel.SELF_VALIDATED:
+        if pr.get("created_by") != user.id:
+            raise HTTPException(
+                403,
+                "En dessous de 500 MAD, seul l'auteur de la demande peut la valider.",
+            )
 
 
 def _get_or_404(db: Client, pr_id: str) -> dict:
@@ -273,7 +284,7 @@ async def need_decision(
     if body.decision not in DECISIONS:
         raise HTTPException(400, "Décision invalide")
     pr = _get_or_404(db, pr_id)
-    _require_decide(user, pr.get("budget_estimate") or 0)
+    _require_decide(user, pr)
     if pr["status"] not in ("brouillon", "retournee"):
         raise HTTPException(400, "La décision de besoin n'est possible qu'au stade brouillon.")
 
@@ -330,7 +341,7 @@ async def quote_decision(
     if body.decision not in DECISIONS:
         raise HTTPException(400, "Décision invalide")
     pr = _get_or_404(db, pr_id)
-    _require_decide(user, pr.get("budget_estimate") or 0)
+    _require_decide(user, pr)
     if pr["status"] not in ("besoin_valide", "en_consultation"):
         raise HTTPException(400, "Le besoin doit être validé et en consultation avant de décider du devis.")
 
@@ -402,7 +413,7 @@ async def revert_request(
     validation du besoin (les supprimer d'abord), commande déjà validée pour
     annuler le devis retenu (statut alors verrouillé, hors de portée ici)."""
     pr = _get_or_404(db, pr_id)
-    _require_decide(user, pr.get("budget_estimate") or 0)
+    _require_decide(user, pr)
 
     if pr["status"] in ("besoin_valide", "en_consultation"):
         quotes = db.from_("quotations").select("id").eq("purchase_request_id", pr_id).execute().data or []
@@ -456,7 +467,7 @@ async def create_order(
     """Crée la commande (ligne purchases) à partir du devis retenu. Garde-fou :
     la DA doit être 'devis_valide' avec un devis retenu, et sans commande existante."""
     pr = _get_or_404(db, pr_id)
-    _require_decide(user, pr.get("budget_estimate") or 0)
+    _require_decide(user, pr)
     if pr["status"] != "devis_valide":
         raise HTTPException(400, "La DA doit être au statut 'devis validé' pour émettre une commande.")
 
@@ -544,7 +555,7 @@ async def replace_installments(
     devis retenu/la commande — un total inférieur reste permis (échéancier
     encore incomplet)."""
     pr = _get_or_404(db, pr_id)
-    _require_decide(user, pr.get("budget_estimate") or 0)
+    _require_decide(user, pr)
     if pr["status"] not in INSTALLMENT_EDIT_ALLOWED:
         raise HTTPException(400, "Le mode de paiement se définit une fois le devis retenu.")
 

@@ -41,7 +41,7 @@ const AMOUNT_TIERED_ENTITIES: Record<string, AmountTier[]> = {
   ],
 };
 
-function channelFor(entity: string, amount?: number): Channel {
+export function channelFor(entity: string, amount?: number): Channel {
   const tiers = AMOUNT_TIERED_ENTITIES[entity];
   if (tiers && amount !== undefined) {
     for (const tier of tiers) {
