@@ -16,12 +16,12 @@ const REVIEW_TYPES = [
   { key: "annual", label: "Annuelle" },
 ] as const;
 type ReviewType = (typeof REVIEW_TYPES)[number]["key"];
-const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle" };
+export const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle" };
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - 3 + i);
 const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
-type Review = {
+export type Review = {
   id: string;
   employee_id: string;
   employee_name: string | null;
@@ -94,9 +94,9 @@ function defaultPeriod(type: ReviewType): string {
   return `${CURRENT_YEAR}-${String(m).padStart(2, "0")}`;
 }
 
-function FormModal({ employees, editing, onClose, onSaved }: { employees: Employee[]; editing: Review | null; onClose: () => void; onSaved: () => void }) {
+export function FormModal({ employees, fixedEmployeeId, editing, onClose, onSaved }: { employees?: Employee[]; fixedEmployeeId?: string; editing: Review | null; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
-    employee_id: editing?.employee_id ?? "",
+    employee_id: fixedEmployeeId ?? editing?.employee_id ?? "",
     review_type: editing?.review_type ?? ("monthly" as ReviewType),
     period: editing?.period ?? defaultPeriod("monthly"),
     score: editing?.score ?? 12,
@@ -168,14 +168,17 @@ function FormModal({ employees, editing, onClose, onSaved }: { employees: Employ
           {editing ? "Modifier l'évaluation" : "Nouvelle évaluation"}
         </h2>
 
-        {!editing && (
+        {!editing && !fixedEmployeeId && (
           <>
             <label style={labelStyle}>Employé *</label>
             <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} className="u-input" style={fieldStyle}>
               <option value="">— Sélectionner —</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+              {(employees ?? []).map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
             </select>
-
+          </>
+        )}
+        {!editing && (
+          <>
             <label style={labelStyle}>Type d'évaluation</label>
             <div style={{ display: "flex", gap: 8, marginTop: 8, marginBottom: 16 }}>
               {REVIEW_TYPES.map(rt => (

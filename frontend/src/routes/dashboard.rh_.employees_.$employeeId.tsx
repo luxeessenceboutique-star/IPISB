@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { DashAvatar, EmptyHint } from "@/components/dashboard/ui";
 import { FormModal, type Employee, type LookupItem } from "@/components/rh/Employees";
+import { FormModal as ReviewFormModal, REVIEW_TYPE_LABEL, type Review } from "@/components/rh/Performance";
 import { fmtMAD } from "@/components/rh/Payroll";
 import { PreviewModal, urlIsPdf, type Preview } from "@/components/dashboard/preview";
 
@@ -411,10 +412,12 @@ function PaieTab({ employeeId }: { employeeId: string }) {
 
 /* ─── Performance tab ─── */
 type Goal = { id: string; title: string; description: string | null; status: string; progress: number; due_date: string | null };
-type Review = { id: string; period: string; score: number | null; feedback: string | null; status: string; review_type: string; evolution: number | null };
 const GOAL_STATUS_LABEL: Record<string, string> = { pending: "À faire", in_progress: "En cours", done: "Terminé" };
 const REVIEW_STATUS_LABEL: Record<string, string> = { draft: "Brouillon", submitted: "Soumise", acknowledged: "Validée" };
-const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle" };
+
+type JobHeading = { id: string; label: string; coefficient: number; children: JobHeading[] };
+type JobDescription = { id: string; department: string; position: string; mission: string | null; headings: JobHeading[] };
+type ImportProposal = { mission: string | null; headings: { label: string; coefficient: number; children: any[] }[] };
 
 function AddGoalForm({ employeeId, onClose, onSaved }: { employeeId: string; onClose: () => void; onSaved: () => void }) {
   const [title, setTitle] = useState("");
@@ -448,54 +451,178 @@ function AddGoalForm({ employeeId, onClose, onSaved }: { employeeId: string; onC
   );
 }
 
-function AddReviewForm({ employeeId, onClose, onSaved }: { employeeId: string; onClose: () => void; onSaved: () => void }) {
-  const [reviewType, setReviewType] = useState("annual");
-  const [period, setPeriod] = useState("");
-  const [score, setScore] = useState("12");
-  const [feedback, setFeedback] = useState("");
-  const [busy, setBusy] = useState(false);
+function fmtMADShort(v: number | null | undefined) {
+  return `${(v ?? 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} MAD`;
+}
 
-  async function submit() {
-    if (!period.trim()) { toast.error("La période est requise."); return; }
-    setBusy(true);
+function HeadingRows({ items, depth = 0 }: { items: JobHeading[]; depth?: number }) {
+  return (
+    <>
+      {items.map(h => (
+        <div key={h.id}>
+          <div className="row-c flex-wrap" style={{ paddingInlineStart: 12 + depth * 20 }}>
+            <div className="min-w-0 flex-1" style={{ fontWeight: depth === 0 ? 700 : 500, fontSize: depth === 0 ? 13.5 : 12.5, color: PAL.ink }}>
+              {h.label}
+            </div>
+            <span className="chip-c" title="Coefficient (pondération dans la note mensuelle)">×{h.coefficient}</span>
+          </div>
+          {h.children?.length > 0 && <HeadingRows items={h.children} depth={depth + 1} />}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Aperçu (non enregistré) de la structure proposée par l'IA après lecture
+ * du document importé — même forme que HeadingRows mais sans id (pas encore
+ * en base) et avec un bouton pour retirer une rubrique avant application. */
+function ProposalRows({ items, path, onRemove }: { items: ImportProposal["headings"]; path: number[]; onRemove: (path: number[]) => void }) {
+  return (
+    <>
+      {items.map((h, i) => (
+        <div key={i}>
+          <div className="row-c flex-wrap" style={{ paddingInlineStart: 12 + path.length * 20 }}>
+            <div className="min-w-0 flex-1" style={{ fontWeight: path.length === 0 ? 700 : 500, fontSize: path.length === 0 ? 13.5 : 12.5, color: PAL.ink }}>
+              {h.label}
+            </div>
+            <span className="chip-c">×{h.coefficient}</span>
+            <button type="button" onClick={() => onRemove([...path, i])} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Retirer">
+              <Trash2 size={13} strokeWidth={1.7} />
+            </button>
+          </div>
+          {h.children?.length > 0 && <ProposalRows items={h.children} path={[...path, i]} onRemove={onRemove} />}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function removeAtPath(items: ImportProposal["headings"], path: number[]): ImportProposal["headings"] {
+  if (path.length === 1) return items.filter((_, i) => i !== path[0]);
+  return items.map((it, i) => i === path[0] ? { ...it, children: removeAtPath(it.children, path.slice(1)) } : it);
+}
+
+/* ─── Fiche de poste (rattachée au département/poste, partagée entre
+   collègues occupant le même poste) — import d'un document + extraction IA
+   des grands titres/sous-titres, revus avant application. ─── */
+function JobDescriptionCard({ department, position }: { department: string | null; position: string | null }) {
+  const [jd, setJd] = useState<JobDescription | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [proposal, setProposal] = useState<ImportProposal | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  async function load() {
+    if (!department || !position) { setLoading(false); return; }
+    setLoading(true);
     try {
-      await api.post("/api/rh/performance", { employee_id: employeeId, review_type: reviewType, period, score: parseFloat(score), feedback: feedback || null });
-      toast.success("Évaluation ajoutée.");
-      onSaved();
-      onClose();
+      setJd(await api.get(`/api/rh/job-descriptions/by-position?department=${encodeURIComponent(department)}&position=${encodeURIComponent(position)}`));
     } catch (err: any) {
-      toast.error(err?.message ?? "Erreur.");
+      toast.error(err?.message ?? "Erreur lors du chargement de la fiche de poste.");
     } finally {
-      setBusy(false);
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [department, position]);
+
+  async function pickFile(file: File) {
+    if (!department || !position) return;
+    setAnalyzing(true);
+    setProposal(null);
+    try {
+      const fd = new FormData();
+      fd.append("department", department);
+      fd.append("position", position);
+      fd.append("file", file);
+      const result = await api.uploadFile("/api/rh/job-descriptions/analyze-import", fd);
+      setProposal(result);
+      toast.success("Document lu — vérifiez la proposition avant de l'appliquer.");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'analyse IA.");
+    } finally {
+      setAnalyzing(false);
+      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
+  async function apply() {
+    if (!proposal || !department || !position) return;
+    setApplying(true);
+    try {
+      await api.post("/api/rh/job-descriptions/apply-import", {
+        department, position, mission: proposal.mission, headings: proposal.headings,
+      });
+      toast.success("Fiche de poste mise à jour.");
+      setProposal(null);
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'enregistrement.");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  if (!department || !position) return null;
+
   return (
-    <div className="dash-card" style={{ padding: 16, marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-      <select value={reviewType} onChange={e => setReviewType(e.target.value)} className="u-input"
-        style={{ padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
-        <option value="monthly">Mensuelle</option>
-        <option value="semestrial">Semestrielle</option>
-        <option value="annual">Annuelle</option>
-      </select>
-      <input type="text" placeholder="Période (ex. 2026, 2026-08, 2026-S1)" value={period} onChange={e => setPeriod(e.target.value)} className="u-input"
-        style={{ flex: "1 1 160px", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
-      <input type="number" min={0} max={20} step="any" value={score} onChange={e => setScore(e.target.value)} placeholder="Note /20" className="u-input"
-        style={{ width: 90, padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
-      <input type="text" placeholder="Commentaire (optionnel)" value={feedback} onChange={e => setFeedback(e.target.value)} className="u-input"
-        style={{ flex: "1 1 200px", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
-      <button type="button" onClick={submit} disabled={busy} className="btn-c btn-c-sm btn-c-primary">{busy ? "…" : "Ajouter"}</button>
-      <button type="button" onClick={onClose} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+    <div className="dash-card" style={{ padding: 18, marginBottom: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: PAL.muted }}>
+          Fiche de poste — {position}
+        </div>
+        <label className="btn-c btn-c-sm btn-c-ghost" style={{ cursor: analyzing ? "wait" : "pointer", opacity: analyzing ? 0.6 : 1 }}>
+          {analyzing ? <Loader2 size={13} strokeWidth={1.8} className="animate-spin" /> : <Upload size={13} strokeWidth={1.8} />}
+          {analyzing ? "Lecture IA…" : "Importer un document"}
+          <input ref={inputRef} type="file" accept="application/pdf,.docx,image/jpeg,image/png" style={{ display: "none" }} disabled={analyzing}
+            onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f); }} />
+        </label>
+      </div>
+
+      {proposal ? (
+        <div style={{ border: `1px dashed ${PAL.line}`, borderRadius: 10, padding: 12, marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: PAL.muted, marginBottom: 8 }}>
+            Proposition extraite du document — à vérifier, puis appliquer (les rubriques existantes ne sont jamais modifiées).
+          </div>
+          {proposal.mission && <div style={{ fontSize: 13, fontStyle: "italic", color: PAL.ink, marginBottom: 10 }}>{proposal.mission}</div>}
+          {proposal.headings.length === 0 ? (
+            <EmptyHint text="Aucune rubrique détectée dans ce document." />
+          ) : (
+            <div className="dash-card overflow-hidden" style={{ marginBottom: 12 }}>
+              <ProposalRows items={proposal.headings} path={[]} onRemove={path => setProposal(p => p && { ...p, headings: removeAtPath(p.headings, path) })} />
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" onClick={() => setProposal(null)} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+            <button type="button" onClick={apply} disabled={applying || proposal.headings.length === 0} className="btn-c btn-c-sm btn-c-primary">
+              {applying ? "Enregistrement…" : "Appliquer"}
+            </button>
+          </div>
+        </div>
+      ) : loading ? (
+        <div className="shimmer" style={{ height: 40, borderRadius: 10 }} />
+      ) : !jd || jd.headings.length === 0 ? (
+        <EmptyHint text="Aucune fiche de poste digitalisée pour ce poste — importez un document pour la générer." />
+      ) : (
+        <>
+          {jd.mission && <div style={{ fontSize: 13, fontStyle: "italic", color: PAL.muted, marginBottom: 10 }}>{jd.mission}</div>}
+          <div className="dash-card overflow-hidden">
+            <HeadingRows items={jd.headings} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function PerformanceTab({ employeeId }: { employeeId: string }) {
+function PerformanceTab({ employee }: { employee: Employee }) {
+  const employeeId = employee.id;
   const [goals, setGoals] = useState<Goal[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [addGoal, setAddGoal] = useState(false);
-  const [addReview, setAddReview] = useState(false);
+  const [reviewModal, setReviewModal] = useState<{ open: boolean; editing: Review | null }>({ open: false, editing: null });
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -514,8 +641,41 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [employeeId]);
 
+  async function removeReview(r: Review) {
+    if (!window.confirm(`Supprimer l'évaluation ${REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} (${r.period}) ?`)) return;
+    try {
+      await api.delete(`/api/rh/performance/${r.id}`);
+      toast.success("Évaluation supprimée.");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
+    }
+  }
+
+  async function applyBonus(r: Review) {
+    const amount = r.bonus_decided ?? r.bonus_suggested;
+    if (amount == null) { toast.error("Aucun montant de prime à appliquer."); return; }
+    if (!window.confirm(`Appliquer ${fmtMADShort(amount)} de prime sur la fiche de paie (${r.period}) ?`)) return;
+    setApplyingId(r.id);
+    try {
+      await api.post(`/api/rh/performance/${r.id}/apply-bonus`, {});
+      toast.success("Prime appliquée sur la fiche de paie.");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'application de la prime.");
+    } finally {
+      setApplyingId(null);
+    }
+  }
+
   return (
     <div>
+      {reviewModal.open && (
+        <ReviewFormModal fixedEmployeeId={employeeId} editing={reviewModal.editing} onClose={() => setReviewModal({ open: false, editing: null })} onSaved={load} />
+      )}
+
+      <JobDescriptionCard department={employee.department} position={employee.position} />
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: PAL.muted }}>Objectifs</div>
         <button type="button" onClick={() => setAddGoal(v => !v)} className="btn-c btn-c-sm btn-c-ghost"><Plus size={13} strokeWidth={1.8} />Ajouter</button>
@@ -543,29 +703,47 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
       )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: PAL.muted }}>Évaluations</div>
-        <button type="button" onClick={() => setAddReview(v => !v)} className="btn-c btn-c-sm btn-c-ghost"><Plus size={13} strokeWidth={1.8} />Ajouter</button>
+        <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: PAL.muted }}>
+          Évaluations — mensuelle (prime), semestrielle (projets), annuelle (objectifs)
+        </div>
+        <button type="button" onClick={() => setReviewModal({ open: true, editing: null })} className="btn-c btn-c-sm btn-c-ghost"><Plus size={13} strokeWidth={1.8} />Ajouter</button>
       </div>
-      {addReview && <AddReviewForm employeeId={employeeId} onClose={() => setAddReview(false)} onSaved={load} />}
       {loading ? (
         <div className="shimmer" style={{ height: 40, borderRadius: 10 }} />
       ) : reviews.length === 0 ? (
         <div className="dash-card"><EmptyHint text="Aucune évaluation enregistrée." /></div>
       ) : (
         <div className="dash-card overflow-hidden">
-          {reviews.map(r => (
-            <div key={r.id} className="row-c flex-wrap">
-              <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {r.period}</div>
-                {r.feedback && <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>{r.feedback}</div>}
+          {reviews.map(r => {
+            const bonusAmount = r.bonus_decided ?? r.bonus_suggested;
+            return (
+              <div key={r.id} className="row-c flex-wrap">
+                <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {r.period}</div>
+                  {r.feedback && <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>{r.feedback}</div>}
+                </div>
+                {r.review_type === "monthly" && r.task_count != null && (
+                  <span className="chip-c">{r.task_count} tâche{r.task_count !== 1 ? "s" : ""}</span>
+                )}
+                {r.evolution != null && (
+                  <span className={`chip-c ${r.evolution >= 0 ? "chip-c-green" : "chip-c-red"}`}>{r.evolution >= 0 ? "+" : ""}{r.evolution}</span>
+                )}
+                {r.score != null && <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{r.score} / 20</span>}
+                {r.review_type === "monthly" && bonusAmount != null && bonusAmount > 0 && (
+                  r.payroll_record_id ? (
+                    <span className="chip-c chip-c-green">{fmtMADShort(bonusAmount)} appliquée</span>
+                  ) : (
+                    <button onClick={() => applyBonus(r)} disabled={applyingId === r.id} className="btn-c btn-c-sm btn-c-soft" title="Appliquer sur la fiche de paie">
+                      <Wallet size={12} />{applyingId === r.id ? "…" : `Appliquer ${fmtMADShort(bonusAmount)}`}
+                    </button>
+                  )
+                )}
+                <span className="chip-c">{REVIEW_STATUS_LABEL[r.status] ?? r.status}</span>
+                <button onClick={() => setReviewModal({ open: true, editing: r })} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
+                <button onClick={() => removeReview(r)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
               </div>
-              {r.evolution != null && (
-                <span className={`chip-c ${r.evolution >= 0 ? "chip-c-green" : "chip-c-red"}`}>{r.evolution >= 0 ? "+" : ""}{r.evolution}</span>
-              )}
-              {r.score != null && <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{r.score} / 20</span>}
-              <span className="chip-c">{REVIEW_STATUS_LABEL[r.status] ?? r.status}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -998,7 +1176,7 @@ function EmployeeDetailPage() {
       {tab === "documents" && <DocumentsTab employeeId={employee.id} employeeName={employee.full_name} refreshKey={docsRefresh} onPreview={setPreview} />}
       {tab === "conges" && <CongesTab employeeId={employee.id} />}
       {tab === "paie" && <PaieTab employeeId={employee.id} />}
-      {tab === "performance" && <PerformanceTab employeeId={employee.id} />}
+      {tab === "performance" && <PerformanceTab employee={employee} />}
       {tab === "analyse" && <AnalyseTab employee={employee} onApplied={load} />}
     </div>
   );

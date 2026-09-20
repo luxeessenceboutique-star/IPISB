@@ -1060,6 +1060,22 @@ class JobHeadingUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 
+class JobHeadingImportItem(BaseModel):
+    label: str
+    coefficient: float = 1
+    children: list["JobHeadingImportItem"] = []
+
+
+class JobDescriptionImportApply(BaseModel):
+    department: str
+    position: str
+    mission: Optional[str] = None
+    headings: list[JobHeadingImportItem] = []
+
+
+JobHeadingImportItem.model_rebuild()
+
+
 # ── RH — Tâches quotidiennes (L63) ──────────────────────────────────────────────
 DAILY_TASK_STATUSES = {"submitted", "validated", "returned"}
 

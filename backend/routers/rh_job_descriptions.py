@@ -1,11 +1,18 @@
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
-from models import JobDescriptionCreate, JobDescriptionUpdate, JobHeadingCreate, JobHeadingUpdate
+from models import (
+    JobDescriptionCreate, JobDescriptionUpdate, JobHeadingCreate, JobHeadingUpdate,
+    JobDescriptionImportApply, JobHeadingImportItem,
+)
 from utils.audit import log_audit
+from utils.job_description_ai import analyze_job_description_file
 
 router = APIRouter(prefix="/rh/job-descriptions", tags=["rh"])
+
+MAX_IMPORT_SIZE = 15 * 1024 * 1024  # 15 Mo, même plafond que les autres imports de documents
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -75,6 +82,79 @@ async def get_job_description_by_position(
     jd = rows[0]
     headings = db.from_("job_description_headings").select("*").eq("job_description_id", jd["id"]).execute().data or []
     return {**jd, "headings": _tree(headings)}
+
+
+@router.post("/analyze-import")
+async def analyze_import(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    department: str = Form(...),
+    position: str = Form(...),
+    file: UploadFile = File(...),
+):
+    """Lit un document de fiche de poste (PDF/DOCX/image) et en propose une
+    structure (grands titres/sous-titres pondérés) via l'IA — ne rien
+    écrire ici, seulement une proposition à revoir avant /apply-import."""
+    _require_admin(user)
+    data = await file.read()
+    if len(data) > MAX_IMPORT_SIZE:
+        raise HTTPException(400, "Fichier trop volumineux (15 Mo max).")
+    try:
+        result = await run_in_threadpool(
+            analyze_job_description_file, file.filename or "document", file.content_type or "", data, department, position,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"L'analyse IA a échoué : {str(e)}")
+    return result
+
+
+@router.post("/apply-import")
+async def apply_import(
+    body: JobDescriptionImportApply,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Écrit la proposition issue de /analyze-import : crée la fiche de poste
+    si elle n'existe pas encore pour ce département/poste (ou complète sa
+    mission si vide), puis AJOUTE les rubriques proposées sans jamais toucher
+    à celles déjà présentes."""
+    _require_admin(user)
+    existing = (
+        db.from_("job_descriptions").select("*")
+        .eq("department", body.department).eq("position", body.position)
+        .execute().data
+    )
+    if existing:
+        jd = existing[0]
+        if not jd.get("mission") and body.mission:
+            db.from_("job_descriptions").update({"mission": body.mission}).eq("id", jd["id"]).execute()
+            jd["mission"] = body.mission
+    else:
+        res = db.from_("job_descriptions").insert({
+            "department": body.department, "position": body.position,
+            "mission": body.mission, "created_by": user.id,
+        }).execute()
+        jd = res.data[0]
+
+    def insert_headings(items: list[JobHeadingImportItem], parent_id: Optional[str], offset: int) -> int:
+        count = 0
+        for i, it in enumerate(items):
+            row = {
+                "job_description_id": jd["id"], "parent_id": parent_id,
+                "label": it.label, "coefficient": it.coefficient, "sort_order": offset + i,
+            }
+            heading = db.from_("job_description_headings").insert(row).execute().data[0]
+            count += 1
+            count += insert_headings(it.children, heading["id"], 0)
+        return count
+
+    inserted = insert_headings(body.headings, None, 0)
+    log_audit(db, user.id, "job_description.import_apply", "job_description", jd["id"], {"inserted": inserted})
+
+    headings = db.from_("job_description_headings").select("*").eq("job_description_id", jd["id"]).execute().data or []
+    return {**jd, "headings": _tree(headings), "inserted": inserted}
 
 
 @router.post("")
