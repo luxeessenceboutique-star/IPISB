@@ -506,6 +506,7 @@ function removeAtPath(items: ImportProposal["headings"], path: number[]): Import
    collègues occupant le même poste) — import d'un document + extraction IA
    des grands titres/sous-titres, revus avant application. ─── */
 function JobDescriptionCard({ department, position }: { department: string | null; position: string | null }) {
+  const dept = department ?? "";
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -514,25 +515,25 @@ function JobDescriptionCard({ department, position }: { department: string | nul
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
-    if (!department || !position) { setLoading(false); return; }
+    if (!position) { setLoading(false); return; }
     setLoading(true);
     try {
-      setJd(await api.get(`/api/rh/job-descriptions/by-position?department=${encodeURIComponent(department)}&position=${encodeURIComponent(position)}`));
+      setJd(await api.get(`/api/rh/job-descriptions/by-position?department=${encodeURIComponent(dept)}&position=${encodeURIComponent(position)}`));
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors du chargement de la fiche de poste.");
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [department, position]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [dept, position]);
 
   async function pickFile(file: File) {
-    if (!department || !position) return;
+    if (!position) return;
     setAnalyzing(true);
     setProposal(null);
     try {
       const fd = new FormData();
-      fd.append("department", department);
+      fd.append("department", dept);
       fd.append("position", position);
       fd.append("file", file);
       const result = await api.uploadFile("/api/rh/job-descriptions/analyze-import", fd);
@@ -547,11 +548,11 @@ function JobDescriptionCard({ department, position }: { department: string | nul
   }
 
   async function apply() {
-    if (!proposal || !department || !position) return;
+    if (!proposal || !position) return;
     setApplying(true);
     try {
       await api.post("/api/rh/job-descriptions/apply-import", {
-        department, position, mission: proposal.mission, headings: proposal.headings,
+        department: dept, position, mission: proposal.mission, headings: proposal.headings,
       });
       toast.success("Fiche de poste mise à jour.");
       setProposal(null);
@@ -563,7 +564,7 @@ function JobDescriptionCard({ department, position }: { department: string | nul
     }
   }
 
-  if (!department || !position) return null;
+  if (!position) return null;
 
   return (
     <div className="dash-card" style={{ padding: 18, marginBottom: 24 }}>
