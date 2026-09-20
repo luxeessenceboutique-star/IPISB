@@ -22,7 +22,6 @@ BUCKET = "accounting"
 SIGNED_URL_TTL = 60 * 60  # 1 hour
 ENTITY_TYPE = "revenue"
 ATTACHMENT_KINDS = {"invoice", "receipt", "document"}
-REVENUE_TYPES = {"tuition", "subsidy", "donation", "service", "other"}
 STATUSES = {"expected", "received", "cancelled"}
 
 
@@ -262,8 +261,11 @@ async def create_revenue(
     _require_admin(user)
     if not body.title.strip():
         raise HTTPException(400, "title is required")
-    if body.revenue_type not in REVENUE_TYPES:
-        raise HTTPException(400, "Invalid revenue_type")
+    # Au-delà des types connus (tuition/subsidy/donation/service/compte_courant/
+    # chiffre_affaires/credit/other), un libellé libre est accepté — ex. saisi
+    # depuis le champ "Autre" côté UI.
+    if not (body.revenue_type or "").strip():
+        raise HTTPException(400, "revenue_type is required")
     if body.status not in STATUSES:
         raise HTTPException(400, "Invalid status")
 
@@ -328,8 +330,8 @@ async def update_revenue(
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
-    if "revenue_type" in updates and updates["revenue_type"] not in REVENUE_TYPES:
-        raise HTTPException(400, "Invalid revenue_type")
+    if "revenue_type" in updates and not str(updates["revenue_type"]).strip():
+        raise HTTPException(400, "revenue_type is required")
     if "status" in updates and updates["status"] not in STATUSES:
         raise HTTPException(400, "Invalid status")
 

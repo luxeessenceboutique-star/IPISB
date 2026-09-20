@@ -15,7 +15,9 @@ const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 const PAYMENT_METHODS = ["Virement", "Chèque", "Espèces", "Carte bancaire", "Prélèvement"];
 
 const TYPE_LABEL: Record<string, string> = {
-  tuition: "Scolarité", subsidy: "Subvention", donation: "Don", service: "Prestation", other: "Autre",
+  tuition: "Scolarité", subsidy: "Subvention", donation: "Don", service: "Prestation",
+  compte_courant: "Compte courant (CC)", chiffre_affaires: "Chiffre d'affaires (CA)", credit: "Crédit (CR)",
+  other: "Autre",
 };
 const STATUS_LABEL: Record<string, string> = { expected: "Attendu", received: "Encaissé", cancelled: "Annulé" };
 const STATUS_TONE: Record<string, string> = { expected: "chip-c-amber", received: "chip-c-green", cancelled: "chip-c-red" };
@@ -61,9 +63,10 @@ async function authHeaders(): Promise<Record<string, string>> {
 function FormModal({ categories, classes, editing, onClose, onSaved }: {
   categories: Category[]; classes: ClassOpt[]; editing: Revenue | null; onClose: () => void; onSaved: () => void;
 }) {
+  const editingTypeKnown = !editing || Object.prototype.hasOwnProperty.call(TYPE_LABEL, editing.revenue_type);
   const [form, setForm] = useState({
     title: editing?.title ?? "",
-    revenue_type: editing?.revenue_type ?? "tuition",
+    revenue_type: editingTypeKnown ? (editing?.revenue_type ?? "tuition") : "other",
     category_id: editing?.category_id ?? "",
     amount: editing ? String(editing.amount) : "0",
     vat_percent: editing ? String(editing.vat_percent) : "0",
@@ -76,6 +79,7 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
     comment: editing?.comment ?? "",
   });
   const [busy, setBusy] = useState(false);
+  const [customType, setCustomType] = useState(editingTypeKnown ? "" : editing!.revenue_type);
   const [students, setStudents] = useState<StudentOpt[]>([]);
 
   // Load the promo's students whenever a promo is picked (for the "élève" link).
@@ -91,9 +95,10 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
   async function submit() {
     if (!form.title.trim()) { toast.error("Le libellé est requis."); return; }
     setBusy(true);
+    const revenueType = form.revenue_type === "other" && customType.trim() ? customType.trim() : form.revenue_type;
     const payload = {
       title: form.title,
-      revenue_type: form.revenue_type,
+      revenue_type: revenueType,
       category_id: form.category_id || null,
       amount, vat_percent: vat,
       payment_method: form.payment_method || null,
@@ -133,6 +138,9 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
             <select value={form.revenue_type} onChange={e => setForm(f => ({ ...f, revenue_type: e.target.value }))} className="u-input" style={fieldStyle}>
               {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
+            {form.revenue_type === "other" && (
+              <input type="text" value={customType} onChange={e => setCustomType(e.target.value)} placeholder="Préciser le type (optionnel)…" className="u-input" style={{ ...fieldStyle, marginTop: -8 }} />
+            )}
           </div>
           <div>
             <label style={labelStyle}>Catégorie</label>

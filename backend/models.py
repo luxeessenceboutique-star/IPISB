@@ -478,7 +478,7 @@ class BudgetUpdate(BaseModel):
 # ── Revenues (recettes) ──────────────────────────────────────────────────────
 class RevenueCreate(BaseModel):
     title: str
-    revenue_type: str = "other"             # 'tuition'|'subsidy'|'donation'|'service'|'other'
+    revenue_type: str = "other"             # 'tuition'|'subsidy'|'donation'|'service'|'compte_courant'|'chiffre_affaires'|'credit'|'other', ou tout libellé libre
     category_id: Optional[str] = None
     amount: float = 0                       # HT
     vat_percent: float = 0
