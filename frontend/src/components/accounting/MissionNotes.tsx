@@ -364,6 +364,19 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                       )}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                      <button
+                        type="button"
+                        disabled={!d}
+                        onClick={() => {
+                          const prev = shiftDate(d, -1);
+                          if (dayMin && prev < dayMin) { toast.error(`Le jour J${di + 1} précède le début de mission (${fmtDate(dayMin)}).`); return; }
+                          setDayDate(di, prev);
+                        }}
+                        title="-1 jour"
+                        style={{ background: "none", border: `1px solid ${PAL.line}`, borderRadius: 5, cursor: d ? "pointer" : "not-allowed", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "4px 5px", lineHeight: 1, opacity: d ? 1 : 0.4 }}
+                      >
+                        -1j
+                      </button>
                       <input type="date" value={d} min={dayMin || undefined} max={dayMax || undefined} onChange={e => setDayDate(di, e.target.value)} style={{ width: 100, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
                       <button
                         type="button"

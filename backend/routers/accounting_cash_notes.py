@@ -246,19 +246,31 @@ async def create_note(
         "total": total,
         "nc": "comptable",
         "caisse": body.caisse,
+        "disbursement_method": body.disbursement_method,
         "comment": (body.comment or "").strip() or None,
         "created_by": user.id,
     }
-    try:
-        res = db.from_("cash_notes").insert({**row, "disbursement_method": body.disbursement_method}).execute()
-    except Exception as ex:
-        msg = str(ex)
-        if "disbursement_method" in msg or "does not exist" in msg or "Could not find" in msg:
-            # Migration L61 non passée — on enregistre la note sans le mode de
-            # remise plutôt que de bloquer toute la saisie.
+    # Colonnes ajoutées par des migrations récentes (L46 « caisse », L61
+    # « disbursement_method ») — si l'une n'est pas encore passée en
+    # production, on retire la colonne fautive et on réessaie plutôt que de
+    # bloquer toute la saisie.
+    res = None
+    for _ in range(3):
+        try:
             res = db.from_("cash_notes").insert(row).execute()
-        else:
-            raise
+            break
+        except Exception as ex:
+            msg = str(ex)
+            if "caisse" in msg and "caisse" in row:
+                row.pop("caisse", None)
+            elif "disbursement_method" in msg and "disbursement_method" in row:
+                row.pop("disbursement_method", None)
+            elif "does not exist" in msg or "Could not find" in msg:
+                raise HTTPException(500, "Une colonne récente manque encore en base — contactez l'administrateur pour appliquer la dernière migration.")
+            else:
+                raise
+    if res is None:
+        raise HTTPException(500, "Impossible d'enregistrer la note.")
     note = res.data[0] if res.data else row
     # Nouveau circuit : la note naît « en attente » d'approbation N+1. AUCUNE ligne
     # de journal de caisse n'est créée ici — la comptabilisation n'a lieu qu'à
