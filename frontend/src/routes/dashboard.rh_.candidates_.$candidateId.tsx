@@ -43,6 +43,9 @@ function EditCandidateModal({ candidate, onClose, onSaved }: { candidate: Candid
   const [form, setForm] = useState({
     full_name: candidate.full_name ?? "", email: candidate.email ?? "", phone: candidate.phone ?? "",
     position: candidate.position ?? "", city: candidate.city ?? "", address: candidate.address ?? "",
+    years_experience: candidate.years_experience != null ? String(candidate.years_experience) : "",
+    languages: candidate.languages ?? "", education: candidate.education ?? "",
+    experience_summary: candidate.experience_summary ?? "", skills: candidate.skills ?? "",
   });
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +56,9 @@ function EditCandidateModal({ candidate, onClose, onSaved }: { candidate: Candid
       await api.patch(`/api/rh/recruitment/candidates/${candidate.id}`, {
         full_name: form.full_name, email: form.email || null, phone: form.phone || null,
         position: form.position || null, city: form.city || null, address: form.address || null,
+        years_experience: form.years_experience.trim() === "" ? null : parseInt(form.years_experience, 10),
+        languages: form.languages || null, education: form.education || null,
+        experience_summary: form.experience_summary || null, skills: form.skills || null,
       });
       toast.success("Candidat modifié.");
       onSaved();
@@ -87,9 +93,30 @@ function EditCandidateModal({ candidate, onClose, onSaved }: { candidate: Candid
         </div>
         <div>
           <label style={labelStyle}>Adresse</label>
-          <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="u-input" style={{ ...fieldStyle, marginBottom: 22 }} />
+          <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="u-input" style={fieldStyle} />
         </div>
       </div>
+
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase" as const, color: PAL.muted, margin: "4px 0 10px" }}>
+        Extrait du CV (analyse IA) — corrigible ou effaçable
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label style={labelStyle}>Années d'expérience</label>
+          <input type="number" min={0} value={form.years_experience} onChange={e => setForm(f => ({ ...f, years_experience: e.target.value }))} className="u-input" style={fieldStyle} />
+        </div>
+        <div>
+          <label style={labelStyle}>Langues</label>
+          <input type="text" value={form.languages} onChange={e => setForm(f => ({ ...f, languages: e.target.value }))} className="u-input" style={fieldStyle} />
+        </div>
+      </div>
+      <label style={labelStyle}>Formation</label>
+      <textarea value={form.education} onChange={e => setForm(f => ({ ...f, education: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
+      <label style={labelStyle}>Expérience</label>
+      <textarea value={form.experience_summary} onChange={e => setForm(f => ({ ...f, experience_summary: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
+      <label style={labelStyle}>Compétences</label>
+      <textarea value={form.skills} onChange={e => setForm(f => ({ ...f, skills: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const, marginBottom: 22 }} />
+
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <button onClick={onClose} className="btn-c btn-c-ghost">Annuler</button>
         <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Enregistrement…" : "Enregistrer"}</button>

@@ -1208,6 +1208,11 @@ class CandidateUpdate(BaseModel):
     city: Optional[str] = None
     address: Optional[str] = None
     notes: Optional[str] = None
+    years_experience: Optional[int] = None
+    languages: Optional[str] = None
+    education: Optional[str] = None
+    experience_summary: Optional[str] = None
+    skills: Optional[str] = None
 
 
 class CandidateCommentCreate(BaseModel):
