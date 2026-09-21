@@ -132,6 +132,8 @@ async def update_quotation(
 ):
     quote = _quote_or_404(db, quotation_id)
     _require_pr_owner_or_admin(user, _get_pr_or_404(db, quote["purchase_request_id"]))
+    if quote.get("retenu") and not user.is_admin():
+        raise HTTPException(403, "Ce devis a été retenu — seul un administrateur peut le modifier.")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "Aucun champ à modifier")
@@ -151,8 +153,8 @@ async def delete_quotation(
 ):
     quote = _quote_or_404(db, quotation_id)
     _require_pr_owner_or_admin(user, _get_pr_or_404(db, quote["purchase_request_id"]))
-    if quote.get("retenu"):
-        raise HTTPException(400, "Impossible de supprimer le devis retenu.")
+    if quote.get("retenu") and not user.is_admin():
+        raise HTTPException(403, "Ce devis a été retenu — seul un administrateur peut le supprimer.")
     if quote.get("attachment_path"):
         try:
             db.storage.from_(BUCKET).remove([quote["attachment_path"]])

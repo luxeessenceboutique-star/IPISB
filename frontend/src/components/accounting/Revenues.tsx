@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -222,6 +223,9 @@ function FormModal({ categories, classes, editing, onClose, onSaved }: {
 }
 
 function DetailPanel({ revenue, onClose, onChanged }: { revenue: Revenue; onClose: () => void; onChanged: () => void }) {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
+  const canEditRevenue = isAdmin || revenue.status !== "received";
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadKind, setUploadKind] = useState("invoice");
@@ -302,9 +306,11 @@ function DetailPanel({ revenue, onClose, onChanged }: { revenue: Revenue; onClos
           <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink }}>{revenue.title}</div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={removeRevenue} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
-            <Trash2 size={15} strokeWidth={1.7} />
-          </button>
+          {canEditRevenue && (
+            <button onClick={removeRevenue} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
+              <Trash2 size={15} strokeWidth={1.7} />
+            </button>
+          )}
           <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}>
             <X size={18} strokeWidth={1.7} />
           </button>
@@ -387,6 +393,8 @@ function Row({ label, value }: { label: string; value: string | null | undefined
 }
 
 export function AccountingRevenues({ initialScope }: { initialScope?: "formation_initiale" | "formation_continue" } = {}) {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [revenues, setRevenues] = useState<Revenue[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -607,8 +615,12 @@ export function AccountingRevenues({ initialScope }: { initialScope?: "formation
                             </div>
                             <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 700, color: PAL.ink }}>{fmtMAD(r.total_incl_vat)}</span>
                             <span className={`chip-c ${STATUS_TONE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
-                            <button onClick={(event) => { event.stopPropagation(); setModal({ open: true, editing: r }); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
-                            <button onClick={(event) => { event.stopPropagation(); remove(r); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                            {(isAdmin || r.status !== "received") && (
+                              <>
+                                <button onClick={(event) => { event.stopPropagation(); setModal({ open: true, editing: r }); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
+                                <button onClick={(event) => { event.stopPropagation(); remove(r); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                              </>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -644,8 +656,12 @@ export function AccountingRevenues({ initialScope }: { initialScope?: "formation
                   </div>
                   <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(r.total_incl_vat)}</span>
                   <span className={`chip-c ${STATUS_TONE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
-                  <button onClick={(event) => { event.stopPropagation(); setModal({ open: true, editing: r }); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
-                  <button onClick={(event) => { event.stopPropagation(); remove(r); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                  {(isAdmin || r.status !== "received") && (
+                    <>
+                      <button onClick={(event) => { event.stopPropagation(); setModal({ open: true, editing: r }); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
+                      <button onClick={(event) => { event.stopPropagation(); remove(r); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>

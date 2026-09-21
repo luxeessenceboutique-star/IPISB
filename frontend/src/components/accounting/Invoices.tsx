@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Search, FileText, Trash2, ChevronLeft, ChevronRight, Pencil, AlertTriangle, Download, X } from "lucide-react";
@@ -244,6 +245,8 @@ function FormModal({ suppliers, classes, purchases, editing, onClose, onSaved }:
 }
 
 export function AccountingInvoices() {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -388,8 +391,12 @@ export function AccountingInvoices() {
                       <td style={{ ...td, whiteSpace: "normal", maxWidth: 200, color: PAL.muted }}>{inv.comment || "—"}</td>
                       <td style={{ ...td, textAlign: "right" }}>
                         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                          <button onClick={() => setModal({ open: true, editing: inv })} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
-                          <button onClick={() => remove(inv)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                          {(isAdmin || inv.payment_status !== "paid") && (
+                            <>
+                              <button onClick={() => setModal({ open: true, editing: inv })} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
+                              <button onClick={() => remove(inv)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>

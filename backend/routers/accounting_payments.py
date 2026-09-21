@@ -227,6 +227,11 @@ async def delete_payment(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    # Un règlement enregistré représente un mouvement d'argent déjà exécuté
+    # (pas d'état "avant validation") — sa suppression reste donc réservée à
+    # l'administrateur (V2), quel que soit le montant.
+    if not user.is_admin():
+        raise HTTPException(403, "Seul un administrateur peut supprimer un règlement déjà enregistré.")
     existing = db.from_("purchase_payments").select("id, purchase_id").eq("id", payment_id).execute().data
     if not existing:
         raise HTTPException(404, "Not found")

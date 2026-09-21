@@ -256,6 +256,11 @@ async def update_invoice(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    existing_rows = db.from_("invoices").select("payment_status").eq("id", invoice_id).execute().data
+    if not existing_rows:
+        raise HTTPException(404, "Not found")
+    if existing_rows[0].get("payment_status") == "paid" and not user.is_admin():
+        raise HTTPException(403, "Cette facture est déjà payée — seul un administrateur peut la modifier.")
     raw = body.model_dump(exclude_unset=True)
     # class_id / student_id / payment_date / payment_method / comment peuvent
     # être explicitement effacés (mis à null) — ex. changer la classe
@@ -285,9 +290,11 @@ async def delete_invoice(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    existing = db.from_("invoices").select("id").eq("id", invoice_id).execute().data
+    existing = db.from_("invoices").select("id, payment_status").eq("id", invoice_id).execute().data
     if not existing:
         raise HTTPException(404, "Not found")
+    if existing[0].get("payment_status") == "paid" and not user.is_admin():
+        raise HTTPException(403, "Cette facture est déjà payée — seul un administrateur peut la supprimer.")
     db.from_("invoices").delete().eq("id", invoice_id).execute()
     log_audit(db, user.id, "invoice.delete", "invoice", invoice_id)
     return {"ok": True}

@@ -740,6 +740,11 @@ async def update_payment(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    # Un versement déjà enregistré est une recette encaissée qui a déjà
+    # alimenté le journal — le corriger a posteriori reste donc réservé à
+    # l'administrateur (V2), comme sa suppression (validation N+1 ci-dessous).
+    if not user.is_admin():
+        raise HTTPException(403, "Seul un administrateur peut modifier un versement déjà enregistré.")
     updates = body.model_dump(exclude_unset=True)
     if "period_month" in updates:
         pm = _parse_month(updates["period_month"])

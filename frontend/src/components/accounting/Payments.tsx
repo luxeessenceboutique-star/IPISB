@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { CreditCard, Plus, Search, Trash2, X, FileText, ChevronRight, Calendar, ArrowRightLeft, Paperclip, NotebookPen, FileDown, Plane, SlidersHorizontal, RotateCcw } from "lucide-react";
@@ -227,6 +228,8 @@ function AddPaymentModal({ purchase, preset, balance, onClose, onSaved }: { purc
 }
 
 function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onClose: () => void; onChanged: () => void }) {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -382,9 +385,11 @@ function PurchasePaymentsPanel({ purchase, onClose, onChanged }: { purchase: Pur
                 </div>
                 {p.comment && <div style={{ fontSize: 10.5, color: PAL.muted, marginTop: 3 }}>{p.comment}</div>}
               </div>
-              <button onClick={() => removePayment(p)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", marginLeft: 4 }} title="Supprimer">
-                <Trash2 size={13} />
-              </button>
+              {isAdmin && (
+                <button onClick={() => removePayment(p)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", marginLeft: 4 }} title="Supprimer">
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -327,6 +327,11 @@ async def update_revenue(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    existing_rows = db.from_("revenues").select("status").eq("id", revenue_id).execute().data
+    if not existing_rows:
+        raise HTTPException(404, "Not found")
+    if existing_rows[0].get("status") == "received" and not user.is_admin():
+        raise HTTPException(403, "Cette recette est déjà encaissée — seul un administrateur peut la modifier.")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -349,9 +354,11 @@ async def delete_revenue(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
-    existing = db.from_("revenues").select("id").eq("id", revenue_id).execute().data
+    existing = db.from_("revenues").select("id, status").eq("id", revenue_id).execute().data
     if not existing:
         raise HTTPException(404, "Not found")
+    if existing[0].get("status") == "received" and not user.is_admin():
+        raise HTTPException(403, "Cette recette est déjà encaissée — seul un administrateur peut la supprimer.")
 
     attachments = (
         db.from_("accounting_attachments")
