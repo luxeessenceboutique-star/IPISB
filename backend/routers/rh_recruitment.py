@@ -340,10 +340,15 @@ async def update_candidate(
     db: Annotated[Client, Depends(get_db)],
 ):
     """Modifie les coordonnées d'un candidat (email, téléphone, poste visé,
-    ville, adresse…) — champs recrutement uniquement, pas les colonnes RH
-    réservées aux employés confirmés (salaire, CNSS…)."""
+    ville, adresse…) ainsi que les champs extraits par l'analyse IA du CV
+    (années d'expérience, langues, formation, expérience, compétences) —
+    champs recrutement uniquement, pas les colonnes RH réservées aux
+    employés confirmés (salaire, CNSS…)."""
     _require_admin(user)
-    nullable = {"email", "phone", "position", "city", "address", "notes"}
+    nullable = {
+        "email", "phone", "position", "city", "address", "notes",
+        "years_experience", "languages", "education", "experience_summary", "skills",
+    }
     raw = body.model_dump(exclude_unset=True)
     updates = {k: v for k, v in raw.items() if k in nullable or v is not None}
     if "full_name" in updates and not (updates["full_name"] or "").strip():
@@ -575,19 +580,85 @@ async def delete_candidate(
 
 # ── Interviews ─────────────────────────────────────────────────────────────
 
+class InterviewerPoolAdd(BaseModel):
+    user_id: str
+
+
 @router.get("/interviewers")
 async def list_interviewers(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    """RH staff interviews can be assigned to — RH and Assistant RH."""
+    """Comptes proposables comme interviewers : RH/Assistant RH et admin
+    d'office, plus le vivier ajouté manuellement (recruitment_interviewers) —
+    ex. un directeur ou un collaborateur d'un autre service amené à mener
+    des entretiens."""
     _require_admin(user)
-    role_rows = db.from_("user_roles").select("user_id").in_("role", ["rh", "assistant_rh"]).execute().data or []
-    ids = list({r["user_id"] for r in role_rows if r.get("user_id")})
+    role_rows = db.from_("user_roles").select("user_id").in_("role", ["rh", "assistant_rh", "admin"]).execute().data or []
+    ids = {r["user_id"] for r in role_rows if r.get("user_id")}
+    try:
+        pool_rows = db.from_("recruitment_interviewers").select("user_id").execute().data or []
+        ids |= {r["user_id"] for r in pool_rows if r.get("user_id")}
+    except Exception:
+        pass  # Migration L72 non passée — le vivier manuel reste juste vide.
+    if not ids:
+        return []
+    profs = db.from_("profiles").select("id, full_name, email").in_("id", list(ids)).execute().data or []
+    return [{"id": p["id"], "full_name": p.get("full_name") or p.get("email") or "—"} for p in profs]
+
+
+@router.get("/interviewer-pool")
+async def list_interviewer_pool(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Vivier géré manuellement (au-delà des rôles RH/Assistant RH/admin
+    déjà proposables d'office) — pour ajouter/retirer qui peut interviewer.
+    Gestion réservée à l'admin (V2) : la liste des personnes habilitées à
+    interviewer des candidats n'est pas une décision opérationnelle RH."""
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+    rows = db.from_("recruitment_interviewers").select("user_id, added_at").order("added_at").execute().data or []
+    ids = [r["user_id"] for r in rows]
     if not ids:
         return []
     profs = db.from_("profiles").select("id, full_name, email").in_("id", ids).execute().data or []
-    return [{"id": p["id"], "full_name": p.get("full_name") or p.get("email") or "—"} for p in profs]
+    by_id = {p["id"]: p for p in profs}
+    return [
+        {"id": r["user_id"], "full_name": (by_id.get(r["user_id"]) or {}).get("full_name")
+            or (by_id.get(r["user_id"]) or {}).get("email") or "—", "added_at": r["added_at"]}
+        for r in rows if r["user_id"] in by_id
+    ]
+
+
+@router.post("/interviewer-pool")
+async def add_interviewer_pool(
+    body: InterviewerPoolAdd,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+    if not db.from_("profiles").select("id").eq("id", body.user_id).execute().data:
+        raise HTTPException(404, "Utilisateur introuvable")
+    db.from_("recruitment_interviewers").upsert(
+        {"user_id": body.user_id, "added_by": user.id}, on_conflict="user_id"
+    ).execute()
+    log_audit(db, user.id, "recruitment_interviewer.add", "user", body.user_id)
+    return {"ok": True}
+
+
+@router.delete("/interviewer-pool/{pool_user_id}")
+async def remove_interviewer_pool(
+    pool_user_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    if not user.is_admin():
+        raise HTTPException(403, "Admin only")
+    db.from_("recruitment_interviewers").delete().eq("user_id", pool_user_id).execute()
+    log_audit(db, user.id, "recruitment_interviewer.remove", "user", pool_user_id)
+    return {"ok": True}
 
 
 MAX_INTERVIEWERS = 3

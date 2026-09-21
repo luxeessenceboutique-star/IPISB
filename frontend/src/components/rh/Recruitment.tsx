@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages, MapPin, Home, MessageSquare, Users } from "lucide-react";
@@ -867,7 +868,7 @@ export function InterviewerPicker({ interviewers, selected, onChange }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8, marginBottom: 14, maxHeight: 160, overflowY: "auto" }}>
       {interviewers.length === 0 && (
-        <div style={{ fontSize: 12.5, color: PAL.muted }}>Aucun profil RH / Assistant RH disponible.</div>
+        <div style={{ fontSize: 12.5, color: PAL.muted }}>Aucun interviewer disponible — gérez le vivier dans l'onglet « Créneaux ».</div>
       )}
       {interviewers.map(iv => {
         const checked = selected.includes(iv.id);
@@ -1103,7 +1104,94 @@ function InterviewsPanel() {
 
 // ── Slots ────────────────────────────────────────────────────────────────
 
+/** Vivier d'interviewers — gestion réservée à l'admin (V2) : au-delà des
+ * comptes RH/Assistant RH/admin déjà proposables d'office, ajoute ou retire
+ * n'importe quel collaborateur (ex. un directeur, un comptable…) habilité à
+ * interviewer des candidats. */
+function InterviewerPoolManager({ onChanged }: { onChanged: () => void }) {
+  type PoolMember = { id: string; full_name: string; added_at: string };
+  type PlatformUser = { id: string; full_name: string | null; email: string | null };
+  const [open, setOpen] = useState(false);
+  const [members, setMembers] = useState<PoolMember[]>([]);
+  const [allUsers, setAllUsers] = useState<PlatformUser[]>([]);
+  const [pickUserId, setPickUserId] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function load() {
+    api.get("/api/rh/recruitment/interviewer-pool").then(setMembers).catch(() => {});
+    api.get("/api/users").then(setAllUsers).catch(() => {});
+  }
+  useEffect(() => { if (open) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open]);
+
+  async function add() {
+    if (!pickUserId) return;
+    setBusy(true);
+    try {
+      await api.post("/api/rh/recruitment/interviewer-pool", { user_id: pickUserId });
+      toast.success("Ajouté au vivier d'interviewers.");
+      setPickUserId("");
+      load();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(userId: string) {
+    try {
+      await api.delete(`/api/rh/recruitment/interviewer-pool/${userId}`);
+      toast.success("Retiré du vivier.");
+      load();
+      onChanged();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
+    }
+  }
+
+  const memberIds = new Set(members.map(m => m.id));
+  const pickable = allUsers.filter(u => !memberIds.has(u.id));
+
+  return (
+    <div className="dash-card" style={{ padding: 14, marginBottom: 16 }}>
+      <button type="button" onClick={() => setOpen(v => !v)} className="btn-c btn-c-ghost btn-c-sm">
+        <Users size={13} strokeWidth={1.8} />{open ? "Masquer" : "Gérer"} le vivier d'interviewers
+      </button>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: PAL.muted, marginBottom: 10 }}>
+            Au-delà des comptes RH/Assistant RH/admin (toujours proposables), ajoutez ici n'importe quel
+            collaborateur (directeur, comptable…) qui doit pouvoir mener des entretiens.
+          </div>
+          {members.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              {members.map(m => (
+                <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--pal-pale)", borderRadius: 8 }}>
+                  <div style={{ flex: 1, fontSize: 13, color: PAL.ink }}>{m.full_name}</div>
+                  <button type="button" onClick={() => remove(m.id)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Retirer">
+                    <Trash2 size={13} strokeWidth={1.7} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <select value={pickUserId} onChange={e => setPickUserId(e.target.value)} className="u-input" style={{ ...fieldStyle, marginBottom: 0, flex: 1 }}>
+              <option value="">— Choisir un collaborateur —</option>
+              {pickable.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
+            </select>
+            <button type="button" onClick={add} disabled={busy || !pickUserId} className="btn-c btn-c-sm btn-c-primary">Ajouter</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SlotsPanel() {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [interviewerPool, setInterviewerPool] = useState<Interviewer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1118,8 +1206,11 @@ function SlotsPanel() {
     catch (err: any) { toast.error(err?.message ?? "Erreur."); }
     finally { setLoading(false); }
   }
+  function loadInterviewerPool() {
+    api.get("/api/rh/recruitment/interviewers").then(setInterviewerPool).catch(() => {});
+  }
   useEffect(() => { load(); }, []);
-  useEffect(() => { api.get("/api/rh/recruitment/interviewers").then(setInterviewerPool).catch(() => {}); }, []);
+  useEffect(() => { loadInterviewerPool(); }, []);
 
   function interviewerNames(ids: string[]) {
     return ids.map(id => interviewerPool.find(iv => iv.id === id)?.full_name).filter(Boolean).join(", ");
@@ -1157,6 +1248,7 @@ function SlotsPanel() {
 
   return (
     <div>
+      {isAdmin && <InterviewerPoolManager onChanged={loadInterviewerPool} />}
       <div className="dash-card" style={{ padding: 18, marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 4 }}>
           <div><label style={labelStyle}>Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
