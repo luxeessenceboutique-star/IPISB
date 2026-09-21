@@ -576,6 +576,10 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
   // ni pièce jointe CDC, ni modification des champs saisis (bouton Modifier).
   const locked = pr.status === "commande_emise" || pr.status === "annulee";
   const isAdmin = roles.includes("admin");
+  // Une fois la DA validée (statut hors brouillon/retournée), modifier ses
+  // champs ou son CDC redevient une action V2 — miroir de update_request/
+  // upload_cdc_attachment (accounting_purchase_requests.py).
+  const canEditRequest = !locked && (isAdmin || pr.status === "brouillon" || pr.status === "retournee");
   // Canal 1 (<= 500 MAD) : « auto-validation » = l'auteur de la DA valide sa
   // propre demande, pas n'importe quel autre comptable — miroir de
   // _require_decide (accounting_purchase_requests.py). V2 (admin) décide toujours.
@@ -614,7 +618,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
               <button onClick={() => api.download(`/api/accounting/purchase-requests/${prId}/pdf`, `Demande_achat_${pr.request_number ?? prId}.pdf`).catch((e: any) => toast.error(e?.message ?? "Erreur lors du téléchargement."))} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }}>
                 Télécharger PDF
               </button>
-              {!locked && (
+              {canEditRequest && (
                 <button onClick={() => startEdit(pr)} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11 }}>
                   <Pencil size={12} />Modifier
                 </button>
@@ -710,7 +714,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
           </div>
           {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
           {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 8 }}>{pr.characteristics}</div>}
-          {(pr.cdc_attachment_name || !locked) && (
+          {(pr.cdc_attachment_name || canEditRequest) && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
               {pr.cdc_attachment_name ? (
                 <button onClick={openCdcAttachment} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={pr.cdc_attachment_name}>
@@ -719,7 +723,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
               ) : (
                 <span style={{ fontSize: 11.5, color: PAL.muted }}>Aucun cahier des charges joint.</span>
               )}
-              {!locked && (
+              {canEditRequest && (
                 <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11, cursor: "pointer" }}>
                   <Paperclip size={12} />{pr.cdc_attachment_name ? "Remplacer" : "Joindre le CDC"}
                   <input

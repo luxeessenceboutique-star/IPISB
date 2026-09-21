@@ -255,6 +255,11 @@ async def update_purchase(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    existing = db.from_("purchases").select("valide_comptable_at, valide_responsable_at").eq("id", purchase_id).execute().data
+    if not existing:
+        raise HTTPException(404, "Not found")
+    if (existing[0].get("valide_comptable_at") or existing[0].get("valide_responsable_at")) and not user.is_admin():
+        raise HTTPException(403, "Cette commande a déjà été validée — seul un administrateur peut la modifier.")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -275,6 +280,11 @@ async def delete_purchase(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_admin(user)
+    existing = db.from_("purchases").select("valide_comptable_at, valide_responsable_at").eq("id", purchase_id).execute().data
+    if not existing:
+        raise HTTPException(404, "Not found")
+    if (existing[0].get("valide_comptable_at") or existing[0].get("valide_responsable_at")) and not user.is_admin():
+        raise HTTPException(403, "Cette commande a déjà été validée — seul un administrateur peut la supprimer.")
     attachments = (
         db.from_("accounting_attachments")
         .select("file_path")

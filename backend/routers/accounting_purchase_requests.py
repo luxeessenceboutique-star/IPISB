@@ -212,6 +212,8 @@ async def update_request(
     _require_owner_or_admin(user, pr)
     if pr["status"] in LOCKED_STATUSES:
         raise HTTPException(400, "Cette demande est verrouillée (commande émise ou annulée).")
+    if pr["status"] not in ("brouillon", "retournee") and not user.is_admin():
+        raise HTTPException(403, "Cette demande a déjà été validée — seul un administrateur peut la modifier.")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "Aucun champ à modifier")
@@ -264,6 +266,8 @@ async def delete_request(
 ):
     pr = _get_or_404(db, pr_id)
     _require_owner_or_admin(user, pr)
+    if pr["status"] not in ("brouillon", "retournee") and not user.is_admin():
+        raise HTTPException(403, "Cette demande a déjà été validée — seul un administrateur peut la supprimer.")
     linked = db.from_("purchases").select("id").eq("purchase_request_id", pr_id).execute().data or []
     if linked:
         raise HTTPException(400, "Impossible de supprimer : une commande est liée à cette demande.")
@@ -631,6 +635,8 @@ async def upload_cdc_attachment(
     _require_owner_or_admin(user, pr)
     if pr["status"] in LOCKED_STATUSES:
         raise HTTPException(400, "Cette demande est verrouillée (commande émise ou annulée).")
+    if pr["status"] not in ("brouillon", "retournee") and not user.is_admin():
+        raise HTTPException(403, "Cette demande a déjà été validée — seul un administrateur peut la modifier.")
 
     data, ext = await validate_and_read(file)
     file_path = f"purchase_request/{pr_id}/cdc/{uuid.uuid4().hex}.{ext}"

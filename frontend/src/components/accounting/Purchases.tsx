@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Search, Truck, Trash2, X, Upload, Download, FileText, ChevronLeft, ChevronRight, Pencil, ShieldCheck, Lock } from "lucide-react";
@@ -94,6 +95,13 @@ async function authHeaders(): Promise<Record<string, string>> {
 }
 
 function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onClose: () => void; onChanged: () => void }) {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes("admin");
+  // Une fois la commande validée (comptable ou responsable), la modifier ou
+  // la supprimer redevient une action V2 — miroir de update_purchase/
+  // delete_purchase (accounting_purchases.py).
+  const isValidated = !!(purchase.valide_comptable_at || purchase.valide_responsable_at);
+  const canEditPurchase = isAdmin || !isValidated;
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadKind, setUploadKind] = useState("quotation");
@@ -324,9 +332,11 @@ function DetailPanel({ purchase, onClose, onChanged }: { purchase: Purchase; onC
           <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink, marginTop: 4 }}>{purchase.title}</div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={removePurchase} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
-            <Trash2 size={15} strokeWidth={1.7} />
-          </button>
+          {canEditPurchase && (
+            <button onClick={removePurchase} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
+              <Trash2 size={15} strokeWidth={1.7} />
+            </button>
+          )}
           <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}>
             <X size={18} strokeWidth={1.7} />
           </button>
