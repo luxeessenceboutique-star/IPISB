@@ -48,16 +48,28 @@ function periodLabel(b: Budget) {
   return b.month == null ? "Année entière" : MONTHS[b.month - 1];
 }
 
+/** Pré-remplit Agenda début/fin à l'édition d'un budget saisi à l'ancien
+ * format (année entière ou mois précis, sans start_date/end_date). */
+function deriveDates(b: Budget | null): { start: string; end: string } {
+  if (!b) return { start: "", end: "" };
+  if (b.start_date || b.end_date) return { start: b.start_date ?? "", end: b.end_date ?? "" };
+  const y = b.year;
+  if (b.month != null) {
+    const m = b.month;
+    const lastDay = new Date(y, m, 0).getDate();
+    return { start: `${y}-${String(m).padStart(2, "0")}-01`, end: `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}` };
+  }
+  return { start: `${y}-01-01`, end: `${y}-12-31` };
+}
+
 function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
   categories: Category[]; defaultYear: number; editing: Budget | null; onClose: () => void; onSaved: () => void;
 }) {
+  const initialDates = deriveDates(editing);
   const [form, setForm] = useState({
     category_id: editing?.category_id ?? "",
-    year: String(editing?.year ?? defaultYear),
-    scope: editing == null ? "year" : editing.start_date ? "range" : editing.month == null ? "year" : "month",
-    month: String(editing?.month ?? 1),
-    start_date: editing?.start_date ?? "",
-    end_date: editing?.end_date ?? "",
+    start_date: initialDates.start,
+    end_date: initialDates.end,
     amount: editing ? String(editing.amount) : "0",
     comment: editing?.comment ?? "",
   });
@@ -65,17 +77,15 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
 
   async function submit() {
     if (!form.category_id) { toast.error("La catégorie est requise."); return; }
-    if (form.scope === "range") {
-      if (!form.start_date || !form.end_date) { toast.error("Renseignez la date de début et la date de fin."); return; }
-      if (form.start_date > form.end_date) { toast.error("La date de début doit précéder la date de fin."); return; }
-    }
+    if (!form.start_date || !form.end_date) { toast.error("Renseignez l'agenda début et l'agenda fin."); return; }
+    if (form.start_date > form.end_date) { toast.error("L'agenda début doit précéder l'agenda fin."); return; }
     setBusy(true);
     const payload = {
       category_id: form.category_id,
-      year: parseInt(form.year, 10),
-      month: form.scope === "month" ? parseInt(form.month, 10) : null,
-      start_date: form.scope === "range" ? form.start_date : null,
-      end_date: form.scope === "range" ? form.end_date : null,
+      year: parseInt(form.start_date.slice(0, 4), 10) || defaultYear,
+      month: null,
+      start_date: form.start_date,
+      end_date: form.end_date,
       amount: parseFloat(form.amount) || 0,
       comment: form.comment || null,
     };
@@ -110,44 +120,16 @@ function FormModal({ categories, defaultYear, editing, onClose, onSaved }: {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
-            <label style={labelStyle}>Année</label>
-            <select value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))} className="u-input" style={fieldStyle}>
-              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
+            <label style={labelStyle}>Agenda début</label>
+            <input type="date" value={form.start_date} max={form.end_date || undefined}
+              onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
           <div>
-            <label style={labelStyle}>Période</label>
-            <select value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))} className="u-input" style={fieldStyle}>
-              <option value="year">Année entière</option>
-              <option value="month">Mois précis</option>
-              <option value="range">Plage de dates</option>
-            </select>
+            <label style={labelStyle}>Agenda fin</label>
+            <input type="date" value={form.end_date} min={form.start_date || undefined}
+              onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
         </div>
-
-        {form.scope === "month" && (
-          <>
-            <label style={labelStyle}>Mois</label>
-            <select value={form.month} onChange={e => setForm(f => ({ ...f, month: e.target.value }))} className="u-input" style={fieldStyle}>
-              {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-            </select>
-          </>
-        )}
-
-        {form.scope === "range" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <label style={labelStyle}>Agenda début</label>
-              <input type="date" value={form.start_date} max={form.end_date || undefined}
-                onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className="u-input" style={fieldStyle} />
-            </div>
-            <div>
-              <label style={labelStyle}>Agenda fin</label>
-              <input type="date" value={form.end_date} min={form.start_date || undefined}
-                onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="u-input" style={fieldStyle} />
-            </div>
-          </div>
-        )}
 
         <label style={labelStyle}>Montant prévu (MAD)</label>
         <input type="number" min="0" step="any" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="u-input" style={fieldStyle} />
