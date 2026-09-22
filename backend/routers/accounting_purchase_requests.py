@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from typing import Annotated, Optional
+from pydantic import BaseModel
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import PurchaseRequestCreate, PurchaseRequestUpdate, DecisionInput, QuoteSelectInput, PurchaseInstallmentsReplace
@@ -658,6 +659,54 @@ async def upload_cdc_attachment(
     }).eq("id", pr_id).execute()
     log_audit(db, user.id, "purchase_request.cdc.upload", "purchase_request", pr_id,
               {"file_name": file.filename})
+    return res.data[0]
+
+
+class CdcFromCatalog(BaseModel):
+    article_id: str
+
+
+@router.post("/{pr_id}/cdc/from-catalog")
+async def copy_cdc_from_catalog(
+    pr_id: str,
+    body: CdcFromCatalog,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Reprend le cahier des charges déjà attaché à un article du catalogue
+    (Comptabilité → Catégories) sur cette DA, sans repasser par un nouvel
+    upload — la sélection d'un article pré-rempli côté formulaire l'appelle
+    automatiquement si l'article a un CDC."""
+    pr = _get_or_404(db, pr_id)
+    _require_owner_or_admin(user, pr)
+    if pr["status"] in LOCKED_STATUSES:
+        raise HTTPException(400, "Cette demande est verrouillée (commande émise ou annulée).")
+    if pr["status"] not in ("brouillon", "retournee") and not user.is_admin():
+        raise HTTPException(403, "Cette demande a déjà été validée — seul un administrateur peut la modifier.")
+
+    rows = db.from_("accounting_category_articles").select("cdc_path, cdc_name").eq("id", body.article_id).execute().data
+    if not rows or not rows[0].get("cdc_path"):
+        raise HTTPException(404, "Cet article n'a pas de cahier des charges dans le catalogue.")
+    source_path = rows[0]["cdc_path"]
+    ext = source_path.rsplit(".", 1)[-1] if "." in source_path else "pdf"
+    file_path = f"purchase_request/{pr_id}/cdc/{uuid.uuid4().hex}.{ext}"
+    try:
+        db.storage.from_(BUCKET).copy(source_path, file_path)
+    except Exception as e:
+        raise HTTPException(500, f"Échec de la copie du fichier : {str(e)}")
+
+    if pr.get("cdc_attachment_path"):
+        try:
+            db.storage.from_(BUCKET).remove([pr["cdc_attachment_path"]])
+        except Exception:
+            pass
+
+    res = db.from_("purchase_requests").update({
+        "cdc_attachment_path": file_path,
+        "cdc_attachment_name": rows[0].get("cdc_name") or "cdc",
+    }).eq("id", pr_id).execute()
+    log_audit(db, user.id, "purchase_request.cdc.copy_from_catalog", "purchase_request", pr_id,
+              {"article_id": body.article_id})
     return res.data[0]
 
 

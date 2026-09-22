@@ -44,6 +44,10 @@ const PAY_MODE: Record<string, string> = { ov_permanent: "OV permanent", ov_ponc
 
 type Supplier = { id: string; company_name: string };
 type Category = { id: string; name: string };
+type CategoryArticle = {
+  id: string; code_article: string | null; article: string;
+  caracteristiques: string | null; cdc_path: string | null; cdc_name: string | null;
+};
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
   quote_number: string; quote_date: string | null; expiration_date: string | null;
@@ -126,6 +130,30 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
     setCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
   const [cdcFile, setCdcFile] = useState<File | null>(null);
 
+  // Articles du catalogue de la catégorie choisie — sélectionner un article
+  // pré-remplit Code/Identification/Caractéristiques (et reprend son CDC
+  // s'il en a un) depuis la fiche saisie dans Comptabilité → Catégories.
+  const [categoryArticles, setCategoryArticles] = useState<CategoryArticle[]>([]);
+  const [selectedArticleId, setSelectedArticleId] = useState("");
+  useEffect(() => {
+    setSelectedArticleId("");
+    if (!form.category_id) { setCategoryArticles([]); return; }
+    api.get(`/api/accounting/categories/${form.category_id}/articles`).then(setCategoryArticles).catch(() => setCategoryArticles([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.category_id]);
+
+  function pickArticle(articleId: string) {
+    setSelectedArticleId(articleId);
+    const a = categoryArticles.find(x => x.id === articleId);
+    if (!a) return;
+    setForm(f => ({
+      ...f,
+      article_code: a.code_article || f.article_code,
+      article_identification: a.article || f.article_identification,
+      characteristics: a.caracteristiques || f.characteristics,
+    }));
+  }
+
   // Le demandeur est toujours le propriétaire du compte connecté.
   useEffect(() => { setForm(f => ({ ...f, requester_name: ownerName })); }, [ownerName]);
 
@@ -140,11 +168,14 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
         budget_estimate: parseFloat(form.budget_estimate) || 0,
         conformity_criteria: criteria,
       });
-      // Cahier des charges (optionnel) — envoyé une fois la DA créée.
+      const selectedArticle = categoryArticles.find(a => a.id === selectedArticleId);
       if (cdcFile && pr?.id) {
+        // Cahier des charges joint manuellement — prioritaire sur celui du catalogue.
         const fd = new FormData();
         fd.append("file", cdcFile);
         await api.uploadFile(`/api/accounting/purchase-requests/${pr.id}/cdc`, fd);
+      } else if (selectedArticle?.cdc_path && pr?.id) {
+        await api.post(`/api/accounting/purchase-requests/${pr.id}/cdc/from-catalog`, { article_id: selectedArticle.id });
       }
       toast.success("Demande d'achat créée !");
       onSaved(); onClose();
@@ -195,6 +226,15 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
         </div>
 
         <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+        {form.category_id && (
+          <div style={{ marginTop: 12 }}>
+            <label style={labelStyle}>Article du catalogue</label>
+            <select className="u-input" style={fieldStyle} value={selectedArticleId} onChange={e => pickArticle(e.target.value)}>
+              <option value="">{categoryArticles.length ? "— Choisir (pré-remplit les champs ci-dessous) —" : "— Aucun article dans cette catégorie —"}</option>
+              {categoryArticles.map(a => <option key={a.id} value={a.id}>{a.code_article ? `${a.code_article} — ${a.article}` : a.article}</option>)}
+            </select>
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
           <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
           <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={form.article_identification} onChange={e => set("article_identification", e.target.value)} /></div>
@@ -207,7 +247,12 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
         <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}><Paperclip size={12} /> Cahier des charges (fichier, facultatif)</label>
         <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={e => setCdcFile(e.target.files?.[0] ?? null)} style={{ ...fieldStyle, padding: "9px 10px" }} className="u-input" />
-        <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 14 }}>Formats acceptés : PDF, JPG ou PNG.{cdcFile ? ` Sélectionné : ${cdcFile.name}` : ""}</div>
+        <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 14 }}>
+          Formats acceptés : PDF, JPG ou PNG.{cdcFile ? ` Sélectionné : ${cdcFile.name}` : ""}
+          {!cdcFile && categoryArticles.find(a => a.id === selectedArticleId)?.cdc_path && (
+            <> Sinon, le CDC de l'article du catalogue ({categoryArticles.find(a => a.id === selectedArticleId)?.cdc_name}) sera repris automatiquement.</>
+          )}
+        </div>
       </div>
 
       <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
@@ -461,6 +506,8 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editCriteria, setEditCriteria] = useState<string[]>([]);
+  const [editCategoryArticles, setEditCategoryArticles] = useState<CategoryArticle[]>([]);
+  const [editSelectedArticleId, setEditSelectedArticleId] = useState("");
 
   async function load() {
     try { setPr(await api.get(`/api/accounting/purchase-requests/${prId}`)); }
@@ -478,11 +525,30 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
       quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0), duration: p.duration ?? "",
     });
     setEditCriteria(p.conformity_criteria ?? []);
+    setEditSelectedArticleId("");
     setEditing(true);
   }
   const setEditField = (k: string, v: string) => setEditForm(f => ({ ...f, [k]: v }));
   const toggleEditCriterion = (k: string) =>
     setEditCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
+
+  useEffect(() => {
+    if (!editing || !editForm.category_id) { setEditCategoryArticles([]); return; }
+    api.get(`/api/accounting/categories/${editForm.category_id}/articles`).then(setEditCategoryArticles).catch(() => setEditCategoryArticles([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, editForm.category_id]);
+
+  function pickEditArticle(articleId: string) {
+    setEditSelectedArticleId(articleId);
+    const a = editCategoryArticles.find(x => x.id === articleId);
+    if (!a) return;
+    setEditForm(f => ({
+      ...f,
+      article_code: a.code_article || f.article_code,
+      article_identification: a.article || f.article_identification,
+      characteristics: a.caracteristiques || f.characteristics,
+    }));
+  }
 
   async function saveEdit() {
     if (!editForm.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
@@ -673,6 +739,15 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
             </div>
 
             <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
+            {editForm.category_id && (
+              <div style={{ marginTop: 12 }}>
+                <label style={labelStyle}>Article du catalogue</label>
+                <select className="u-input" style={fieldStyle} value={editSelectedArticleId} onChange={e => pickEditArticle(e.target.value)}>
+                  <option value="">{editCategoryArticles.length ? "— Choisir (pré-remplit les champs ci-dessous) —" : "— Aucun article dans cette catégorie —"}</option>
+                  {editCategoryArticles.map(a => <option key={a.id} value={a.id}>{a.code_article ? `${a.code_article} — ${a.article}` : a.article}</option>)}
+                </select>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
               <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
               <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={editForm.article_identification} onChange={e => setEditField("article_identification", e.target.value)} /></div>
