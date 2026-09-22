@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { LayoutGrid, Truck, Building2, Tags, TrendingUp, Receipt, FileText, PiggyBank, ClipboardList, History, CreditCard, Package, Wallet, ShieldCheck, Inbox, NotebookPen, Plane, Landmark, ScrollText, DoorClosed, Eye } from "lucide-react";
+import { LayoutGrid, Truck, Building2, Tags, TrendingUp, FileText, PiggyBank, ClipboardList, History, CreditCard, Package, Wallet, ShieldCheck, Inbox, NotebookPen, Plane, Landmark, ScrollText, DoorClosed, Eye } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { AccountingValidations, MySubmissions } from "@/components/accounting/Approvals";
@@ -11,7 +11,6 @@ import { AccountingPurchaseRequests } from "@/components/accounting/PurchaseRequ
 import { AccountingSuppliers } from "@/components/accounting/Suppliers";
 import { AccountingCategories } from "@/components/accounting/Categories";
 import { AccountingRevenues } from "@/components/accounting/Revenues";
-import { AccountingExpenses } from "@/components/accounting/Expenses";
 import { AccountingInvoices } from "@/components/accounting/Invoices";
 import { AccountingBudgets } from "@/components/accounting/Budgets";
 import { AccountingJournal } from "@/components/accounting/Journal";
@@ -46,7 +45,7 @@ export const Route = createFileRoute("/dashboard/accounting")({
 
 const sans = '"Manrope", system-ui, sans-serif';
 
-type Tab = "overview" | "tuition" | "revenues" | "expenses" | "invoices" | "purchase_requests" | "purchases" | "payments" | "inventory" | "locaux" | "budgets" | "suppliers" | "categories" | "cash_journal" | "bank_journal" | "cheques" | "cash_notes" | "mission_notes" | "journal" | "validations" | "mine";
+type Tab = "overview" | "tuition" | "revenues" | "invoices" | "purchase_requests" | "purchases" | "payments" | "inventory" | "locaux" | "budgets" | "suppliers" | "categories" | "cash_journal" | "bank_journal" | "cheques" | "cash_notes" | "mission_notes" | "journal" | "validations" | "mine";
 
 const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "validations",       label: "Validations",      icon: ShieldCheck   },
@@ -54,7 +53,6 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
   { key: "tuition",           label: "Paiements scolarité", icon: Wallet     },
   { key: "mine",              label: "Mes saisies",      icon: Inbox         },
   { key: "revenues",          label: "Recettes",         icon: TrendingUp    },
-  { key: "expenses",          label: "Dépenses",         icon: Receipt       },
   { key: "invoices",          label: "Factures",         icon: FileText      },
   { key: "purchase_requests", label: "Demandes d'achat", icon: ClipboardList },
   { key: "purchases",         label: "Livraisons",       icon: Truck         },
@@ -82,8 +80,8 @@ const TABS: { key: Tab; label: string; icon: typeof LayoutGrid }[] = [
 // Le journal des comptes (trésorerie : virements, OV, chèques) relève de
 // l'administration et de la comptabilité — le caissier tient la caisse espèces.
 const TABS_BY_ROLE: Record<"admin" | "comptabilite" | "accountant" | "cashier", Tab[]> = {
-  admin: ["validations", "overview", "tuition", "revenues", "expenses", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
-  comptabilite: ["validations", "overview", "tuition", "revenues", "expenses", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
+  admin: ["validations", "overview", "tuition", "revenues", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
+  comptabilite: ["validations", "overview", "tuition", "revenues", "invoices", "purchase_requests", "purchases", "payments", "inventory", "locaux", "budgets", "suppliers", "categories", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
   accountant: ["overview", "tuition", "purchase_requests", "cash_journal", "bank_journal", "cheques", "cash_notes", "mission_notes", "journal"],
   cashier: ["tuition", "purchase_requests", "cash_journal", "cash_notes", "mission_notes", "mine"],
 };
@@ -177,7 +175,6 @@ function AccountingPage() {
       {tab === "overview"          && <AccountingOverview />}
       {tab === "tuition"           && <AccountingTuitionTracking readOnly={readOnly} />}
       {tab === "revenues"          && <AccountingRevenues key={scope ?? "all"} initialScope={scope} />}
-      {tab === "expenses"          && <AccountingExpenses />}
       {tab === "invoices"          && <AccountingInvoices />}
       {tab === "purchase_requests" && <AccountingPurchaseRequests />}
       {tab === "purchases"         && <AccountingPurchases />}
