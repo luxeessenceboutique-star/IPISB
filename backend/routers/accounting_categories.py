@@ -121,12 +121,21 @@ async def create_category_article(
         "code_article": body.code_article,
         "caracteristiques": body.caracteristiques,
         "commentaire": body.commentaire,
+        "budget_estimate": body.budget_estimate,
         "created_by": user.id,
     }
     try:
         res = db.from_("accounting_category_articles").insert(row).execute()
     except Exception as e:
-        raise HTTPException(400, str(e))
+        msg = str(e)
+        if "budget_estimate" in msg and ("does not exist" in msg or "Could not find" in msg):
+            row.pop("budget_estimate", None)
+            try:
+                res = db.from_("accounting_category_articles").insert(row).execute()
+            except Exception as e2:
+                raise HTTPException(400, str(e2))
+        else:
+            raise HTTPException(400, msg)
     new_article = res.data[0]
     log_audit(db, user.id, "category_article.create", "accounting_category_article", new_article["id"],
               {"category_id": category_id, "article": body.article})

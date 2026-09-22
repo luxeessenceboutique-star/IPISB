@@ -329,6 +329,7 @@ class CategoryArticleCreate(BaseModel):
     code_article: Optional[str] = None
     caracteristiques: Optional[str] = None
     commentaire: Optional[str] = None
+    budget_estimate: Optional[float] = None
 
 
 class CategoryArticleUpdate(BaseModel):
@@ -336,6 +337,7 @@ class CategoryArticleUpdate(BaseModel):
     code_article: Optional[str] = None
     caracteristiques: Optional[str] = None
     commentaire: Optional[str] = None
+    budget_estimate: Optional[float] = None
 
 
 class SupplierCreate(BaseModel):

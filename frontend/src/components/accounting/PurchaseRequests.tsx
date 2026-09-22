@@ -47,6 +47,7 @@ type Category = { id: string; name: string };
 type CategoryArticle = {
   id: string; code_article: string | null; article: string;
   caracteristiques: string | null; cdc_path: string | null; cdc_name: string | null;
+  budget_estimate: number | null;
 };
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
@@ -151,6 +152,7 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
       article_code: a.code_article || f.article_code,
       article_identification: a.article || f.article_identification,
       characteristics: a.caracteristiques || f.characteristics,
+      budget_estimate: a.budget_estimate != null ? String(a.budget_estimate) : f.budget_estimate,
     }));
   }
 
@@ -547,6 +549,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
       article_code: a.code_article || f.article_code,
       article_identification: a.article || f.article_identification,
       characteristics: a.caracteristiques || f.characteristics,
+      budget_estimate: a.budget_estimate != null ? String(a.budget_estimate) : f.budget_estimate,
     }));
   }
 

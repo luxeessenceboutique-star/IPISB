@@ -3,6 +3,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Trash2, Tags, ChevronDown, ChevronUp, Pencil, Check, X, Package, Upload, FileText, Sparkles } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { fmtMAD } from "./Overview";
 
 const PAL_LINE = "oklch(88% 0.015 170)";
 const PAL_PAPER = "oklch(99% 0.005 160)";
@@ -19,7 +20,7 @@ type Category = { id: string; name: string; code: string | null; created_at: str
 type CategoryArticle = {
   id: string; category_id: string; code_article: string | null; article: string;
   caracteristiques: string | null; commentaire: string | null; created_at: string;
-  cdc_path: string | null; cdc_name: string | null;
+  cdc_path: string | null; cdc_name: string | null; budget_estimate: number | null;
 };
 
 const inputStyle = { padding: "9px 12px", border: `1px solid ${PAL_LINE}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL_PAPER, outline: "none", boxSizing: "border-box" as const };
@@ -29,7 +30,7 @@ const inputStyle = { padding: "9px 12px", border: `1px solid ${PAL_LINE}`, borde
 function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Category; onCategoryChanged: () => void }) {
   const [articles, setArticles] = useState<CategoryArticle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ code_article: "", article: "", caracteristiques: "", commentaire: "" });
+  const [form, setForm] = useState({ code_article: "", article: "", caracteristiques: "", commentaire: "", budget_estimate: "" });
   const [cdcFile, setCdcFile] = useState<File | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingCode, setEditingCode] = useState(false);
@@ -69,6 +70,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
         code_article: form.code_article.trim() || null,
         caracteristiques: form.caracteristiques.trim() || null,
         commentaire: form.commentaire.trim() || null,
+        budget_estimate: form.budget_estimate.trim() === "" ? null : parseFloat(form.budget_estimate),
       });
       if (cdcFile) {
         const fd = new FormData();
@@ -80,7 +82,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
         }
       }
       toast.success("Article ajouté.");
-      setForm({ code_article: "", article: "", caracteristiques: "", commentaire: "" });
+      setForm({ code_article: "", article: "", caracteristiques: "", commentaire: "", budget_estimate: "" });
       setCdcFile(null);
       load();
     } catch (err: any) {
@@ -186,7 +188,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
             <thead>
               <tr>
-                {["Code article", "Article", "Caractéristiques", "Commentaire", "CDC", ""].map((h, i) => (
+                {["Code article", "Article", "Caractéristiques", "Commentaire", "Budget estimé", "CDC", ""].map((h, i) => (
                   <th key={i} style={{ padding: "6px 10px", textAlign: "left", fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL_MUTED, letterSpacing: ".06em", textTransform: "uppercase", borderBottom: `1px solid ${PAL_LINE}` }}>{h}</th>
                 ))}
               </tr>
@@ -198,6 +200,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
                   <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, borderBottom: `1px solid ${PAL_LINE}` }}>{a.article}</td>
                   <td style={{ padding: "8px 10px", fontSize: 12.5, color: PAL_MUTED, borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "normal", minWidth: 160 }}>{a.caracteristiques || "—"}</td>
                   <td style={{ padding: "8px 10px", fontSize: 12.5, color: PAL_MUTED, borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "normal", minWidth: 140 }}>{a.commentaire || "—"}</td>
+                  <td style={{ padding: "8px 10px", fontFamily: mono, fontSize: 12, borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "nowrap" }}>{a.budget_estimate != null ? fmtMAD(a.budget_estimate) : "—"}</td>
                   <td style={{ padding: "8px 10px", borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "nowrap" }}>
                     {a.cdc_path ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -230,7 +233,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
         <div style={{ fontSize: 12.5, color: PAL_MUTED, marginBottom: 12 }}>Aucun article dans cette catégorie pour l'instant.</div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr) auto", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr) auto", gap: 8, alignItems: "center" }}>
         <div style={{ display: "flex", gap: 4 }}>
           <input placeholder="Code article" value={form.code_article} onChange={e => setForm(f => ({ ...f, code_article: e.target.value }))} style={{ ...inputStyle, fontFamily: mono, flex: 1, minWidth: 0 }} />
           <button type="button" onClick={() => setForm(f => ({ ...f, code_article: nextArticleCode() }))} disabled={!category.code} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "0 8px", flexShrink: 0 }} title={category.code ? "Générer le prochain code" : "Renseignez d'abord le code catégorie"}>
@@ -240,6 +243,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
         <input placeholder="Article *" value={form.article} onChange={e => setForm(f => ({ ...f, article: e.target.value }))} style={inputStyle} onKeyDown={e => e.key === "Enter" && addArticle()} />
         <input placeholder="Caractéristiques" value={form.caracteristiques} onChange={e => setForm(f => ({ ...f, caracteristiques: e.target.value }))} style={inputStyle} />
         <input placeholder="Commentaire" value={form.commentaire} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))} style={inputStyle} />
+        <input type="number" min="0" step="any" placeholder="Budget estimé (MAD)" value={form.budget_estimate} onChange={e => setForm(f => ({ ...f, budget_estimate: e.target.value }))} style={{ ...inputStyle, fontFamily: mono }} />
         <button onClick={addArticle} disabled={adding} className="btn-c btn-c-primary btn-c-sm" style={{ whiteSpace: "nowrap" }}>
           <Plus size={13} />Ajouter
         </button>
