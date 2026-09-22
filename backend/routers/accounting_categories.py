@@ -1,11 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import CategoryCreate, CategoryUpdate, CategoryArticleCreate, CategoryArticleUpdate
 from utils.audit import log_audit
+from utils.uploads import validate_and_read
 
 router = APIRouter(prefix="/accounting/categories", tags=["accounting"])
+
+BUCKET = "accounting"
+SIGNED_URL_TTL = 60 * 60  # 1 heure
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -161,3 +166,92 @@ async def delete_category_article(
     db.from_("accounting_category_articles").delete().eq("id", article_id).eq("category_id", category_id).execute()
     log_audit(db, user.id, "category_article.delete", "accounting_category_article", article_id)
     return {"ok": True}
+
+
+def _get_article_or_404(db: Client, category_id: str, article_id: str) -> dict:
+    rows = (
+        db.from_("accounting_category_articles").select("*")
+        .eq("id", article_id).eq("category_id", category_id).execute().data
+    )
+    if not rows:
+        raise HTTPException(404, "Article introuvable")
+    return rows[0]
+
+
+@router.post("/{category_id}/articles/{article_id}/cdc")
+async def upload_article_cdc(
+    category_id: str,
+    article_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    file: UploadFile,
+):
+    """Joint (ou remplace) le cahier des charges / fiche technique de l'article."""
+    _require_admin(user)
+    article = _get_article_or_404(db, category_id, article_id)
+
+    data, ext = await validate_and_read(file)
+    file_path = f"category_article/{article_id}/cdc/{uuid.uuid4().hex}.{ext}"
+    try:
+        db.storage.from_(BUCKET).upload(file_path, data, {"content-type": file.content_type})
+    except Exception as e:
+        raise HTTPException(500, f"Échec du stockage du fichier : {str(e)}")
+
+    if article.get("cdc_path"):
+        try:
+            db.storage.from_(BUCKET).remove([article["cdc_path"]])
+        except Exception:
+            pass
+
+    try:
+        res = db.from_("accounting_category_articles").update({
+            "cdc_path": file_path, "cdc_name": file.filename or "cdc",
+        }).eq("id", article_id).execute()
+    except Exception as ex:
+        msg = str(ex)
+        if "does not exist" in msg or "Could not find" in msg:
+            raise HTTPException(400, "Migration L73 requise (cahier des charges des articles).")
+        raise
+    log_audit(db, user.id, "category_article.cdc.upload", "accounting_category_article", article_id,
+              {"file_name": file.filename})
+    return res.data[0]
+
+
+@router.get("/{category_id}/articles/{article_id}/cdc")
+async def download_article_cdc(
+    category_id: str,
+    article_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    article = _get_article_or_404(db, category_id, article_id)
+    if not article.get("cdc_path"):
+        raise HTTPException(404, "Aucun cahier des charges joint à cet article.")
+    signed = db.storage.from_(BUCKET).create_signed_url(article["cdc_path"], SIGNED_URL_TTL)
+    return {
+        "signed_url": signed.get("signedURL") or signed.get("signed_url"),
+        "file_name": article.get("cdc_name") or "cdc",
+    }
+
+
+@router.delete("/{category_id}/articles/{article_id}/cdc")
+async def delete_article_cdc(
+    category_id: str,
+    article_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    _require_admin(user)
+    article = _get_article_or_404(db, category_id, article_id)
+    if not article.get("cdc_path"):
+        raise HTTPException(404, "Aucun cahier des charges joint à cet article.")
+    try:
+        db.storage.from_(BUCKET).remove([article["cdc_path"]])
+    except Exception:
+        pass
+    res = db.from_("accounting_category_articles").update({
+        "cdc_path": None, "cdc_name": None,
+    }).eq("id", article_id).execute()
+    log_audit(db, user.id, "category_article.cdc.delete", "accounting_category_article", article_id)
+    return res.data[0]

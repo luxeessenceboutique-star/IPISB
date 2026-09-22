@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, Tags, ChevronDown, ChevronUp, Pencil, Check, X, Package } from "lucide-react";
+import { Plus, Trash2, Tags, ChevronDown, ChevronUp, Pencil, Check, X, Package, Upload, FileText, Sparkles } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 const PAL_LINE = "oklch(88% 0.015 170)";
@@ -19,6 +19,7 @@ type Category = { id: string; name: string; code: string | null; created_at: str
 type CategoryArticle = {
   id: string; category_id: string; code_article: string | null; article: string;
   caracteristiques: string | null; commentaire: string | null; created_at: string;
+  cdc_path: string | null; cdc_name: string | null;
 };
 
 const inputStyle = { padding: "9px 12px", border: `1px solid ${PAL_LINE}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL_PAPER, outline: "none", boxSizing: "border-box" as const };
@@ -29,10 +30,12 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
   const [articles, setArticles] = useState<CategoryArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ code_article: "", article: "", caracteristiques: "", commentaire: "" });
+  const [cdcFile, setCdcFile] = useState<File | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingCode, setEditingCode] = useState(false);
   const [codeDraft, setCodeDraft] = useState(category.code || "");
   const [savingCode, setSavingCode] = useState(false);
+  const [cdcBusyId, setCdcBusyId] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -43,18 +46,42 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
   }
   useEffect(() => { load(); }, [category.id]);
 
+  // Suffixe numérique suivant pour le préfixe de la catégorie (ex. code
+  // catégorie "AM" + articles existants AM00001/AM00002 → propose AM00003).
+  function nextArticleCode(): string {
+    const prefix = (category.code || "").trim().toUpperCase();
+    if (!prefix) return "";
+    const nums = articles
+      .map(a => (a.code_article || "").trim().toUpperCase())
+      .filter(c => c.startsWith(prefix))
+      .map(c => parseInt(c.slice(prefix.length), 10))
+      .filter(n => !isNaN(n));
+    const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    return `${prefix}${String(next).padStart(5, "0")}`;
+  }
+
   async function addArticle() {
     if (!form.article.trim()) { toast.error("Le nom de l'article est obligatoire."); return; }
     setAdding(true);
     try {
-      await api.post(`/api/accounting/categories/${category.id}/articles`, {
+      const created: CategoryArticle = await api.post(`/api/accounting/categories/${category.id}/articles`, {
         article: form.article.trim(),
         code_article: form.code_article.trim() || null,
         caracteristiques: form.caracteristiques.trim() || null,
         commentaire: form.commentaire.trim() || null,
       });
+      if (cdcFile) {
+        const fd = new FormData();
+        fd.append("file", cdcFile);
+        try {
+          await api.uploadFile(`/api/accounting/categories/${category.id}/articles/${created.id}/cdc`, fd);
+        } catch (err: any) {
+          toast.error(err?.message ?? "Article ajouté, mais l'envoi du CDC a échoué.");
+        }
+      }
       toast.success("Article ajouté.");
       setForm({ code_article: "", article: "", caracteristiques: "", commentaire: "" });
+      setCdcFile(null);
       load();
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur lors de l'ajout.");
@@ -71,6 +98,41 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
       load();
     } catch (err: any) {
       toast.error(err?.message ?? "Suppression impossible.");
+    }
+  }
+
+  async function uploadCdcFor(a: CategoryArticle, file: File) {
+    setCdcBusyId(a.id);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      await api.uploadFile(`/api/accounting/categories/${category.id}/articles/${a.id}/cdc`, fd);
+      toast.success("Cahier des charges joint.");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'envoi.");
+    } finally {
+      setCdcBusyId(null);
+    }
+  }
+
+  async function viewCdc(a: CategoryArticle) {
+    try {
+      const res = await api.get(`/api/accounting/categories/${category.id}/articles/${a.id}/cdc`);
+      if (res?.signed_url) window.open(res.signed_url, "_blank", "noopener");
+    } catch (err: any) {
+      toast.error(err?.message ?? "Cahier des charges indisponible.");
+    }
+  }
+
+  async function removeCdc(a: CategoryArticle) {
+    if (!window.confirm("Retirer le cahier des charges de cet article ?")) return;
+    try {
+      await api.delete(`/api/accounting/categories/${category.id}/articles/${a.id}/cdc`);
+      toast.success("Cahier des charges retiré.");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de la suppression.");
     }
   }
 
@@ -124,7 +186,7 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
           <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
             <thead>
               <tr>
-                {["Code article", "Article", "Caractéristiques", "Commentaire", ""].map((h, i) => (
+                {["Code article", "Article", "Caractéristiques", "Commentaire", "CDC", ""].map((h, i) => (
                   <th key={i} style={{ padding: "6px 10px", textAlign: "left", fontFamily: sans, fontSize: 10.5, fontWeight: 600, color: PAL_MUTED, letterSpacing: ".06em", textTransform: "uppercase", borderBottom: `1px solid ${PAL_LINE}` }}>{h}</th>
                 ))}
               </tr>
@@ -136,6 +198,24 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
                   <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, borderBottom: `1px solid ${PAL_LINE}` }}>{a.article}</td>
                   <td style={{ padding: "8px 10px", fontSize: 12.5, color: PAL_MUTED, borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "normal", minWidth: 160 }}>{a.caracteristiques || "—"}</td>
                   <td style={{ padding: "8px 10px", fontSize: 12.5, color: PAL_MUTED, borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "normal", minWidth: 140 }}>{a.commentaire || "—"}</td>
+                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${PAL_LINE}`, whiteSpace: "nowrap" }}>
+                    {a.cdc_path ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <button onClick={() => viewCdc(a)} className="btn-c btn-c-sm btn-c-soft" style={{ padding: "3px 8px", fontSize: 11 }} title={a.cdc_name || "cdc"}>
+                          <FileText size={12} />Voir
+                        </button>
+                        <button onClick={() => removeCdc(a)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Retirer">
+                          <X size={13} strokeWidth={1.7} />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11, cursor: cdcBusyId === a.id ? "wait" : "pointer", opacity: cdcBusyId === a.id ? 0.6 : 1 }}>
+                        <Upload size={12} />{cdcBusyId === a.id ? "Envoi…" : "Joindre"}
+                        <input type="file" accept="application/pdf,image/jpeg,image/png" disabled={cdcBusyId === a.id} style={{ display: "none" }}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) uploadCdcFor(a, f); e.target.value = ""; }} />
+                      </label>
+                    )}
+                  </td>
                   <td style={{ padding: "8px 10px", borderBottom: `1px solid ${PAL_LINE}`, textAlign: "right" }}>
                     <button onClick={() => removeArticle(a)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
                       <Trash2 size={13} strokeWidth={1.7} />
@@ -151,13 +231,30 @@ function CategoryArticlesPanel({ category, onCategoryChanged }: { category: Cate
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr) auto", gap: 8, alignItems: "center" }}>
-        <input placeholder="Code article" value={form.code_article} onChange={e => setForm(f => ({ ...f, code_article: e.target.value }))} style={{ ...inputStyle, fontFamily: mono }} />
+        <div style={{ display: "flex", gap: 4 }}>
+          <input placeholder="Code article" value={form.code_article} onChange={e => setForm(f => ({ ...f, code_article: e.target.value }))} style={{ ...inputStyle, fontFamily: mono, flex: 1, minWidth: 0 }} />
+          <button type="button" onClick={() => setForm(f => ({ ...f, code_article: nextArticleCode() }))} disabled={!category.code} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "0 8px", flexShrink: 0 }} title={category.code ? "Générer le prochain code" : "Renseignez d'abord le code catégorie"}>
+            <Sparkles size={13} />
+          </button>
+        </div>
         <input placeholder="Article *" value={form.article} onChange={e => setForm(f => ({ ...f, article: e.target.value }))} style={inputStyle} onKeyDown={e => e.key === "Enter" && addArticle()} />
         <input placeholder="Caractéristiques" value={form.caracteristiques} onChange={e => setForm(f => ({ ...f, caracteristiques: e.target.value }))} style={inputStyle} />
         <input placeholder="Commentaire" value={form.commentaire} onChange={e => setForm(f => ({ ...f, commentaire: e.target.value }))} style={inputStyle} />
         <button onClick={addArticle} disabled={adding} className="btn-c btn-c-primary btn-c-sm" style={{ whiteSpace: "nowrap" }}>
           <Plus size={13} />Ajouter
         </button>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <label className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "5px 10px", fontSize: 11.5, cursor: "pointer" }}>
+          <Upload size={12} />{cdcFile ? cdcFile.name : "Joindre un cahier des charges (optionnel)"}
+          <input type="file" accept="application/pdf,image/jpeg,image/png" style={{ display: "none" }}
+            onChange={e => setCdcFile(e.target.files?.[0] ?? null)} />
+        </label>
+        {cdcFile && (
+          <button type="button" onClick={() => setCdcFile(null)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", marginInlineStart: 6, verticalAlign: "middle" }} title="Retirer">
+            <X size={13} strokeWidth={1.7} />
+          </button>
+        )}
       </div>
     </div>
   );
