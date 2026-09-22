@@ -157,48 +157,34 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
     });
   }
   const setDayDate = (di: number, v: string) => setDays(prev => prev.map((d, i) => (i === di ? v : d)));
-  function addDay() {
-    if (days.length >= MAX_DAYS) return;
-    setDays(prev => {
-      const last = prev[prev.length - 1];
-      const next = last ? shiftDate(last, 1) : shiftDate(form.note_date, 1);
-      return [...prev, next];
-    });
-    setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, [...r, ""]])));
-  }
-  // Insère un nouveau jour AVANT le premier (ex. oubli d'un jour de trajet en
-  // amont) — daté veille du 1er jour actuel, symétrique de addDay() qui
-  // ajoute toujours après le dernier.
-  function prependDay() {
-    if (days.length >= MAX_DAYS) return;
-    const first = days[0];
-    const next = first ? shiftDate(first, -1) : shiftDate(form.note_date, 1);
-    setDays(prev => [next, ...prev]);
-    setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, ["", ...r]])));
-  }
   function removeDay(di: number) {
     if (days.length <= 1) return;
     setDays(prev => prev.filter((_, i) => i !== di));
     setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, r]) => [k, r.filter((_, i) => i !== di)])));
   }
-  // Remplit une colonne par jour de la mission (Du → Au) — automatiquement
-  // dès que la période est saisie (une nouvelle note), ou à la demande via
+  // Remplit une colonne par jour couvrant la mission — automatiquement dès
+  // que la période est saisie (une nouvelle note), ou à la demande via
   // "Générer les jours de la mission" (silent=false → messages d'erreur).
-  // Les montants déjà saisis pour une date conservée sont repris ; le reste
-  // est plafonné à MAX_DAYS.
+  // Une marge d'1 jour avant/après est ajoutée par défaut (ex. 25→27 génère
+  // 24→28 : trajet aller la veille, trajet retour le lendemain) — la grille
+  // n'est plus modifiable au-delà : plus de bouton pour ajouter un jour, seul
+  // le retrait d'une colonne (×) reste possible. Les montants déjà saisis
+  // pour une date conservée sont repris ; le reste est plafonné à MAX_DAYS.
   function fillFromRange(silent = false) {
     if (!form.mission_from || !form.mission_to) { if (!silent) toast.error("Renseignez la période de mission (Du / … au) d'abord."); return; }
     if (form.mission_to < form.mission_from) { if (!silent) toast.error("La date de fin doit suivre la date de début."); return; }
+    const start = shiftDate(form.mission_from, -1);
+    const end = shiftDate(form.mission_to, 1);
     const range: string[] = [];
-    for (let d = form.mission_from; d <= form.mission_to && range.length < MAX_DAYS; d = shiftDate(d, 1)) range.push(d);
+    for (let d = start; d <= end && range.length < MAX_DAYS; d = shiftDate(d, 1)) range.push(d);
     setAmounts(prev => Object.fromEntries(Object.entries(prev).map(([k, row]) => [k, range.map(d => {
       const idx = days.indexOf(d);
       return idx >= 0 ? (row[idx] ?? "") : "";
     })])));
     setDays(range);
-    const spanDays = Math.round((new Date(form.mission_to).getTime() - new Date(form.mission_from).getTime()) / 86400000) + 1;
+    const spanDays = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1;
     if (spanDays > MAX_DAYS) {
-      toast.warning(`Mission de ${spanDays} jours : seuls les ${MAX_DAYS} premiers sont pré-remplis (limite d'une note) — faites une 2e note pour la suite.`);
+      toast.warning(`Grille de ${spanDays} jours (marge de ±1 jour incluse) : seuls les ${MAX_DAYS} premiers sont pré-remplis (limite d'une note) — faites une 2e note pour la suite.`);
     }
   }
   // Nouvelle note uniquement (une note existante ne doit pas voir sa grille
@@ -333,11 +319,8 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4, marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
         <label style={labelStyle}>Frais par thème / article et par jour (DH)</label>
         <div style={{ display: "flex", gap: 6 }}>
-          <button type="button" onClick={() => fillFromRange()} className="btn-c btn-c-ghost btn-c-sm" title="Génère une colonne par jour entre « Mission du » et « … au »">
+          <button type="button" onClick={() => fillFromRange()} className="btn-c btn-c-ghost btn-c-sm" title="Génère une colonne par jour entre « Mission du » et « … au » (± 1 jour de marge)">
             <CalendarClock size={13} />Générer les jours de la mission
-          </button>
-          <button type="button" onClick={addDay} disabled={days.length >= MAX_DAYS} className="btn-c btn-c-soft btn-c-sm" style={{ opacity: days.length >= MAX_DAYS ? 0.5 : 1 }}>
-            <Plus size={13} />Ajouter un jour
           </button>
         </div>
       </div>
@@ -358,37 +341,7 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
                         </button>
                       )}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                      <button
-                        type="button"
-                        disabled={!d}
-                        onClick={() => setDayDate(di, shiftDate(d, -1))}
-                        title="-1 jour"
-                        style={{ background: "none", border: `1px solid ${PAL.line}`, borderRadius: 5, cursor: d ? "pointer" : "not-allowed", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "4px 5px", lineHeight: 1, opacity: d ? 1 : 0.4 }}
-                      >
-                        -1j
-                      </button>
-                      <input type="date" value={d} onChange={e => setDayDate(di, e.target.value)} style={{ width: 100, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
-                      <button
-                        type="button"
-                        disabled={!d}
-                        onClick={() => setDayDate(di, shiftDate(d, 1))}
-                        title="+1 jour"
-                        style={{ background: "none", border: `1px solid ${PAL.line}`, borderRadius: 5, cursor: d ? "pointer" : "not-allowed", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "4px 5px", lineHeight: 1, opacity: d ? 1 : 0.4 }}
-                      >
-                        +1j
-                      </button>
-                    </div>
-                    {di === 0 && (
-                      <button type="button" onClick={prependDay} disabled={days.length >= MAX_DAYS} title="Ajouter un jour avant celui-ci" style={{ background: "none", border: `1px dashed ${PAL.line}`, borderRadius: 5, cursor: days.length >= MAX_DAYS ? "not-allowed" : "pointer", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "3px 6px", lineHeight: 1, opacity: days.length >= MAX_DAYS ? 0.4 : 1 }}>
-                        ◀ +1j
-                      </button>
-                    )}
-                    {di === days.length - 1 && (
-                      <button type="button" onClick={addDay} disabled={days.length >= MAX_DAYS} title="Ajouter un jour après celui-ci" style={{ background: "none", border: `1px dashed ${PAL.line}`, borderRadius: 5, cursor: days.length >= MAX_DAYS ? "not-allowed" : "pointer", color: PAL.muted, fontSize: 9.5, fontWeight: 700, padding: "3px 6px", lineHeight: 1, opacity: days.length >= MAX_DAYS ? 0.4 : 1 }}>
-                        +1j ▶
-                      </button>
-                    )}
+                    <input type="date" value={d} onChange={e => setDayDate(di, e.target.value)} style={{ width: 100, padding: "4px 5px", border: `1px solid ${PAL.line}`, borderRadius: 6, fontFamily: sans, fontSize: 11, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" }} />
                   </div>
                 </th>
               ))}
