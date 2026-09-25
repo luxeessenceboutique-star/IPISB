@@ -318,6 +318,182 @@ test("Détail — Notes de caisse (création + approbation N+1)", async () => {
   await captureStep(page, "cash_notes", "apres-approbation");
 });
 
+test("Détail — Frais de mission (création)", async () => {
+  await gotoTab("mission_notes");
+  const newBtn = page.getByRole("button", { name: "Nouvelle note" });
+  await captureStep(page, "mission_notes", "bouton-nouvelle-note", [
+    { label: "Créer une nouvelle note de frais de mission", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "mission_notes", "formulaire-vide", [
+    { label: "Nom et prénom du bénéficiaire", locator: fieldByLabel(panel, "Nom et Prénom") },
+  ]);
+
+  await fieldByLabel(panel, "Nom et Prénom").fill("Karim Lahlou");
+  await fieldByLabel(panel, "CIN").fill("BL321654");
+  await fieldByLabel(panel, "Objet de mission").fill("Visite d'un centre de stage partenaire à Tanger");
+  await fieldByLabel(panel, "Mission du").fill("2026-10-12");
+  await fieldByLabel(panel, "… au").fill("2026-10-13");
+  // La grille Thème×Jour se génère automatiquement (± 1 jour de marge) dès
+  // que les deux dates sont renseignées — pas besoin de cliquer le bouton.
+  await page.waitForTimeout(300);
+  await panel.getByPlaceholder("0,00").first().fill("350");
+
+  const submitBtn = panel.getByRole("button", { name: "Créer & télécharger" });
+  await captureStep(page, "mission_notes", "formulaire-rempli", [
+    { label: "Enregistrer la note (soumise à approbation N+1)", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "mission_notes", "nouvelle-ligne-en-attente");
+});
+
+test("Détail — Paiements scolarité (matrice + versement)", async () => {
+  await gotoTab("tuition");
+  const classCard = page.locator(".dash-card", { hasText: "Infirmiers Polyvalents" });
+  await captureStep(page, "tuition", "liste-promos-annotee", [
+    { label: "Ouvrir la matrice de paiement de la promo", locator: classCard },
+  ]);
+  const classDetailResponse = page.waitForResponse(r => /\/tuition\/class\/[^/]+$/.test(new URL(r.url()).pathname));
+  await classCard.click();
+  await classDetailResponse;
+  // Youssef Chraibi n'a encore rien versé (statut "en retard") — cellule de
+  // septembre 2026 pour illustrer le rattrapage d'un mois impayé. Les
+  // colonnes fixes (statut/élève/n° insc./frais/mensualité/éch./budget/
+  // payé/reste) précèdent les colonnes mensuelles — seules ces dernières
+  // sont cliquables (onClick posé seulement quand canPay), d'où le
+  // ciblage par style plutôt que par position fixe.
+  const studentRow = page.locator("tr", { hasText: "Chraibi" });
+  await studentRow.waitFor({ state: "visible", timeout: 15000 });
+  await page.waitForTimeout(400);
+  await captureStep(page, "tuition", "matrice-eleves");
+
+  const cell = studentRow.locator('td[style*="cursor: pointer"]').first();
+  await cell.scrollIntoViewIfNeeded();
+  await cell.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "tuition", "formulaire-versement-vide", [
+    { label: "Montant du versement", locator: panel.getByLabel("Montant (MAD)") },
+  ]);
+
+  await panel.getByLabel("Montant (MAD)").fill("1500");
+  await panel.getByLabel("Note (optionnel)").fill("Rattrapage mensualité septembre");
+
+  const submitBtn = panel.getByRole("button", { name: "Ajouter" });
+  await captureStep(page, "tuition", "formulaire-versement-rempli", [
+    { label: "Enregistrer le versement", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await studentRow.waitFor({ state: "visible", timeout: 15000 });
+  await page.waitForTimeout(400);
+  await captureStep(page, "tuition", "matrice-apres-versement");
+});
+
+test("Détail — Paiements (échéancier d'une commande)", async () => {
+  await gotoTab("payments");
+  const row = page.locator(".row-c", { hasText: "ordinateur portable" });
+  await captureStep(page, "payments", "liste-annotee", [
+    { label: "Ouvrir l'échéancier de la commande", locator: row },
+  ]);
+  await row.click();
+  await page.waitForTimeout(400);
+  await captureStep(page, "payments", "echeancier-planifie");
+});
+
+test("Détail — Livraisons (détail d'une réception)", async () => {
+  await gotoTab("purchases");
+  const row = page.locator(".row-c", { hasText: "ordinateur portable" });
+  await captureStep(page, "purchases", "liste-annotee", [
+    { label: "Ouvrir le détail de la commande", locator: row },
+  ]);
+  await row.click();
+  await page.waitForTimeout(400);
+  await captureStep(page, "purchases", "detail-reception");
+});
+
+test("Détail — Historique comptable (filtrage)", async () => {
+  await gotoTab("journal");
+  const body = page.locator("body");
+  await captureStep(page, "journal", "filtres-vides", [
+    { label: "Filtrer par type d'opération", locator: fieldByLabel(body, "Type d'opération") },
+  ]);
+  await fieldByLabel(body, "Type d'opération").selectOption({ label: "Demande d'achat" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "journal", "filtre-applique");
+});
+
+test("Détail — Journal de caisse (saisie manuelle)", async () => {
+  await gotoTab("cash_journal");
+  const newBtn = page.getByRole("button", { name: "Saisie manuelle" });
+  await captureStep(page, "cash_journal", "bouton-saisie", [
+    { label: "Saisir un mouvement de caisse", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "cash_journal", "formulaire-vide", [
+    { label: "Libellé de l'opération", locator: fieldByLabel(panel, "Action") },
+  ]);
+
+  await fieldByLabel(panel, "Action").fill("Achat de fournitures de nettoyage");
+  await fieldByLabel(panel, "Prestataire").fill("Droguerie Al Wafa");
+  await fieldByLabel(panel, "Montant (DH)").fill("380");
+  await fieldByLabel(panel, "Justificatif").fill("BL-2214");
+
+  const submitBtn = panel.getByRole("button", { name: "Enregistrer" });
+  await captureStep(page, "cash_journal", "formulaire-rempli", [
+    { label: "Enregistrer le mouvement", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "cash_journal", "nouvelle-ligne");
+});
+
+test("Détail — Chèques & virements (inscription d'une pièce)", async () => {
+  await gotoTab("cheques");
+  const newBtn = page.getByRole("button", { name: "Inscrire un chèque" });
+  await captureStep(page, "cheques", "bouton-inscrire", [
+    { label: "Inscrire un chèque reçu", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "cheques", "formulaire-vide", [
+    { label: "Montant du chèque", locator: panel.locator('input[type="number"]') },
+  ]);
+
+  // Pas de <label>/htmlFor ici (juste des <div> stylés) : ciblage par
+  // position/placeholder plutôt que par libellé pour ce formulaire précis.
+  await panel.locator('input[type="number"]').fill("1500");
+  await panel.getByPlaceholder("ex. 4581203").fill("CH-000456");
+  await panel.getByPlaceholder("ex. BMCE").fill("Banque Populaire");
+
+  const submitBtn = panel.getByRole("button", { name: "Inscrire", exact: true });
+  await captureStep(page, "cheques", "formulaire-rempli", [
+    { label: "Inscrire la pièce au registre", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "cheques", "nouvelle-ligne");
+});
+
+test("Détail — Validations (approbation N+1 centralisée)", async () => {
+  await gotoTab("validations");
+  const card = page.locator(".dash-card", { hasText: "Squalli" });
+  const approveBtn = card.getByRole("button", { name: "Approuver" });
+  await captureStep(page, "validations", "avant-approbation", [
+    { label: "Approuver la note de frais de mission", locator: approveBtn },
+  ]);
+  const approveResponse = page.waitForResponse(r => r.url().includes("/mission-notes/") && r.url().includes("/approve"));
+  await approveBtn.click();
+  await approveResponse;
+  await page.waitForTimeout(500);
+  await captureStep(page, "validations", "apres-approbation");
+});
+
 test("Détail — Budgets (budget sur période)", async () => {
   await gotoTab("budgets");
   const newBtn = page.getByRole("button", { name: "Nouveau budget" });
