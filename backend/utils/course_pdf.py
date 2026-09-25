@@ -539,8 +539,9 @@ def _make_cover_page(course: dict, filiere: str, annee: str):
         canvas.setStrokeColor(colors.HexColor("#2AB8A7"))
         canvas.setLineWidth(1.1)
         canvas.line(20 * mm, _y(46), 62 * mm, _y(46))
-        _draw_para(canvas, "Secteur : SANTÉ & BIEN-ÊTRE", _styles()["cover_secteur"], 20, 52, 100)
-        _draw_para(canvas, "Manuel de cours", _styles()["cover_manuel"], 20, 58.5, 100)
+        secteur = course.get("secteur") or "SANTÉ & BIEN-ÊTRE"
+        _draw_para(canvas, f"Secteur : {secteur}", _styles()["cover_secteur"], 20, 52, 100)
+        _draw_para(canvas, course.get("kind") or "Manuel de cours", _styles()["cover_manuel"], 20, 58.5, 100)
 
         # Rotated diamonds, health-cross on the last — mirrors the slide
         # cover's motif at page-appropriate scale.
