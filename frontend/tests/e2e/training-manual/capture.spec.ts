@@ -173,6 +173,92 @@ test("Détail — Recettes (création)", async () => {
   await captureStep(page, "revenues", "nouvelle-ligne");
 });
 
+test("Détail — Factures (création)", async () => {
+  await gotoTab("invoices");
+  const newBtn = page.getByRole("button", { name: "Nouvelle facture" });
+  await captureStep(page, "invoices", "bouton-nouvelle-facture", [
+    { label: "Créer une nouvelle facture", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "invoices", "formulaire-vide", [
+    { label: "Numéro de facture", locator: fieldByLabel(panel, "Numéro de facture") },
+  ]);
+
+  await fieldByLabel(panel, "Numéro de facture").fill("FA-2026-0003");
+  await fieldByLabel(panel, "Fournisseur").selectOption({ label: "Fournitures Pédagogiques SARL" });
+  await fieldByLabel(panel, "Montant HT (MAD)").fill("650");
+
+  const submitBtn = panel.getByRole("button", { name: "Créer la facture" });
+  await captureStep(page, "invoices", "formulaire-rempli", [
+    { label: "Valider la facture", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "invoices", "nouvelle-ligne");
+});
+
+test("Détail — Locaux (création)", async () => {
+  await gotoTab("locaux");
+  const nameInput = fieldByLabel(page, "Nouveau local");
+  await captureStep(page, "locaux", "formulaire-vide", [
+    { label: "Nommer le nouveau local", locator: nameInput },
+  ]);
+  await nameInput.fill("Salle informatique 2");
+  await fieldByLabel(page, "Étage").selectOption({ label: "1er étage" });
+  await fieldByLabel(page, "Capacité").fill("20");
+  const addBtn = page.getByRole("button", { name: "Ajouter", exact: true });
+  await captureStep(page, "locaux", "formulaire-rempli", [
+    { label: "Ajouter le local", locator: addBtn },
+  ]);
+  await addBtn.click();
+  await page.waitForTimeout(400);
+  await captureStep(page, "locaux", "nouvelle-ligne");
+});
+
+test("Détail — Inventaire (création depuis le catalogue)", async () => {
+  await gotoTab("inventory");
+  const newBtn = page.getByRole("button", { name: "Ajouter un actif" });
+  await captureStep(page, "inventory", "bouton-ajouter", [
+    { label: "Ajouter un nouvel actif", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  // Le bloc "Piocher dans le catalogue" n'a pas de <label> propre (juste un
+  // en-tête de section) — on le repère par son texte, puis on descend à son
+  // conteneur parent pour cibler ses deux <select> sans ambiguïté avec les
+  // autres champs du formulaire (Catégorie/Statut plus bas ont aussi des selects).
+  const catalogBox = panel.getByText("Piocher dans le catalogue (code article)").locator("xpath=..");
+  const catSelect = catalogBox.locator("select").first();
+  const articleSelect = catalogBox.locator("select").nth(1);
+  // Le catalogue se charge après l'ouverture de la modal — attendre qu'il y
+  // ait plus que la seule option placeholder avant d'interagir.
+  await catSelect.locator("option").nth(1).waitFor({ state: "attached" });
+  await captureStep(page, "inventory", "formulaire-vide", [
+    { label: "Piocher un article du catalogue", locator: catSelect },
+  ]);
+
+  const catValue = await catSelect.locator("option", { hasText: "Équipement informatique" }).first().getAttribute("value");
+  await catSelect.selectOption(catValue!);
+  await articleSelect.locator("option", { hasText: "Ordinateur portable formateur" }).first().waitFor({ state: "attached" });
+  const articleValue = await articleSelect.locator("option", { hasText: "Ordinateur portable formateur" }).first().getAttribute("value");
+  await articleSelect.selectOption(articleValue!);
+  await page.waitForTimeout(200);
+  await captureStep(page, "inventory", "article-du-catalogue-choisi");
+
+  await fieldByLabel(panel, "Emplacement principal").selectOption({ label: "Salle de cours 12" });
+
+  const submitBtn = panel.getByRole("button", { name: "Créer" });
+  await captureStep(page, "inventory", "formulaire-rempli", [
+    { label: "Valider la création de l'actif", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "inventory", "nouvelle-ligne");
+});
+
 test("Détail — Budgets (budget sur période)", async () => {
   await gotoTab("budgets");
   const newBtn = page.getByRole("button", { name: "Nouveau budget" });
