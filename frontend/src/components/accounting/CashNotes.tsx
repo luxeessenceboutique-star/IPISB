@@ -295,8 +295,9 @@ function NoteModal({ note, onClose, onSaved }: { note: Note | null; onClose: () 
 export function AccountingCashNotes() {
   const { roles } = useAuth();
   const isAdmin = roles.includes("admin");
+  const isComptabilite = roles.includes("comptabilite");
   const isCashier = roles.includes("cashier");
-  const canWrite = isAdmin || isCashier;
+  const canWrite = isAdmin || isComptabilite || isCashier;
 
   const [data, setData] = useState<NotesData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -407,7 +408,7 @@ export function AccountingCashNotes() {
                     </td>
                     <td style={{ ...cell, textAlign: "right" }}>
                       <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        {isAdmin && n.status === "pending" && (
+                        {(isAdmin || isComptabilite) && n.status === "pending" && (
                           <>
                             <button onClick={() => approve(n)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-success, green)" }} title="Approuver (N+1)">
                               <Check size={16} strokeWidth={2} />
@@ -425,7 +426,7 @@ export function AccountingCashNotes() {
                             <Pencil size={14} strokeWidth={1.7} />
                           </button>
                         )}
-                        {(isAdmin || (isCashier && (n.status === "pending" || n.status === "rejected"))) && (
+                        {(isAdmin || isComptabilite || (isCashier && (n.status === "pending" || n.status === "rejected"))) && (
                           <button onClick={() => remove(n)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer">
                             <Trash2 size={14} strokeWidth={1.7} />
                           </button>

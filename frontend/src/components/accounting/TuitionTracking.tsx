@@ -461,11 +461,13 @@ function PlanModal({ classId, student, months, onClose, onSaved }: {
 export function AccountingTuitionTracking({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { roles } = useAuth();
   const isAdmin = roles.includes("admin");
+  const isComptabilite = roles.includes("comptabilite");
   const isCashier = roles.includes("cashier");
-  // Droits : admin = édition complète ; caissier = saisie de paiements (→ validation N+1) ;
+  // Droits : admin/comptabilite = édition complète (même palier plein accès
+  // côté backend) ; caissier = saisie de paiements (→ validation N+1) ;
   // comptable (readOnly) = consultation seule.
-  const canEdit = isAdmin && !readOnly;                 // plans, statut, commentaires, suppression
-  const canPay = (isAdmin || isCashier) && !readOnly;   // saisir un versement
+  const canEdit = (isAdmin || isComptabilite) && !readOnly;                 // plans, statut, commentaires, suppression
+  const canPay = (isAdmin || isComptabilite || isCashier) && !readOnly;     // saisir un versement
 
   const [classes, setClasses] = useState<ClassSummary[]>([]);
   const [alerts, setAlerts] = useState<Alerts>({ items: [], total: 0, montant_total: 0 });
@@ -993,7 +995,7 @@ export function AccountingTuitionTracking({ readOnly = false }: { readOnly?: boo
 
       {payFor && matrix && (
         <PaymentModal classId={matrix.class_id} student={payFor.student} months={matrix.months} payments={matrix.payments}
-          defaultMonth={payFor.month} onClose={() => setPayFor(null)} onSaved={reloadAll} canDelete={canPay} isAdmin={isAdmin} />
+          defaultMonth={payFor.month} onClose={() => setPayFor(null)} onSaved={reloadAll} canDelete={canPay} isAdmin={isAdmin || isComptabilite} />
       )}
       {planFor && matrix && (
         <PlanModal classId={matrix.class_id} student={planFor} months={matrix.installments_count}
