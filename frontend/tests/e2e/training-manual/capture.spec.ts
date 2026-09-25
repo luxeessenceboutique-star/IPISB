@@ -139,3 +139,63 @@ test("Détail — Demandes d'achat (création avec catalogue)", async () => {
   await page.waitForTimeout(400);
   await captureStep(page, "purchase_requests", "nouvelle-ligne");
 });
+
+test("Détail — Recettes (création)", async () => {
+  await gotoTab("revenues");
+  const newBtn = page.getByRole("button", { name: "Nouvelle recette" });
+  await captureStep(page, "revenues", "bouton-nouvelle-recette", [
+    { label: "Créer une nouvelle recette", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "revenues", "formulaire-vide", [
+    { label: "Libellé de la recette", locator: fieldByLabel(panel, "Libellé") },
+  ]);
+
+  await fieldByLabel(panel, "Libellé").fill("Frais d'inscription — nouveaux inscrits");
+  await fieldByLabel(panel, "Type").selectOption({ label: "Autre" });
+  await panel.getByPlaceholder("Préciser le type (optionnel)…").fill("Frais de scolarité");
+  await fieldByLabel(panel, "Montant HT (MAD)").fill("5000");
+  await fieldByLabel(panel, "Mode d'encaissement").selectOption({ label: "Espèces" });
+  // Le sélecteur "Promo" appelle GET /api/classes/all, un endpoint qui
+  // n'existe pas dans ce backend (confirmé : aucune route ne le sert,
+  // .catch(() => {}) avale l'échec en silence) — il reste donc toujours
+  // vide en pratique. Ne pas documenter un contrôle non fonctionnel comme
+  // s'il marchait ; signalé séparément comme bug réel à corriger.
+
+  const submitBtn = panel.getByRole("button", { name: "Créer la recette" });
+  await captureStep(page, "revenues", "formulaire-rempli", [
+    { label: "Valider la recette", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "revenues", "nouvelle-ligne");
+});
+
+test("Détail — Budgets (budget sur période)", async () => {
+  await gotoTab("budgets");
+  const newBtn = page.getByRole("button", { name: "Nouveau budget" });
+  await captureStep(page, "budgets", "bouton-nouveau", [
+    { label: "Créer un nouveau budget", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "budgets", "formulaire-vide", [
+    { label: "Choisir la catégorie", locator: fieldByLabel(panel, "Catégorie") },
+  ]);
+
+  await fieldByLabel(panel, "Catégorie").selectOption({ label: "Équipement informatique" });
+  await fieldByLabel(panel, "Agenda début").fill("2026-10-01");
+  await fieldByLabel(panel, "Agenda fin").fill("2026-12-31");
+  await fieldByLabel(panel, "Montant prévu (MAD)").fill("10000");
+
+  const submitBtn = panel.getByRole("button", { name: "Créer le budget" });
+  await captureStep(page, "budgets", "formulaire-rempli", [
+    { label: "Valider le budget", locator: submitBtn },
+  ]);
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "budgets", "nouvelle-ligne");
+});
