@@ -20,3 +20,5 @@ pypdf>=5.1.0
 rapidocr-onnxruntime>=1.4.4
 openpyxl>=3.1.2
 markdown>=3.7
+arabic_reshaper>=3.0.1
+python-bidi>=0.6.11
