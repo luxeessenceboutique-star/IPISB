@@ -152,15 +152,15 @@ cat_fournitures = ensure_category("Fournitures pédagogiques", "FPED")
 cat_informatique = ensure_category("Équipement informatique", "INFO")
 
 art_blouses = ensure_article(
-    cat_fournitures["id"], "FPED-00001", "Blouses de stage",
+    cat_fournitures["id"], "FPED00001", "Blouses de stage",
     "Blouse blanche 100% coton, tailles S à XL", 4500,
 )
 art_cahiers = ensure_article(
-    cat_fournitures["id"], "FPED-00002", "Cahiers d'exercices A4",
+    cat_fournitures["id"], "FPED00002", "Cahiers d'exercices A4",
     "96 pages, petits carreaux, lot de 100 unités", 1200,
 )
 art_ordinateur = ensure_article(
-    cat_informatique["id"], "INFO-00001", "Ordinateur portable formateur",
+    cat_informatique["id"], "INFO00001", "Ordinateur portable formateur",
     "15 pouces, 16 Go RAM, SSD 512 Go", 8500,
 )
 

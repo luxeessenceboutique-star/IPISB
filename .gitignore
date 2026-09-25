@@ -8,3 +8,6 @@ dist/
 tsconfig.tsbuildinfo
 .DS_Store
 *.log
+frontend/tests/e2e/training-manual/output/
+frontend/playwright-report/
+frontend/test-results/
