@@ -259,6 +259,65 @@ test("Détail — Inventaire (création depuis le catalogue)", async () => {
   await captureStep(page, "inventory", "nouvelle-ligne");
 });
 
+test("Détail — Notes de caisse (création + approbation N+1)", async () => {
+  await gotoTab("cash_notes");
+  const newBtn = page.getByRole("button", { name: "Nouvelle note" });
+  await captureStep(page, "cash_notes", "bouton-nouvelle-note", [
+    { label: "Créer une nouvelle note de caisse", locator: newBtn },
+  ]);
+  await newBtn.click();
+  const panel = await waitForModal(page);
+  await captureStep(page, "cash_notes", "formulaire-vide", [
+    { label: "Nom et prénom du bénéficiaire", locator: fieldByLabel(panel, "Nom et Prénom") },
+  ]);
+
+  await fieldByLabel(panel, "Nom et Prénom").fill("Yassine Kabbaj");
+  await fieldByLabel(panel, "CIN").fill("BK456789");
+  await fieldByLabel(panel, "Objet de la note").fill("Achat de consommables pour l'atelier pratique");
+  await panel.getByPlaceholder("Désignation").first().fill("Petit matériel d'atelier");
+  await panel.getByPlaceholder("Fournisseur / tiers").first().fill("Quincaillerie Centrale");
+  await panel.getByPlaceholder("0,00").first().fill("650");
+
+  const submitBtn = panel.getByRole("button", { name: "Créer & télécharger" });
+  await captureStep(page, "cash_notes", "formulaire-rempli", [
+    { label: "Enregistrer la note (soumise à approbation N+1)", locator: submitBtn },
+  ]);
+  // window.confirm() natif déclenché par l'approbation plus bas : le
+  // gestionnaire doit être posé avant TOUT clic qui pourrait en déclencher
+  // un, donc enregistré une fois pour le reste du test (accepte toujours).
+  page.on("dialog", d => d.accept());
+
+  await submitBtn.click();
+  await panel.waitFor({ state: "hidden" }).catch(() => {});
+  await page.waitForTimeout(400);
+  await captureStep(page, "cash_notes", "nouvelle-ligne-en-attente");
+
+  // Approuve la note du jeu de démo (Mohammed Alaoui) pour illustrer le
+  // circuit N+1. Le toast "Avance enregistrée" (sonner, ~4s) peut encore
+  // intercepter les clics à l'écran — on le laisse le temps de disparaître.
+  const demoRow = page.locator("tr", { hasText: "Mohammed Alaoui" });
+  const approveBtn = demoRow.getByTitle("Approuver (N+1)");
+  await captureStep(page, "cash_notes", "avant-approbation", [
+    { label: "Approuver l'avance de caisse", locator: approveBtn },
+  ]);
+  // Le toast sonner (coin bas-droit, ~4s) peut encore couvrir la ligne visée
+  // par scrollIntoViewIfNeeded() — fermé via son propre bouton (closeButton
+  // activé dans components/ui/sonner.tsx) plutôt que d'attendre son minutage
+  // ou de toucher le DOM directement (React perd alors le nœud et plante).
+  const closeButtons = page.locator("[data-close-button]");
+  for (let n = await closeButtons.count(); n > 0; n--) {
+    await closeButtons.first().click({ timeout: 2000 }).catch(() => {});
+  }
+  const approveResponse = page.waitForResponse(r => r.url().includes("/cash-notes/") && r.url().includes("/approve"));
+  await approveBtn.click();
+  const resp = await approveResponse;
+  if (!resp.ok()) throw new Error(`Approbation échouée : ${resp.status()} ${await resp.text()}`);
+  await page.locator(".shimmer").first().waitFor({ state: "detached", timeout: 8000 }).catch(() => {});
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(400);
+  await captureStep(page, "cash_notes", "apres-approbation");
+});
+
 test("Détail — Budgets (budget sur période)", async () => {
   await gotoTab("budgets");
   const newBtn = page.getByRole("button", { name: "Nouveau budget" });
