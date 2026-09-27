@@ -1065,6 +1065,7 @@ class JobHeadingUpdate(BaseModel):
 class JobHeadingImportItem(BaseModel):
     label: str
     coefficient: float = 1
+    tasks: list[str] = []               # tâches modèles extraites du document sous cette rubrique
     children: list["JobHeadingImportItem"] = []
 
 

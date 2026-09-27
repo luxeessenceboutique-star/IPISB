@@ -18,6 +18,15 @@ MAX_TEXT = 12000
 MAX_IMAGES = 8
 
 
+def _clean_tasks(items) -> list[str]:
+    out = []
+    for it in items or []:
+        label = str(it or "").strip()
+        if label:
+            out.append(label)
+    return out
+
+
 def _clean_headings(items) -> list[dict]:
     out = []
     for it in items or []:
@@ -30,7 +39,11 @@ def _clean_headings(items) -> list[dict]:
             coeff = 1.0
         if coeff <= 0:
             coeff = 1.0
-        out.append({"label": label, "coefficient": coeff, "children": _clean_headings((it or {}).get("children"))})
+        out.append({
+            "label": label, "coefficient": coeff,
+            "tasks": _clean_tasks((it or {}).get("tasks")),
+            "children": _clean_headings((it or {}).get("children")),
+        })
     return out
 
 
@@ -58,11 +71,17 @@ def analyze_job_description_file(filename: str, content_type: str, data: bytes, 
         "avoir des sous-points. Si le document indique une pondération / "
         "importance relative entre rubriques, reflète-la dans « coefficient » "
         "(nombre positif, 1 = poids normal) ; sinon mets 1 partout.\n\n"
+        "Pour CHAQUE rubrique (grand titre et sous-titre), extrais aussi la "
+        "liste des tâches ou activités concrètes qui lui sont rattachées dans "
+        "le document (les puces, les phrases d'action sous ce titre) — mets-les "
+        "dans « tasks », une tâche courte par élément de liste. Si une rubrique "
+        "n'a aucune tâche listée explicitement dans le document, laisse « tasks » vide "
+        "— n'en invente aucune.\n\n"
         "Réponds UNIQUEMENT avec un JSON valide de la forme :\n"
         "{\n"
         '  "mission": "résumé de la mission générale du poste, 1-2 phrases, ou null si absente du document",\n'
-        '  "headings": [{"label": "…", "coefficient": 1, "children": '
-        '[{"label": "…", "coefficient": 1}, …]}, …]\n'
+        '  "headings": [{"label": "…", "coefficient": 1, "tasks": ["…", "…"], "children": '
+        '[{"label": "…", "coefficient": 1, "tasks": ["…"]}, …]}, …]\n'
         "}\n\n"
         "N'invente rien : ne garde que ce qui est réellement dans le document. "
         "JSON :"
@@ -76,7 +95,7 @@ def analyze_job_description_file(filename: str, content_type: str, data: bytes, 
         model=MODEL,
         messages=[{"role": "user", "content": content}],
         temperature=0,
-        max_tokens=2000,
+        max_tokens=3000,
     )
     raw = _strip_markdown_json(resp.choices[0].message.content or "{}")
     parsed = json.loads(raw)

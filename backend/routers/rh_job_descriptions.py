@@ -20,17 +20,32 @@ def _require_admin(user: CurrentUser) -> None:
         raise HTTPException(403, "RH access only")
 
 
-def _tree(headings: list[dict]) -> list[dict]:
-    """Grands titres (parent_id None) avec leurs sous-titres imbriqués."""
+def _tree(headings: list[dict], tasks_by_heading: Optional[dict[str, list[dict]]] = None) -> list[dict]:
+    """Grands titres (parent_id None) avec leurs sous-titres imbriqués, et
+    leurs tâches modèles (job_description_heading_tasks) le cas échéant."""
+    tasks_by_heading = tasks_by_heading or {}
     by_parent: dict[Optional[str], list[dict]] = {}
     for h in headings:
         by_parent.setdefault(h.get("parent_id"), []).append(h)
     for lst in by_parent.values():
         lst.sort(key=lambda h: (h.get("sort_order") or 0, h.get("label") or ""))
-    roots = by_parent.get(None, [])
-    for r in roots:
-        r["children"] = by_parent.get(r["id"], [])
-    return roots
+
+    def attach(h: dict) -> dict:
+        h["tasks"] = [t["label"] for t in sorted(tasks_by_heading.get(h["id"], []), key=lambda t: t.get("sort_order") or 0)]
+        h["children"] = [attach(c) for c in by_parent.get(h["id"], [])]
+        return h
+
+    return [attach(r) for r in by_parent.get(None, [])]
+
+
+def _load_heading_tasks(db: Client, heading_ids: list[str]) -> dict[str, list[dict]]:
+    if not heading_ids:
+        return {}
+    rows = db.from_("job_description_heading_tasks").select("*").in_("heading_id", heading_ids).execute().data or []
+    out: dict[str, list[dict]] = {}
+    for t in rows:
+        out.setdefault(t["heading_id"], []).append(t)
+    return out
 
 
 @router.get("")
@@ -58,7 +73,8 @@ async def list_job_descriptions(
     by_jd: dict[str, list[dict]] = {}
     for h in headings:
         by_jd.setdefault(h["job_description_id"], []).append(h)
-    return [{**r, "headings": _tree(by_jd.get(r["id"], []))} for r in rows]
+    tasks_by_heading = _load_heading_tasks(db, [h["id"] for h in headings])
+    return [{**r, "headings": _tree(by_jd.get(r["id"], []), tasks_by_heading)} for r in rows]
 
 
 @router.get("/by-position")
@@ -81,7 +97,8 @@ async def get_job_description_by_position(
         return None
     jd = rows[0]
     headings = db.from_("job_description_headings").select("*").eq("job_description_id", jd["id"]).execute().data or []
-    return {**jd, "headings": _tree(headings)}
+    tasks_by_heading = _load_heading_tasks(db, [h["id"] for h in headings])
+    return {**jd, "headings": _tree(headings, tasks_by_heading)}
 
 
 @router.post("/analyze-import")
@@ -147,6 +164,11 @@ async def apply_import(
             }
             heading = db.from_("job_description_headings").insert(row).execute().data[0]
             count += 1
+            if it.tasks:
+                db.from_("job_description_heading_tasks").insert([
+                    {"heading_id": heading["id"], "label": label, "sort_order": j}
+                    for j, label in enumerate(it.tasks)
+                ]).execute()
             count += insert_headings(it.children, heading["id"], 0)
         return count
 
@@ -154,7 +176,8 @@ async def apply_import(
     log_audit(db, user.id, "job_description.import_apply", "job_description", jd["id"], {"inserted": inserted})
 
     headings = db.from_("job_description_headings").select("*").eq("job_description_id", jd["id"]).execute().data or []
-    return {**jd, "headings": _tree(headings), "inserted": inserted}
+    tasks_by_heading = _load_heading_tasks(db, [h["id"] for h in headings])
+    return {**jd, "headings": _tree(headings, tasks_by_heading), "inserted": inserted}
 
 
 @router.post("")

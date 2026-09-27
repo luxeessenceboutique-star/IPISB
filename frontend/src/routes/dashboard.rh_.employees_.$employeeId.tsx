@@ -415,9 +415,10 @@ type Goal = { id: string; title: string; description: string | null; status: str
 const GOAL_STATUS_LABEL: Record<string, string> = { pending: "À faire", in_progress: "En cours", done: "Terminé" };
 const REVIEW_STATUS_LABEL: Record<string, string> = { draft: "Brouillon", submitted: "Soumise", acknowledged: "Validée" };
 
-type JobHeading = { id: string; label: string; coefficient: number; children: JobHeading[] };
+type JobHeading = { id: string; label: string; coefficient: number; tasks: string[]; children: JobHeading[] };
 type JobDescription = { id: string; department: string; position: string; mission: string | null; headings: JobHeading[] };
-type ImportProposal = { mission: string | null; headings: { label: string; coefficient: number; children: any[] }[] };
+type ProposalHeading = { label: string; coefficient: number; tasks: string[]; children: ProposalHeading[] };
+type ImportProposal = { mission: string | null; headings: ProposalHeading[] };
 
 function AddGoalForm({ employeeId, onClose, onSaved }: { employeeId: string; onClose: () => void; onSaved: () => void }) {
   const [title, setTitle] = useState("");
@@ -463,8 +464,8 @@ const TASK_STATUS_LABEL: Record<string, string> = { submitted: "Soumise", valida
 const TASK_STATUS_TONE: Record<string, string> = { submitted: "", validated: "chip-c-green", returned: "chip-c-red" };
 const smallFieldStyle = { padding: "7px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, background: PAL.paper };
 
-function AddTaskRow({ employeeId, headingId, onClose, onSaved }: { employeeId: string; headingId: string; onClose: () => void; onSaved: () => void }) {
-  const [label, setLabel] = useState("");
+function AddTaskRow({ employeeId, headingId, initialLabel, onClose, onSaved }: { employeeId: string; headingId: string; initialLabel?: string; onClose: () => void; onSaved: () => void }) {
+  const [label, setLabel] = useState(initialLabel ?? "");
   const [dueDate, setDueDate] = useState("");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
@@ -567,8 +568,14 @@ function HeadingNode({ heading, employeeId, jdId, depth, onReload }: {
   const [tasks, setTasks] = useState<DailyTask[] | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
+  const [taskDraftLabel, setTaskDraftLabel] = useState<string | undefined>(undefined);
   const [addingChild, setAddingChild] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  function startTaskFromTemplate(label: string) {
+    setTaskDraftLabel(label);
+    setAddingTask(true);
+  }
 
   async function loadTasks() {
     setLoadingTasks(true);
@@ -654,8 +661,28 @@ function HeadingNode({ heading, employeeId, jdId, depth, onReload }: {
             </div>
           )}
 
+          {heading.tasks?.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: PAL.muted, marginBottom: 4 }}>
+                Tâches modèles (extraites du document importé)
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {heading.tasks.map((label, i) => (
+                  <div key={i} className="row-c flex-wrap" style={{ background: "transparent", border: `1px dashed ${PAL.line}`, borderRadius: 8, padding: "5px 10px" }}>
+                    <div className="min-w-0 flex-1" style={{ fontSize: 12, color: PAL.muted, fontStyle: "italic" }}>{label}</div>
+                    <button type="button" onClick={() => startTaskFromTemplate(label)} className="btn-c btn-c-sm btn-c-ghost" title="Créer une vraie tâche à partir de ce modèle">
+                      <Plus size={12} strokeWidth={1.8} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {addingTask ? (
-            <AddTaskRow employeeId={employeeId} headingId={heading.id} onClose={() => setAddingTask(false)} onSaved={() => { setAddingTask(false); loadTasks(); }} />
+            <AddTaskRow employeeId={employeeId} headingId={heading.id} initialLabel={taskDraftLabel}
+              onClose={() => { setAddingTask(false); setTaskDraftLabel(undefined); }}
+              onSaved={() => { setAddingTask(false); setTaskDraftLabel(undefined); loadTasks(); }} />
           ) : (
             <button type="button" onClick={() => setAddingTask(true)} className="btn-c btn-c-sm btn-c-ghost" style={{ marginTop: 6 }}>
               <Plus size={12} strokeWidth={1.8} />Ajouter une tâche
@@ -698,6 +725,13 @@ function ProposalRows({ items, path, onRemove }: { items: ImportProposal["headin
               <Trash2 size={13} strokeWidth={1.7} />
             </button>
           </div>
+          {h.tasks?.length > 0 && (
+            <div style={{ paddingInlineStart: 12 + (path.length + 1) * 20, paddingBottom: 4 }}>
+              {h.tasks.map((t, ti) => (
+                <div key={ti} style={{ fontSize: 12, color: PAL.muted, padding: "2px 0" }}>· {t}</div>
+              ))}
+            </div>
+          )}
           {h.children?.length > 0 && <ProposalRows items={h.children} path={[...path, i]} onRemove={onRemove} />}
         </div>
       ))}
