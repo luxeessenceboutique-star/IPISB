@@ -35,6 +35,7 @@ from routers import auth as auth_router
 from routers import tasks
 from routers import communication_groups
 from routers import agenda_gestion
+from routers import governance_instances
 
 log = logging.getLogger(__name__)
 
@@ -152,6 +153,7 @@ app.include_router(auth_router.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
 app.include_router(communication_groups.router, prefix="/api")
 app.include_router(agenda_gestion.router, prefix="/api")
+app.include_router(governance_instances.router, prefix="/api")
 
 
 @app.get("/health")

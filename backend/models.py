@@ -1655,3 +1655,61 @@ class RoomUpdate(BaseModel):
     equipment: Optional[str] = None
     notes: Optional[str] = None
 
+
+# ── Réunions / instances — suivi des instances de gouvernance (L76) ────────
+class GovernanceInstanceCreate(BaseModel):
+    niveau: int                          # 1 = instances de direction | 2 = instances pédagogiques
+    date: Optional[str] = None
+    projet: str
+    demandeur: Optional[str] = None
+    site: Optional[str] = None
+    axe: Optional[str] = None
+    code: Optional[str] = None
+    recommandation: str
+    commentaire: Optional[str] = None
+    budget_kdh: Optional[float] = None
+    delai: Optional[str] = None
+    historique_avancement: Optional[str] = None
+    sponsor: Optional[str] = None
+    pilotage: Optional[str] = None
+    operationnel: Optional[str] = None
+    prochain_controle: Optional[str] = None
+
+
+class GovernanceInstanceUpdate(BaseModel):
+    date: Optional[str] = None
+    projet: Optional[str] = None
+    demandeur: Optional[str] = None
+    site: Optional[str] = None
+    axe: Optional[str] = None
+    code: Optional[str] = None
+    recommandation: Optional[str] = None
+    commentaire: Optional[str] = None
+    budget_kdh: Optional[float] = None
+    delai: Optional[str] = None
+    historique_avancement: Optional[str] = None
+    sponsor: Optional[str] = None
+    pilotage: Optional[str] = None
+    operationnel: Optional[str] = None
+    prochain_controle: Optional[str] = None
+
+
+class GovernanceMeetingCreate(BaseModel):
+    instance_nom: Optional[str] = None
+    code_reunion: Optional[str] = None
+    date: Optional[str] = None
+    lieu: Optional[str] = None
+    presence: Optional[str] = None
+    decisions: Optional[str] = None
+    taux_realisation: Optional[float] = None   # fraction 0-1 (0.85 = 85 %)
+
+
+class GovernanceMeetingUpdate(BaseModel):
+    instance_nom: Optional[str] = None
+    code_reunion: Optional[str] = None
+    date: Optional[str] = None
+    lieu: Optional[str] = None
+    presence: Optional[str] = None
+    decisions: Optional[str] = None
+    taux_realisation: Optional[float] = None
+

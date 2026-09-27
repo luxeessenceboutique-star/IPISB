@@ -1,8 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Landmark } from "lucide-react";
-import { PageHead, EmptyHint } from "@/components/dashboard/ui";
+import { PageHead } from "@/components/dashboard/ui";
+import { GovernanceInstances } from "@/components/governance/GovernanceInstances";
 
 export const Route = createFileRoute("/dashboard/reunions-instances")({
   beforeLoad: async () => {
@@ -53,12 +53,7 @@ function ReunionsInstancesPage() {
         })}
       </div>
 
-      <div className="dash-card" style={{ padding: 0 }}>
-        <EmptyHint
-          icon={<Landmark size={28} strokeWidth={1.6} />}
-          text={`Niveau ${niveau === 1 ? "① — instances de direction" : "② — instances pédagogiques"} : cette section arrive bientôt.`}
-        />
-      </div>
+      <GovernanceInstances niveau={niveau} />
     </div>
   );
 }
