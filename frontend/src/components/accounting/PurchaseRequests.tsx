@@ -49,16 +49,15 @@ type CategoryArticle = {
   caracteristiques: string | null; cdc_path: string | null; cdc_name: string | null;
   budget_estimate: number | null;
 };
-// Ligne du panier multi-articles d'une DA (l77) — `catalog_article_id` non
-// nul = piochée dans le catalogue (permet le report auto du CDC) ; nul =
-// article libre saisi à la main.
+// Ligne du panier multi-articles d'une DA (l77) — toujours piochée dans le
+// catalogue de la catégorie choisie (permet le report auto du CDC) ;
+// `catalog_article_id` reste utile pour cocher/décocher la bonne case et
+// pour reconstituer le panier d'une DA déjà créée (ancien format
+// mono-article : voir startEdit, catalog_article_id vaut alors null).
 type PRItem = {
   id?: string; catalog_article_id: string | null; article_code: string; article_identification: string;
   characteristics: string; quantity: string; budget_estimate: string; cdc_path?: string | null; cdc_name?: string | null;
 };
-function emptyItem(): PRItem {
-  return { catalog_article_id: null, article_code: "", article_identification: "", characteristics: "", quantity: "1", budget_estimate: "0" };
-}
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
   quote_number: string; quote_date: string | null; expiration_date: string | null;
@@ -128,9 +127,8 @@ function H2({ children }: { children: React.ReactNode }) {
 
 // ── Panier multi-articles (l77) — piocher plusieurs articles du catalogue
 // de la catégorie choisie EN UNE FOIS (cases à cocher) plutôt que de créer
-// une DA par article ; « + Article libre » couvre le cas hors catalogue
-// (comme le champ manuel d'avant cette évolution). Partagé par CreateModal
-// et le formulaire d'édition de DetailModal. ─────────────────────────────
+// une DA par article. Uniquement des articles du catalogue — pas de saisie
+// libre. Partagé par CreateModal et le formulaire d'édition de DetailModal. ─
 function ItemsBasket({ categories, categoryId, onCategoryChange, items, onItemsChange }: {
   categories: Category[]; categoryId: string; onCategoryChange: (id: string) => void;
   items: PRItem[]; onItemsChange: (items: PRItem[]) => void;
@@ -197,15 +195,10 @@ function ItemsBasket({ categories, categoryId, onCategoryChange, items, onItemsC
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-        <label style={{ ...labelStyle, marginBottom: 0 }}>Panier ({items.length} article{items.length > 1 ? "s" : ""})</label>
-        <button type="button" onClick={() => onItemsChange([...items, emptyItem()])} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11 }}>
-          <Plus size={12} strokeWidth={1.8} />Article libre
-        </button>
-      </div>
+      <label style={{ ...labelStyle, display: "block", marginBottom: 6 }}>Panier ({items.length} article{items.length > 1 ? "s" : ""})</label>
 
       {items.length === 0 ? (
-        <div style={{ fontSize: 12, color: PAL.muted, padding: "6px 0", marginBottom: 10 }}>Aucun article — cochez-en dans le catalogue ci-dessus, ou ajoutez un article libre.</div>
+        <div style={{ fontSize: 12, color: PAL.muted, padding: "6px 0", marginBottom: 10 }}>Aucun article — cochez-en dans le catalogue ci-dessus.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
           {items.map((it, i) => (
