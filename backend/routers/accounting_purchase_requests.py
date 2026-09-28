@@ -68,6 +68,26 @@ def _require_decide(user: CurrentUser, pr: dict) -> None:
             )
 
 
+def _attach_items(db: Client, prs: list[dict]) -> list[dict]:
+    if not prs:
+        return prs
+    try:
+        rows = (
+            db.from_("purchase_request_items").select("*")
+            .in_("purchase_request_id", [p["id"] for p in prs])
+            .order("sort_order")
+            .execute().data or []
+        )
+    except Exception:
+        rows = []  # migration L77 pas encore appliquée : DA mono-article comme avant
+    by_pr: dict[str, list[dict]] = {}
+    for r in rows:
+        by_pr.setdefault(r["purchase_request_id"], []).append(r)
+    for p in prs:
+        p["items"] = by_pr.get(p["id"], [])
+    return prs
+
+
 def _get_or_404(db: Client, pr_id: str) -> dict:
     rows = db.from_("purchase_requests").select("*").eq("id", pr_id).execute().data
     if not rows:
@@ -114,7 +134,7 @@ async def list_requests(
 
     start = (page - 1) * page_size
     res = query.order("created_at", desc=True).range(start, start + page_size - 1).execute()
-    return {"items": res.data or [], "total": res.count or 0, "page": page, "page_size": page_size}
+    return {"items": _attach_items(db, res.data or []), "total": res.count or 0, "page": page, "page_size": page_size}
 
 
 @router.get("/{pr_id}")
@@ -152,6 +172,7 @@ async def get_request(
         p = purchase[0]
         order = {**{k: v for k, v in p.items() if k != "suppliers"},
                  "supplier_name": (p.get("suppliers") or {}).get("company_name")}
+    [pr] = _attach_items(db, [pr])
     return {**pr, "quotations": quotes, "order": order}
 
 
@@ -167,7 +188,8 @@ async def create_request(
     if body.asset_category not in ASSET_CATEGORIES:
         raise HTTPException(400, "asset_category invalide")
 
-    data = body.model_dump()
+    items = body.items
+    data = body.model_dump(exclude={"items"})
     data["created_by"] = user.id
     # Ne conserver que les critères de conformité connus.
     data["conformity_criteria"] = [c for c in (data.get("conformity_criteria") or []) if c in CONFORMITY_CRITERIA]
@@ -177,8 +199,39 @@ async def create_request(
     # échouera avec une erreur claire tant que la colonne n'existe pas).
     if data.get("category_id") is None:
         data.pop("category_id", None)
+    if items:
+        # Panier multi-articles (l77) : la DA elle-même n'en porte plus qu'un
+        # résumé — budget_estimate devient la somme des lignes, les 4 champs
+        # mono-article historiques restent vides (le panier fait foi côté
+        # affichage). Une DA sans `items` (anciens appelants) garde le
+        # comportement mono-article exact d'avant cette migration.
+        data["budget_estimate"] = round(sum(float(it.budget_estimate or 0) for it in items), 2)
+        data["article_code"] = None
+        data["article_identification"] = None
+        data["characteristics"] = None
+        data["quantity"] = 1
     res = db.from_("purchase_requests").insert(data).execute()
     pr = res.data[0]
+
+    if items:
+        try:
+            rows = [
+                {
+                    "purchase_request_id": pr["id"],
+                    "catalog_article_id": it.catalog_article_id,
+                    "article_code": it.article_code,
+                    "article_identification": it.article_identification,
+                    "characteristics": it.characteristics,
+                    "quantity": it.quantity,
+                    "budget_estimate": it.budget_estimate,
+                    "sort_order": i,
+                }
+                for i, it in enumerate(items)
+            ]
+            db.from_("purchase_request_items").insert(rows).execute()
+        except Exception as e:
+            raise HTTPException(400, f"Migration L77 requise (table purchase_request_items) : {e}")
+        pr["items"] = rows
     log_audit(db, user.id, "purchase_request.create", "purchase_request", pr["id"],
               {"request_number": pr["request_number"],
                "reference": pr.get("reference") or pr.get("request_number")})
@@ -225,8 +278,37 @@ async def update_request(
     if "conformity_criteria" in updates:
         updates["conformity_criteria"] = [c for c in updates["conformity_criteria"] if c in CONFORMITY_CRITERIA]
 
+    new_items = updates.pop("items", None)
+    if new_items is not None:
+        updates["budget_estimate"] = round(sum(float(it.get("budget_estimate") or 0) for it in new_items), 2)
+        if new_items:
+            updates["article_code"] = None
+            updates["article_identification"] = None
+            updates["characteristics"] = None
+            updates["quantity"] = 1
+
     res = db.from_("purchase_requests").update(updates).eq("id", pr_id).execute()
     log_audit(db, user.id, "purchase_request.update", "purchase_request", pr_id, updates)
+
+    if new_items is not None:
+        try:
+            db.from_("purchase_request_items").delete().eq("purchase_request_id", pr_id).execute()
+            if new_items:
+                db.from_("purchase_request_items").insert([
+                    {
+                        "purchase_request_id": pr_id,
+                        "catalog_article_id": it.get("catalog_article_id"),
+                        "article_code": it.get("article_code"),
+                        "article_identification": it.get("article_identification"),
+                        "characteristics": it.get("characteristics"),
+                        "quantity": it.get("quantity") or 1,
+                        "budget_estimate": it.get("budget_estimate") or 0,
+                        "sort_order": i,
+                    }
+                    for i, it in enumerate(new_items)
+                ]).execute()
+        except Exception as e:
+            raise HTTPException(400, f"Migration L77 requise (table purchase_request_items) : {e}")
 
     # Prévenir les AUTRES administrateurs (jamais l'auteur de la modification
     # lui-même, quel que soit son rôle) ET le demandeur si ce n'est pas lui qui
@@ -256,7 +338,8 @@ async def update_request(
     except Exception:
         pass
 
-    return res.data[0]
+    [updated] = _attach_items(db, [res.data[0]])
+    return updated
 
 
 @router.delete("/{pr_id}")

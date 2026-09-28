@@ -508,6 +508,15 @@ class RevenueUpdate(BaseModel):
 
 
 # ── Phase 2 — Demandes d'achat (DA) & devis ──────────────────────────────────
+class PurchaseRequestItemCreate(BaseModel):
+    catalog_article_id: Optional[str] = None
+    article_code: Optional[str] = None
+    article_identification: str
+    characteristics: Optional[str] = None
+    quantity: float = 1
+    budget_estimate: float = 0
+
+
 class PurchaseRequestCreate(BaseModel):
     company: Optional[str] = None
     service: Optional[str] = None
@@ -521,6 +530,11 @@ class PurchaseRequestCreate(BaseModel):
     characteristics: Optional[str] = None
     conformity_note: Optional[str] = None
     conformity_criteria: list[str] = []
+    # Une DA porte 1..N articles. `items` non vide = nouveau format (le
+    # panier ci-dessous fait foi) ; laissé vide, on retombe sur les 4
+    # champs mono-article historiques pour rester compatible avec les
+    # appelants qui ne connaissent pas encore `items`.
+    items: list[PurchaseRequestItemCreate] = []
     article_code: Optional[str] = None
     article_identification: Optional[str] = None
     quantity: float = 1
@@ -542,6 +556,10 @@ class PurchaseRequestUpdate(BaseModel):
     characteristics: Optional[str] = None
     conformity_note: Optional[str] = None
     conformity_criteria: Optional[list[str]] = None
+    # Non None = remplace intégralement le panier d'articles (voir
+    # PurchaseRequestCreate.items) ; None (valeur par défaut, distincte
+    # d'une liste vide) = ne touche pas au panier existant.
+    items: Optional[list[PurchaseRequestItemCreate]] = None
     article_code: Optional[str] = None
     article_identification: Optional[str] = None
     quantity: Optional[float] = None

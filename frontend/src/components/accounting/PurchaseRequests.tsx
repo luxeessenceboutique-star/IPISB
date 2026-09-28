@@ -49,6 +49,16 @@ type CategoryArticle = {
   caracteristiques: string | null; cdc_path: string | null; cdc_name: string | null;
   budget_estimate: number | null;
 };
+// Ligne du panier multi-articles d'une DA (l77) — `catalog_article_id` non
+// nul = piochée dans le catalogue (permet le report auto du CDC) ; nul =
+// article libre saisi à la main.
+type PRItem = {
+  id?: string; catalog_article_id: string | null; article_code: string; article_identification: string;
+  characteristics: string; quantity: string; budget_estimate: string; cdc_path?: string | null; cdc_name?: string | null;
+};
+function emptyItem(): PRItem {
+  return { catalog_article_id: null, article_code: "", article_identification: "", characteristics: "", quantity: "1", budget_estimate: "0" };
+}
 type Quote = {
   id: string; purchase_request_id: string; supplier_id: string | null; supplier_name: string | null;
   quote_number: string; quote_date: string | null; expiration_date: string | null;
@@ -90,6 +100,7 @@ type PR = {
   cdc_attachment_name: string | null; cdc_attachment_path: string | null;
   conformity_note: string | null; conformity_criteria: string[] | null;
   article_code: string | null; article_identification: string | null; quantity: number; budget_estimate: number; duration: string | null;
+  items: { id: string; catalog_article_id: string | null; article_code: string | null; article_identification: string; characteristics: string | null; quantity: number; budget_estimate: number }[];
   need_decision: string; need_decision_comment: string | null;
   quote_synthesis: string | null; payment_mode: string | null; payment_terms_days: number | null;
   quote_decision: string; status: string; created_at: string; created_by: string | null;
@@ -115,6 +126,137 @@ function H2({ children }: { children: React.ReactNode }) {
   return <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 18px" }}>{children}</h2>;
 }
 
+// ── Panier multi-articles (l77) — piocher plusieurs articles du catalogue
+// de la catégorie choisie EN UNE FOIS (cases à cocher) plutôt que de créer
+// une DA par article ; « + Article libre » couvre le cas hors catalogue
+// (comme le champ manuel d'avant cette évolution). Partagé par CreateModal
+// et le formulaire d'édition de DetailModal. ─────────────────────────────
+function ItemsBasket({ categories, categoryId, onCategoryChange, items, onItemsChange }: {
+  categories: Category[]; categoryId: string; onCategoryChange: (id: string) => void;
+  items: PRItem[]; onItemsChange: (items: PRItem[]) => void;
+}) {
+  const [categoryArticles, setCategoryArticles] = useState<CategoryArticle[]>([]);
+  useEffect(() => {
+    if (!categoryId) { setCategoryArticles([]); return; }
+    api.get(`/api/accounting/categories/${categoryId}/articles`).then(setCategoryArticles).catch(() => setCategoryArticles([]));
+  }, [categoryId]);
+
+  const total = items.reduce((s, it) => s + (parseFloat(it.budget_estimate) || 0), 0);
+
+  function toggleCatalogArticle(a: CategoryArticle, checked: boolean) {
+    if (checked) {
+      onItemsChange([...items, {
+        catalog_article_id: a.id,
+        article_code: a.code_article || "",
+        article_identification: a.article,
+        characteristics: a.caracteristiques || "",
+        quantity: "1",
+        budget_estimate: a.budget_estimate != null ? String(a.budget_estimate) : "0",
+        cdc_path: a.cdc_path, cdc_name: a.cdc_name,
+      }]);
+    } else {
+      onItemsChange(items.filter(it => it.catalog_article_id !== a.id));
+    }
+  }
+
+  function updateItem(i: number, patch: Partial<PRItem>) {
+    onItemsChange(items.map((it, idx) => idx === i ? { ...it, ...patch } : it));
+  }
+  function removeItem(i: number) {
+    onItemsChange(items.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div>
+      <label style={labelStyle}>Catégorie</label>
+      <select className="u-input" style={fieldStyle} value={categoryId} onChange={e => onCategoryChange(e.target.value)}>
+        <option value="">— Aucune —</option>
+        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {categoryId && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Articles du catalogue (cocher pour ajouter au panier)</label>
+          {categoryArticles.length === 0 ? (
+            <div style={{ fontSize: 12, color: PAL.muted, padding: "6px 0" }}>Aucun article dans cette catégorie.</div>
+          ) : (
+            <div style={{ border: `1px solid ${PAL.line}`, borderRadius: 10, padding: "6px 12px", maxHeight: 160, overflowY: "auto" }}>
+              {categoryArticles.map(a => (
+                <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", fontFamily: sans, fontSize: 13, color: PAL.ink, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={items.some(it => it.catalog_article_id === a.id)}
+                    onChange={e => toggleCatalogArticle(a, e.target.checked)}
+                    style={{ width: 15, height: 15, accentColor: "var(--pal-primary)" }}
+                  />
+                  {a.code_article ? <span style={{ fontFamily: mono, fontSize: 11.5, color: PAL.muted }}>{a.code_article}</span> : null} {a.article}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+        <label style={{ ...labelStyle, marginBottom: 0 }}>Panier ({items.length} article{items.length > 1 ? "s" : ""})</label>
+        <button type="button" onClick={() => onItemsChange([...items, emptyItem()])} className="btn-c btn-c-sm btn-c-ghost" style={{ padding: "3px 8px", fontSize: 11 }}>
+          <Plus size={12} strokeWidth={1.8} />Article libre
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: PAL.muted, padding: "6px 0", marginBottom: 10 }}>Aucun article — cochez-en dans le catalogue ci-dessus, ou ajoutez un article libre.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+          {items.map((it, i) => (
+            <div key={i} style={{ border: `1px solid ${PAL.line}`, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <input
+                  className="u-input" style={{ ...fieldStyle, margin: 0, flex: "2 1 160px" }}
+                  placeholder="Identification article *"
+                  value={it.article_identification}
+                  onChange={e => updateItem(i, { article_identification: e.target.value })}
+                />
+                <input
+                  className="u-input" style={{ ...fieldStyle, margin: 0, flex: "1 1 90px", fontFamily: mono }}
+                  placeholder="Code" value={it.article_code}
+                  onChange={e => updateItem(i, { article_code: e.target.value })}
+                />
+                <button type="button" onClick={() => removeItem(i)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)", padding: "10px 0" }} title="Retirer">
+                  <Trash2 size={15} strokeWidth={1.7} />
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <input
+                  className="u-input" style={{ ...fieldStyle, margin: 0, flex: "2 1 160px" }}
+                  placeholder="Caractéristiques (optionnel)" value={it.characteristics}
+                  onChange={e => updateItem(i, { characteristics: e.target.value })}
+                />
+                <input
+                  type="number" min="0" step="any" className="u-input" style={{ ...fieldStyle, margin: 0, flex: "1 1 70px", fontFamily: mono }}
+                  placeholder="Qté" value={it.quantity}
+                  onChange={e => updateItem(i, { quantity: e.target.value })}
+                />
+                <input
+                  type="number" min="0" step="any" className="u-input" style={{ ...fieldStyle, margin: 0, flex: "1 1 100px", fontFamily: mono }}
+                  placeholder="Budget (MAD)" value={it.budget_estimate}
+                  onChange={e => updateItem(i, { budget_estimate: e.target.value })}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div style={{ textAlign: "right", fontSize: 12.5, color: PAL.muted, marginBottom: 10 }}>
+          Total estimé : <strong style={{ color: PAL.ink, fontFamily: mono }}>{fmtMAD(total)}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Modal de création (formulaire unique : besoin + classement) ──────────────
 function CreateModal({ categories, onClose, onSaved }: { categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const { user } = useAuth();
@@ -122,62 +264,49 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     company: "", service: "", requester_name: ownerName, project: "", activity: "", justification: "",
-    request_type: "nouveau_besoin", category_id: "", characteristics: "", conformity_note: "",
-    article_code: "", article_identification: "", quantity: "1", budget_estimate: "0", duration: "",
+    request_type: "nouveau_besoin", category_id: "", conformity_note: "", duration: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
   const [criteria, setCriteria] = useState<string[]>([]);
   const toggleCriterion = (k: string) =>
     setCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
   const [cdcFile, setCdcFile] = useState<File | null>(null);
-
-  // Articles du catalogue de la catégorie choisie — sélectionner un article
-  // pré-remplit Code/Identification/Caractéristiques (et reprend son CDC
-  // s'il en a un) depuis la fiche saisie dans Comptabilité → Catégories.
-  const [categoryArticles, setCategoryArticles] = useState<CategoryArticle[]>([]);
-  const [selectedArticleId, setSelectedArticleId] = useState("");
-  useEffect(() => {
-    setSelectedArticleId("");
-    if (!form.category_id) { setCategoryArticles([]); return; }
-    api.get(`/api/accounting/categories/${form.category_id}/articles`).then(setCategoryArticles).catch(() => setCategoryArticles([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.category_id]);
-
-  function pickArticle(articleId: string) {
-    setSelectedArticleId(articleId);
-    const a = categoryArticles.find(x => x.id === articleId);
-    if (!a) return;
-    setForm(f => ({
-      ...f,
-      article_code: a.code_article || f.article_code,
-      article_identification: a.article || f.article_identification,
-      characteristics: a.caracteristiques || f.characteristics,
-      budget_estimate: a.budget_estimate != null ? String(a.budget_estimate) : f.budget_estimate,
-    }));
-  }
+  const [items, setItems] = useState<PRItem[]>([]);
 
   // Le demandeur est toujours le propriétaire du compte connecté.
   useEffect(() => { setForm(f => ({ ...f, requester_name: ownerName })); }, [ownerName]);
 
+  // Report auto du CDC du catalogue : seulement quand le panier ne contient
+  // qu'UN SEUL article piochée (avec CDC) — sans ambiguïté sur celle
+  // visée. Avec plusieurs articles, l'utilisateur joint le CDC lui-même.
+  const itemsWithCdc = items.filter(it => it.cdc_path);
+  const soleCdcCandidate = itemsWithCdc.length === 1 ? itemsWithCdc[0] : null;
+
   async function submit() {
     if (!form.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
+    if (items.some(it => !it.article_identification.trim())) { toast.error("Chaque article du panier doit avoir une identification."); return; }
     setBusy(true);
     try {
       const pr = await api.post("/api/accounting/purchase-requests", {
         ...form,
         category_id: form.category_id || null,
-        quantity: parseFloat(form.quantity) || 1,
-        budget_estimate: parseFloat(form.budget_estimate) || 0,
         conformity_criteria: criteria,
+        items: items.map(it => ({
+          catalog_article_id: it.catalog_article_id,
+          article_code: it.article_code || null,
+          article_identification: it.article_identification,
+          characteristics: it.characteristics || null,
+          quantity: parseFloat(it.quantity) || 1,
+          budget_estimate: parseFloat(it.budget_estimate) || 0,
+        })),
       });
-      const selectedArticle = categoryArticles.find(a => a.id === selectedArticleId);
       if (cdcFile && pr?.id) {
         // Cahier des charges joint manuellement — prioritaire sur celui du catalogue.
         const fd = new FormData();
         fd.append("file", cdcFile);
         await api.uploadFile(`/api/accounting/purchase-requests/${pr.id}/cdc`, fd);
-      } else if (selectedArticle?.cdc_path && pr?.id) {
-        await api.post(`/api/accounting/purchase-requests/${pr.id}/cdc/from-catalog`, { article_id: selectedArticle.id });
+      } else if (soleCdcCandidate?.catalog_article_id && pr?.id) {
+        await api.post(`/api/accounting/purchase-requests/${pr.id}/cdc/from-catalog`, { article_id: soleCdcCandidate.catalog_article_id });
       }
       toast.success("Demande d'achat créée !");
       onSaved(); onClose();
@@ -187,7 +316,7 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
   }
 
   return (
-    <Backdrop width={580}>
+    <Backdrop width={620}>
       <H2>Nouvelle demande d'achat</H2>
 
       <SectionLabel>Expression de besoin</SectionLabel>
@@ -211,48 +340,25 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
         <input className="u-input" style={fieldStyle} value={form.activity} onChange={e => set("activity", e.target.value)} />
         <label style={labelStyle}>Justification du besoin *</label>
         <textarea className="u-input" style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }} value={form.justification} onChange={e => set("justification", e.target.value)} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
           <div>
             <label style={labelStyle}>Type du besoin</label>
             <select className="u-input" style={fieldStyle} value={form.request_type} onChange={e => set("request_type", e.target.value)}>
               {Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div>
-            <label style={labelStyle}>Catégorie</label>
-            <select className="u-input" style={fieldStyle} value={form.category_id} onChange={e => set("category_id", e.target.value)}>
-              <option value="">— Aucune —</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
-        {form.category_id && (
-          <div style={{ marginTop: 12 }}>
-            <label style={labelStyle}>Article du catalogue</label>
-            <select className="u-input" style={fieldStyle} value={selectedArticleId} onChange={e => pickArticle(e.target.value)}>
-              <option value="">{categoryArticles.length ? "— Choisir (pré-remplit les champs ci-dessous) —" : "— Aucun article dans cette catégorie —"}</option>
-              {categoryArticles.map(a => <option key={a.id} value={a.id}>{a.code_article ? `${a.code_article} — ${a.article}` : a.article}</option>)}
-            </select>
-          </div>
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
-          <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={form.article_code} onChange={e => set("article_code", e.target.value)} /></div>
-          <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={form.article_identification} onChange={e => set("article_identification", e.target.value)} /></div>
-          <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.quantity} onChange={e => set("quantity", e.target.value)} /></div>
-          <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={form.budget_estimate} onChange={e => set("budget_estimate", e.target.value)} /></div>
           <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={form.duration} onChange={e => set("duration", e.target.value)} /></div>
         </div>
 
-        <label style={labelStyle}>Caractéristiques / CDC</label>
-        <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={form.characteristics} onChange={e => set("characteristics", e.target.value)} />
+        <div style={{ marginTop: 8, marginBottom: 12 }}><SectionLabel>Classement — un ou plusieurs articles</SectionLabel></div>
+        <ItemsBasket categories={categories} categoryId={form.category_id} onCategoryChange={id => set("category_id", id)} items={items} onItemsChange={setItems} />
+
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}><Paperclip size={12} /> Cahier des charges (fichier, facultatif)</label>
         <input type="file" accept="application/pdf,image/jpeg,image/png" onChange={e => setCdcFile(e.target.files?.[0] ?? null)} style={{ ...fieldStyle, padding: "9px 10px" }} className="u-input" />
         <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: -8, marginBottom: 14 }}>
           Formats acceptés : PDF, JPG ou PNG.{cdcFile ? ` Sélectionné : ${cdcFile.name}` : ""}
-          {!cdcFile && categoryArticles.find(a => a.id === selectedArticleId)?.cdc_path && (
-            <> Sinon, le CDC de l'article du catalogue ({categoryArticles.find(a => a.id === selectedArticleId)?.cdc_name}) sera repris automatiquement.</>
+          {!cdcFile && soleCdcCandidate && (
+            <> Sinon, le CDC de l'article du catalogue ({soleCdcCandidate.cdc_name}) sera repris automatiquement.</>
           )}
         </div>
       </div>
@@ -508,8 +614,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editCriteria, setEditCriteria] = useState<string[]>([]);
-  const [editCategoryArticles, setEditCategoryArticles] = useState<CategoryArticle[]>([]);
-  const [editSelectedArticleId, setEditSelectedArticleId] = useState("");
+  const [editItems, setEditItems] = useState<PRItem[]>([]);
 
   async function load() {
     try { setPr(await api.get(`/api/accounting/purchase-requests/${prId}`)); }
@@ -521,48 +626,44 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
     setEditForm({
       company: p.company ?? "", service: p.service ?? "", requester_name: p.requester_name ?? "",
       project: p.project ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
-      request_type: p.request_type, category_id: p.category_id ?? "", characteristics: p.characteristics ?? "",
-      conformity_note: p.conformity_note ?? "", article_code: p.article_code ?? "",
-      article_identification: p.article_identification ?? "",
-      quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0), duration: p.duration ?? "",
+      request_type: p.request_type, category_id: p.category_id ?? "",
+      conformity_note: p.conformity_note ?? "", duration: p.duration ?? "",
     });
     setEditCriteria(p.conformity_criteria ?? []);
-    setEditSelectedArticleId("");
+    // DA ancienne (pré-l77, sans panier) : un seul article implicite repris
+    // depuis les champs mono-article historiques, pour ne rien perdre à
+    // l'édition — sauvegarder re-crée alors un panier d'un seul article.
+    setEditItems(p.items?.length ? p.items.map(it => ({
+      id: it.id, catalog_article_id: it.catalog_article_id, article_code: it.article_code ?? "",
+      article_identification: it.article_identification, characteristics: it.characteristics ?? "",
+      quantity: String(it.quantity), budget_estimate: String(it.budget_estimate),
+    })) : p.article_identification || p.article_code ? [{
+      catalog_article_id: null, article_code: p.article_code ?? "", article_identification: p.article_identification ?? "",
+      characteristics: p.characteristics ?? "", quantity: String(p.quantity ?? 1), budget_estimate: String(p.budget_estimate ?? 0),
+    }] : []);
     setEditing(true);
   }
   const setEditField = (k: string, v: string) => setEditForm(f => ({ ...f, [k]: v }));
   const toggleEditCriterion = (k: string) =>
     setEditCriteria(cs => cs.includes(k) ? cs.filter(c => c !== k) : [...cs, k]);
 
-  useEffect(() => {
-    if (!editing || !editForm.category_id) { setEditCategoryArticles([]); return; }
-    api.get(`/api/accounting/categories/${editForm.category_id}/articles`).then(setEditCategoryArticles).catch(() => setEditCategoryArticles([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, editForm.category_id]);
-
-  function pickEditArticle(articleId: string) {
-    setEditSelectedArticleId(articleId);
-    const a = editCategoryArticles.find(x => x.id === articleId);
-    if (!a) return;
-    setEditForm(f => ({
-      ...f,
-      article_code: a.code_article || f.article_code,
-      article_identification: a.article || f.article_identification,
-      characteristics: a.caracteristiques || f.characteristics,
-      budget_estimate: a.budget_estimate != null ? String(a.budget_estimate) : f.budget_estimate,
-    }));
-  }
-
   async function saveEdit() {
     if (!editForm.justification.trim()) { toast.error("La justification du besoin est requise."); return; }
+    if (editItems.some(it => !it.article_identification.trim())) { toast.error("Chaque article du panier doit avoir une identification."); return; }
     setBusy(true);
     try {
       await api.patch(`/api/accounting/purchase-requests/${prId}`, {
         ...editForm,
         category_id: editForm.category_id || null,
-        quantity: parseFloat(editForm.quantity) || 1,
-        budget_estimate: parseFloat(editForm.budget_estimate) || 0,
         conformity_criteria: editCriteria,
+        items: editItems.map(it => ({
+          catalog_article_id: it.catalog_article_id,
+          article_code: it.article_code || null,
+          article_identification: it.article_identification,
+          characteristics: it.characteristics || null,
+          quantity: parseFloat(it.quantity) || 1,
+          budget_estimate: parseFloat(it.budget_estimate) || 0,
+        })),
       });
       toast.success("Demande mise à jour.");
       setEditing(false);
@@ -741,26 +842,11 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
               </div>
             </div>
 
-            <div style={{ marginTop: 8 }}><SectionLabel>Classement</SectionLabel></div>
-            {editForm.category_id && (
-              <div style={{ marginTop: 12 }}>
-                <label style={labelStyle}>Article du catalogue</label>
-                <select className="u-input" style={fieldStyle} value={editSelectedArticleId} onChange={e => pickEditArticle(e.target.value)}>
-                  <option value="">{editCategoryArticles.length ? "— Choisir (pré-remplit les champs ci-dessous) —" : "— Aucun article dans cette catégorie —"}</option>
-                  {editCategoryArticles.map(a => <option key={a.id} value={a.id}>{a.code_article ? `${a.code_article} — ${a.article}` : a.article}</option>)}
-                </select>
-              </div>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
-              <div><label style={labelStyle}>Code article</label><input className="u-input" style={fieldStyle} value={editForm.article_code} onChange={e => setEditField("article_code", e.target.value)} /></div>
-              <div><label style={labelStyle}>Identification article</label><input className="u-input" style={fieldStyle} value={editForm.article_identification} onChange={e => setEditField("article_identification", e.target.value)} /></div>
-              <div><label style={labelStyle}>Quantité</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.quantity} onChange={e => setEditField("quantity", e.target.value)} /></div>
-              <div><label style={labelStyle}>Estimation budget (MAD)</label><input type="number" min="0" step="any" className="u-input" style={fieldStyle} value={editForm.budget_estimate} onChange={e => setEditField("budget_estimate", e.target.value)} /></div>
-              <div><label style={labelStyle}>Durée</label><input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} /></div>
-            </div>
+            <label style={labelStyle}>Durée</label>
+            <input className="u-input" style={fieldStyle} placeholder="ex. 12 mois" value={editForm.duration} onChange={e => setEditField("duration", e.target.value)} />
 
-            <label style={labelStyle}>Caractéristiques / CDC</label>
-            <textarea className="u-input" style={{ ...fieldStyle, minHeight: 56, resize: "vertical" }} value={editForm.characteristics} onChange={e => setEditField("characteristics", e.target.value)} />
+            <div style={{ marginTop: 8, marginBottom: 12 }}><SectionLabel>Classement — un ou plusieurs articles</SectionLabel></div>
+            <ItemsBasket categories={categories} categoryId={editForm.category_id} onCategoryChange={id => setEditField("category_id", id)} items={editItems} onItemsChange={setEditItems} />
           </div>
 
           <div style={{ marginTop: 8 }}><SectionLabel>Conformité</SectionLabel></div>
@@ -786,11 +872,34 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
             {info("Société", pr.company)} {info("Service", pr.service)}
             {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
             {info("Activité", pr.activity)}
-            {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
-            {info("Identification article", pr.article_identification)}
             {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
           </div>
           {pr.justification && <div style={{ fontSize: 13, color: PAL.ink, background: "var(--pal-pale)", padding: "10px 14px", borderRadius: 10, marginBottom: 8 }}>{pr.justification}</div>}
+
+          {pr.items?.length > 0 ? (
+            <div style={{ marginBottom: 10 }}>
+              <SectionLabel>{pr.items.length} article{pr.items.length > 1 ? "s" : ""}</SectionLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
+                {pr.items.map(it => (
+                  <div key={it.id} className="row-c" style={{ background: "var(--pal-pale)", borderRadius: 8, padding: "6px 10px" }}>
+                    <div className="min-w-0 flex-1">
+                      <span style={{ fontSize: 13, color: PAL.ink }}>{it.article_identification}</span>
+                      {it.article_code && <span style={{ fontFamily: mono, fontSize: 11, color: PAL.muted }}> · {it.article_code}</span>}
+                      {it.characteristics && <div style={{ fontSize: 11.5, color: PAL.muted }}>{it.characteristics}</div>}
+                    </div>
+                    <span style={{ fontFamily: mono, fontSize: 12, color: PAL.muted }}>×{it.quantity}</span>
+                    <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 700, color: PAL.ink }}>{fmtMAD(it.budget_estimate)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (pr.article_identification || pr.article_code) ? (
+            // DA créée avant l77 (mono-article) — champs historiques.
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 18px", marginBottom: 10 }}>
+              {info("Quantité", pr.quantity)} {info("Code article", pr.article_code)}
+              {info("Identification article", pr.article_identification)}
+            </div>
+          ) : null}
           {pr.characteristics && <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 8 }}>{pr.characteristics}</div>}
           {(pr.cdc_attachment_name || canEditRequest) && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
