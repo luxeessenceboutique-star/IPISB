@@ -1152,6 +1152,28 @@ class ContractTypeUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+# ── Document library — folders + files (compose/import) ─────────────────────────
+class DocumentFolderCreate(BaseModel):
+    name: str
+    parent_id: Optional[str] = None
+
+
+class DocumentFolderUpdate(BaseModel):
+    name: str
+
+
+class DocumentFileCompose(BaseModel):
+    folder_id: Optional[str] = None
+    title: str
+    body_html: str
+
+
+class DocumentFileUpdate(BaseModel):
+    title: Optional[str] = None
+    folder_id: Optional[str] = None
+    body_html: Optional[str] = None
+
+
 # ── RH phase 2 — Assets ────────────────────────────────────────────────────────
 class AssetCreate(BaseModel):
     name: str

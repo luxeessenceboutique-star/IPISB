@@ -470,6 +470,19 @@
   scroll-margin-block: 96px;
 }
 
+/* ── Tiptap rich-text editor (document-library "compose" feature) ──
+   Tailwind's preflight resets ul/ol to list-style:none app-wide (every
+   other "list" in this UI is a custom-styled row, not a real bulleted
+   list) — restore real markers scoped to the editor only, so bullet/
+   numbered lists are visible while composing, matching the exported PDF
+   (which draws its own bullets via ReportLab regardless of this CSS). */
+.ProseMirror ul { list-style: disc; padding-left: 22px; }
+.ProseMirror ol { list-style: decimal; padding-left: 22px; }
+.ProseMirror li { margin: 2px 0; }
+.ProseMirror p { margin: 0 0 8px; }
+.ProseMirror h1, .ProseMirror h2, .ProseMirror h3 { margin: 10px 0 6px; }
+.ProseMirror:focus { outline: none; }
+
 /* ── Accessibility ────────────────────────────────────────────── */
 :focus-visible {
   outline: 2px solid var(--pal-mid);

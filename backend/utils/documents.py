@@ -100,11 +100,11 @@ C_LINE = colors.HexColor("#D9D9D9")
 CONTENT_LEFT, CONTENT_RIGHT = 24 * mm, 24 * mm
 
 
-def _letterhead(c: canvas.Canvas, width: float, top_y: float) -> float:
+def letterhead(c: canvas.Canvas, width: float, top_y: float) -> float:
     """The institution's own four-line header — one fact per line, exactly
     as given, in that order. Deliberately NOT merged onto fewer lines and
     NOT carrying the address/phone (those belong to the page footer, not
-    the header — see _page_footer): this reproduces the real paper
+    the header — see page_footer): this reproduces the real paper
     template's layout, not a reformatted equivalent of the same facts."""
     logo = _logo()
     logo_size = 20 * mm
@@ -130,7 +130,7 @@ def _letterhead(c: canvas.Canvas, width: float, top_y: float) -> float:
     return rule_y - 12 * mm
 
 
-def _page_footer(c: canvas.Canvas, width: float) -> None:
+def page_footer(c: canvas.Canvas, width: float) -> None:
     """Address + contact line, centred at the very bottom of the page — the
     template's own footer, kept separate from the header instead of folded
     into it."""
@@ -248,7 +248,7 @@ def render_document_pdf(
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
 
-    y = _letterhead(c, width, height - 18 * mm)
+    y = letterhead(c, width, height - 18 * mm)
 
     c.setFillColor(C_GREEN)
     c.setFont("Helvetica-Bold", 17)
@@ -285,7 +285,7 @@ def render_document_pdf(
     c.drawString(qr_x, qr_y - 5 * mm, f"Vérification : {verify_url}")
     c.drawString(qr_x, qr_y - 9 * mm, f"Code : {verification_code}")
 
-    _page_footer(c, width)
+    page_footer(c, width)
 
     c.showPage()
     c.save()

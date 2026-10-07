@@ -231,7 +231,7 @@ function GenerateForEmployeeModal({ employee, onClose, onGenerated, onPreview }:
         {templates.length === 0 ? (
           <p style={{ fontFamily: sans, fontSize: 13, color: PAL.muted }}>
             Aucun modèle pour employé disponible.{" "}
-            <Link to="/dashboard/documents" style={{ color: "var(--pal-primary-deep)", fontWeight: 600 }}>
+            <Link to="/dashboard/documents" search={{ tab: "templates" }} style={{ color: "var(--pal-primary-deep)", fontWeight: 600 }}>
               Ajoutez-en un depuis la page Documents →
             </Link>
           </p>
