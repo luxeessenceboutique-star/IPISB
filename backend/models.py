@@ -1153,6 +1153,14 @@ class ContractTypeUpdate(BaseModel):
 
 
 # ── Document library — folders + files (compose/import) ─────────────────────────
+class FileCategoryCreate(BaseModel):
+    label: str
+
+
+class FileCategoryUpdate(BaseModel):
+    label: str
+
+
 class DocumentFolderCreate(BaseModel):
     name: str
     parent_id: Optional[str] = None

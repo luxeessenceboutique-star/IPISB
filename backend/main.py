@@ -25,6 +25,7 @@ from routers import rh_departments, rh_contract_types, rh_assets, rh_onboarding
 from routers import rh_recruitment, rh_orgchart, rh_training, rh_talents
 from routers import rh_job_descriptions, rh_daily_tasks
 from routers import document_library
+from routers import rh_employee_file_categories
 from routers import copilot as copilot_router
 from routers import accounting_tuition
 from routers import accounting_cash_journal
@@ -136,6 +137,7 @@ app.include_router(rh_performance.router, prefix="/api")
 app.include_router(rh_job_descriptions.router, prefix="/api")
 app.include_router(rh_daily_tasks.router, prefix="/api")
 app.include_router(document_library.router, prefix="/api")
+app.include_router(rh_employee_file_categories.router, prefix="/api")
 app.include_router(rh_departments.router, prefix="/api")
 app.include_router(rh_contract_types.router, prefix="/api")
 app.include_router(rh_assets.router, prefix="/api")

@@ -1,4 +1,4 @@
--- l71: unified document library — folder tree (max 3 levels) + files.
+-- l78: unified document library — folder tree (max 3 levels) + files.
 -- Reference-code pattern mirrors the existing PUR-/DA-/REC-/INV- numbering
 -- (supabase_l4_accounting_migration.sql etc.): a SEQUENCE + a column
 -- DEFAULT that formats it, not an identity/generated column.

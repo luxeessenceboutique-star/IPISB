@@ -44,25 +44,19 @@ function statusChip(status: string) {
 }
 
 /* ─── Fichiers tab ─── */
-const FILE_TYPES: { value: string; label: string }[] = [
-  { value: "cin", label: "CIN" },
-  { value: "diplome", label: "Diplôme" },
-  { value: "photo", label: "Photo d'identité" },
-  { value: "cv", label: "CV" },
-  { value: "contrat", label: "Contrat signé" },
-  { value: "autre", label: "Autre" },
-];
-const FILE_TYPE_LABEL = Object.fromEntries(FILE_TYPES.map(t => [t.value, t.label]));
+type FileCategory = { id: string; value: string; label: string };
 
 type EmployeeFile = { id: string; type: string; filename: string; content_type: string; created_at: string };
 
 function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: string; onPhotoChanged: () => void; onGoToAnalyse: () => void }) {
   const [files, setFiles] = useState<EmployeeFile[]>([]);
+  const [categories, setCategories] = useState<FileCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [fileType, setFileType] = useState("autre");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const categoryLabel = Object.fromEntries(categories.map(c => [c.value, c.label]));
 
   async function load() {
     setLoading(true);
@@ -75,6 +69,9 @@ function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: s
     }
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [employeeId]);
+  useEffect(() => {
+    api.get("/api/rh/employee-file-categories").then(setCategories).catch(() => {});
+  }, []);
 
   async function upload(file: File) {
     setUploading(true);
@@ -146,8 +143,11 @@ function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: s
           <span style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".08em", textTransform: "uppercase" as const }}>Type :</span>
           <select value={fileType} onChange={e => setFileType(e.target.value)} className="u-input"
             style={{ padding: "6px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: PAL.ink, background: PAL.paper, outline: "none" }}>
-            {FILE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {categories.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
+          <a href="/dashboard/rh?tab=settings" style={{ fontSize: 11, fontWeight: 600, color: "var(--pal-primary-deep)", textDecoration: "none" }}>
+            Gérer les catégories →
+          </a>
         </div>
       </div>
 
@@ -170,7 +170,7 @@ function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: s
                 <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{f.filename}</div>
                 <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>{new Date(f.created_at).toLocaleDateString("fr-FR")}</div>
               </div>
-              <span className="chip-c">{FILE_TYPE_LABEL[f.type] ?? f.type}</span>
+              <span className="chip-c">{categoryLabel[f.type] ?? f.type}</span>
               <button type="button" onClick={() => openFile(f)} className="btn-c btn-c-sm btn-c-ghost" title="Ouvrir">Ouvrir</button>
               <button type="button" onClick={() => remove(f)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
             </div>
