@@ -31,7 +31,7 @@ def _tree(headings: list[dict], tasks_by_heading: Optional[dict[str, list[dict]]
         lst.sort(key=lambda h: (h.get("sort_order") or 0, h.get("label") or ""))
 
     def attach(h: dict) -> dict:
-        h["tasks"] = [t["label"] for t in sorted(tasks_by_heading.get(h["id"], []), key=lambda t: t.get("sort_order") or 0)]
+        h["tasks"] = [{"id": t["id"], "label": t["label"]} for t in sorted(tasks_by_heading.get(h["id"], []), key=lambda t: t.get("sort_order") or 0)]
         h["children"] = [attach(c) for c in by_parent.get(h["id"], [])]
         return h
 

@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import type { AssignableUser, TaskChannel, TaskDomain } from "./types";
 import { CHANNEL_LABEL, CHANNEL_DESC } from "./types";
 import { AssigneePicker } from "./AssigneePicker";
+import { RequirementPicker, type LinkedEntity } from "./RequirementPicker";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
@@ -34,6 +35,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
   const [channels, setChannels] = useState<TaskChannel[]>([]);
   const [channelUsers, setChannelUsers] = useState<AssignableUser[]>([]);
   const [loadingChannelUsers, setLoadingChannelUsers] = useState(false);
+  const [linkedEntity, setLinkedEntity] = useState<LinkedEntity | null>(null);
   const [busy, setBusy] = useState(false);
 
   const isComptabilite = form.domain === "comptabilite";
@@ -67,6 +69,8 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
         channels: isComptabilite ? channels : [],
         assignee_ids: assigneeIds,
         due_date: form.due_date || null,
+        linked_entity_type: linkedEntity?.type ?? null,
+        linked_entity_id: linkedEntity?.id ?? null,
       });
       toast.success("Tâche créée !");
       onSaved();
@@ -165,6 +169,12 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
         {isComptabilite && channels.length === 0 && (
           <p style={{ margin: "8px 0 0", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord au moins un canal pour voir les profils correspondants.</p>
         )}
+
+        <label style={{ ...labelStyle, display: "block", marginTop: 18 }}>Lier à une exigence (fiche de poste / objectif RH)</label>
+        <div style={{ marginTop: 8 }}>
+          <RequirementPicker selected={linkedEntity} onChange={setLinkedEntity} />
+        </div>
+
         <div style={{ marginBottom: 24 }} />
 
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
