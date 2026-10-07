@@ -6,6 +6,7 @@ from supabase import Client
 
 from deps import get_current_user, get_db, CurrentUser
 from models import SessionFeedbackSubmit
+from utils.dt import parse_iso_dt
 
 # Same URL namespace as teaching_sessions (spec §24: GET/POST .../feedback,
 # GET .../feedback/results) — kept in its own router/file since this is a
@@ -32,7 +33,7 @@ SUBMIT_GRACE_SECONDS = 60
 
 
 def _parse_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parse_iso_dt(value)
 
 
 def _resolve_questions(db: Client, question_ids: list[str]) -> dict[str, dict]:

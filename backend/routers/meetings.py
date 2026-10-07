@@ -8,13 +8,13 @@ from models import MeetingCreate
 from utils.notify import notify_users
 from utils.email import send_email
 from utils.jaas import generate_jaas_token, jaas_app_id, JaasNotConfigured
+from utils.dt import parse_iso_dt
 
 
 def _is_expired(meeting: dict) -> bool:
     """Return True if the meeting's time window has fully elapsed."""
     try:
-        raw   = meeting["scheduled_at"].replace("Z", "+00:00")
-        start = datetime.fromisoformat(raw)
+        start = parse_iso_dt(meeting["scheduled_at"])
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)  # treat naive as UTC
         end = start + timedelta(minutes=meeting.get("duration_minutes", 60))

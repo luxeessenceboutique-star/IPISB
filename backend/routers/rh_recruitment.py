@@ -10,10 +10,10 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import (
     JobAdCreate, JobAdUpdate,
-    CandidateCreate, CandidateCommentCreate, CandidatePromote,
+    CandidateCreate, CandidateUpdate, CandidateCommentCreate, CandidatePromote,
     InterviewCreate, InterviewUpdate,
     InterviewEvaluationUpsert, INTERVIEW_DECISIONS, INTERVIEW_ENTRETIEN_TYPES,
-    SlotCreate,
+    SlotCreate, SlotUpdate,
 )
 from utils.audit import log_audit
 from utils.cv_extraction import extract_cv_content, build_cv_extraction_messages, parse_cv_extraction_response
@@ -330,6 +330,32 @@ async def create_candidate(
     candidate = res.data[0]
     log_audit(db, user.id, "candidate.create", "employee", candidate["id"])
     return candidate
+
+
+@router.patch("/candidates/{candidate_id}")
+async def update_candidate(
+    candidate_id: str,
+    body: CandidateUpdate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Modifie les coordonnées d'un candidat (email, téléphone, poste visé,
+    ville, adresse…) — champs recrutement uniquement, pas les colonnes RH
+    réservées aux employés confirmés (salaire, CNSS…)."""
+    _require_admin(user)
+    nullable = {"email", "phone", "position", "city", "address", "notes"}
+    raw = body.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in raw.items() if k in nullable or v is not None}
+    if "full_name" in updates and not (updates["full_name"] or "").strip():
+        raise HTTPException(400, "full_name ne peut pas être vide")
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    res = db.from_("employees").update(updates).eq("id", candidate_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Candidat introuvable")
+    log_audit(db, user.id, "candidate.update", "employee", candidate_id, updates)
+    return res.data[0]
 
 
 def _onboarding_email_html(full_name: str, position: str | None, hire_date: str | None, documents: list[str]) -> str:
@@ -809,13 +835,48 @@ async def create_slots(
     _require_admin(user)
     if not body:
         return []
+    for s in body:
+        if len(s.interviewer_ids) > MAX_INTERVIEWERS:
+            raise HTTPException(400, f"{MAX_INTERVIEWERS} interviewers maximum par créneau")
 
     records = [{**s.model_dump(exclude_none=True), "status": "free"} for s in body]
-    res = db.from_("hr_slots").insert(records).execute()
+    try:
+        res = db.from_("hr_slots").insert(records).execute()
+    except Exception as ex:
+        if "interviewer_ids" in str(ex) or "does not exist" in str(ex):
+            for r in records:
+                r.pop("interviewer_ids", None)
+            res = db.from_("hr_slots").insert(records).execute()
+        else:
+            raise
     if not res.data:
         raise HTTPException(400, "Could not create slots")
     log_audit(db, user.id, "slots.create", "hr_slots", None, {"count": len(records)})
     return res.data
+
+
+@router.patch("/slots/{slot_id}")
+async def update_slot(
+    slot_id: str,
+    body: SlotUpdate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    """Ajoute ou modifie les interviewers rattachés à un créneau — avant même
+    qu'un candidat y soit affecté."""
+    _require_admin(user)
+    if len(body.interviewer_ids) > MAX_INTERVIEWERS:
+        raise HTTPException(400, f"{MAX_INTERVIEWERS} interviewers maximum par créneau")
+    try:
+        res = db.from_("hr_slots").update({"interviewer_ids": body.interviewer_ids}).eq("id", slot_id).execute()
+    except Exception as ex:
+        if "interviewer_ids" in str(ex) or "does not exist" in str(ex):
+            raise HTTPException(400, "Migration L64 requise (interviewer_ids sur hr_slots).")
+        raise
+    if not res.data:
+        raise HTTPException(404, "Not found")
+    log_audit(db, user.id, "slots.update", "hr_slots", slot_id, {"interviewer_ids": body.interviewer_ids})
+    return res.data[0]
 
 
 @router.delete("/slots/{slot_id}")

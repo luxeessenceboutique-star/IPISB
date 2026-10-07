@@ -9,6 +9,7 @@ from deps import get_current_user, get_db, CurrentUser
 from models import ClassTuitionUpdate, TrainerRateUpdate
 from utils.audit import log_audit
 from utils.pdf_generators import render_accounting_report_pdf
+from utils.dt import parse_iso_dt
 
 router = APIRouter(prefix="/accounting/analytics", tags=["accounting"])
 
@@ -23,7 +24,7 @@ def _num(v) -> float:
 
 
 def _parse_dt(s: str) -> datetime:
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    return parse_iso_dt(s)
 
 
 def _period_range(period: str, date_from: Optional[str], date_to: Optional[str]) -> tuple[date, date, str]:

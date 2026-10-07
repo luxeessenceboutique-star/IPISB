@@ -1,3 +1,4 @@
+import re
 import secrets
 from typing import Annotated
 
@@ -23,7 +24,10 @@ ALLOWED_CONTENT_TYPES = {
     "image/png": "png",
 }
 
-FILE_TYPES = {"cin", "diplome", "photo", "cv", "contrat", "autre"}
+# The selectable list now lives in employee_file_categories (RH → Paramètres)
+# so RH can add their own — this just guards against a malformed/garbage
+# value, it's not an allowlist of specific categories anymore.
+TYPE_RE = re.compile(r"^[a-z0-9_]{1,40}$")
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -65,8 +69,9 @@ async def upload_employee_file(
     _require_admin(user)
     _check_employee(db, employee_id)
 
-    if type not in FILE_TYPES:
-        raise HTTPException(400, f"Type invalide. Utilisez : {', '.join(sorted(FILE_TYPES))}")
+    type = (type or "autre").strip().lower()
+    if not TYPE_RE.match(type):
+        raise HTTPException(400, "Type de fichier invalide.")
     content_type = file.content_type or ""
     ext = ALLOWED_CONTENT_TYPES.get(content_type)
     if not ext:

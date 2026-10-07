@@ -7,6 +7,7 @@ from reportlab.lib import colors as rl_colors
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib.utils import ImageReader
+from utils.dt import parse_iso_dt
 
 CONFORMITY_LABELS = {
     "frais": "Produit frais",
@@ -724,7 +725,7 @@ def render_timetable_pdf(timetable: dict, slots: list[dict], class_name: str) ->
 
     validated_at = timetable.get("validated_at")
     try:
-        validated_date = datetime.fromisoformat(str(validated_at).replace("Z", "+00:00")).strftime("%d/%m/%Y")
+        validated_date = parse_iso_dt(str(validated_at)).strftime("%d/%m/%Y")
     except Exception:
         validated_date = datetime.now().strftime("%d/%m/%Y")
 

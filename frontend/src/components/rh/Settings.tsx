@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Building2, FileBadge } from "lucide-react";
+import { Plus, Trash2, Pencil, Building2, FileBadge, Tag } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 
 const PAL = {
@@ -14,10 +14,11 @@ const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL
 
 type Department = { id: string; name: string; description: string | null };
 type ContractType = { id: string; name: string; description: string | null; is_active: boolean };
+type FileCategory = { id: string; value: string; label: string };
 
-function LookupModal({ title, editing, onClose, onSave }: {
+function LookupModal({ title, editing, hideDescription, onClose, onSave }: {
   title: string; editing: { name: string; description: string | null } | null;
-  onClose: () => void; onSave: (name: string, description: string) => Promise<void>;
+  hideDescription?: boolean; onClose: () => void; onSave: (name: string, description: string) => Promise<void>;
 }) {
   const [name, setName] = useState(editing?.name ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
@@ -39,9 +40,11 @@ function LookupModal({ title, editing, onClose, onSave }: {
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 420, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>{title}</h2>
         <label style={labelStyle}>Nom *</label>
-        <input type="text" value={name} onChange={e => setName(e.target.value)} className="u-input" style={fieldStyle} />
-        <label style={labelStyle}>Description</label>
-        <input type="text" value={description} onChange={e => setDescription(e.target.value)} className="u-input" style={{ ...fieldStyle, marginBottom: 22 }} />
+        <input type="text" value={name} onChange={e => setName(e.target.value)} className="u-input" style={hideDescription ? { ...fieldStyle, marginBottom: 22 } : fieldStyle} autoFocus />
+        {!hideDescription && (<>
+          <label style={labelStyle}>Description</label>
+          <input type="text" value={description} onChange={e => setDescription(e.target.value)} className="u-input" style={{ ...fieldStyle, marginBottom: 22 }} />
+        </>)}
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ fontFamily: sans, fontSize: 13, color: PAL.muted, background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 8, padding: "9px 16px", cursor: "pointer" }}>Annuler</button>
           <button onClick={submit} disabled={busy} style={{ fontFamily: sans, fontSize: 13, fontWeight: 600, color: PAL.paper, background: PAL.ink, border: 0, borderRadius: 8, padding: "9px 20px", cursor: busy ? "not-allowed" : "pointer", opacity: busy ? .6 : 1 }}>
@@ -179,11 +182,80 @@ function ContractTypesPanel() {
   );
 }
 
+function FileCategoriesPanel() {
+  const [items, setItems] = useState<FileCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{ open: boolean; editing: FileCategory | null }>({ open: false, editing: null });
+
+  async function load() {
+    setLoading(true);
+    try { setItems(await api.get("/api/rh/employee-file-categories")); }
+    catch (err: any) { toast.error(err?.message ?? "Erreur lors du chargement."); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function save(label: string) {
+    try {
+      if (modal.editing) await api.patch(`/api/rh/employee-file-categories/${modal.editing.id}`, { label });
+      else await api.post("/api/rh/employee-file-categories", { label });
+      toast.success("Catégorie enregistrée.");
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'enregistrement.");
+    }
+  }
+
+  async function remove(c: FileCategory) {
+    if (!window.confirm(`Supprimer la catégorie « ${c.label} » ?`)) return;
+    try { await api.delete(`/api/rh/employee-file-categories/${c.id}`); toast.success("Catégorie supprimée."); load(); }
+    catch (err: any) { toast.error(err?.message ?? "Erreur lors de la suppression."); }
+  }
+
+  return (
+    <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+      {modal.open && (
+        <LookupModal
+          title={modal.editing ? "Modifier la catégorie" : "Nouvelle catégorie"}
+          editing={modal.editing ? { name: modal.editing.label, description: null } : null}
+          hideDescription
+          onClose={() => setModal({ open: false, editing: null })}
+          onSave={(label) => save(label)}
+        />
+      )}
+      <SectionLabel action={
+        <button type="button" onClick={() => setModal({ open: true, editing: null })} className="btn-c btn-c-sm btn-c-primary">
+          <Plus size={13} strokeWidth={1.7} />Ajouter
+        </button>
+      }>Catégories de fichiers (dossier employé)</SectionLabel>
+
+      {loading ? (
+        <div className="dash-card" style={{ padding: 20 }}><div className="shimmer" style={{ height: 16, width: 140, borderRadius: 999 }} /></div>
+      ) : items.length === 0 ? (
+        <div className="dash-card"><EmptyHint icon={<Tag size={24} strokeWidth={1.7} />} text="Aucune catégorie." /></div>
+      ) : (
+        <div className="dash-card overflow-hidden">
+          {items.map(c => (
+            <div key={c.id} className="row-c flex-wrap">
+              <div className="min-w-0 flex-1" style={{ minWidth: 140 }}>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{c.label}</div>
+              </div>
+              <button onClick={() => setModal({ open: true, editing: c })} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }}><Pencil size={13} strokeWidth={1.7} /></button>
+              <button onClick={() => remove(c)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }}><Trash2 size={13} strokeWidth={1.7} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RhSettings() {
   return (
     <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
       <DepartmentsPanel />
       <ContractTypesPanel />
+      <FileCategoriesPanel />
     </div>
   );
 }

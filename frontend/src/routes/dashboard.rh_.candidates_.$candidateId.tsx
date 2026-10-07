@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import {
   ArrowLeft, Mail, Phone, Briefcase, Calendar, MapPin, Home, Clock3, Languages,
-  GraduationCap, Award, FileText, FileDown, ArrowUpRight, Trash2, Plus, CalendarClock,
+  GraduationCap, Award, FileText, FileDown, ArrowUpRight, Trash2, Plus, CalendarClock, Pencil,
 } from "lucide-react";
 import { EmptyHint } from "@/components/dashboard/ui";
 import {
@@ -38,9 +38,70 @@ const sans = '"Manrope", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 14, width: "100%", padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
+/* ─── Modifier les coordonnées du candidat ─── */
+function EditCandidateModal({ candidate, onClose, onSaved }: { candidate: Candidate; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    full_name: candidate.full_name ?? "", email: candidate.email ?? "", phone: candidate.phone ?? "",
+    position: candidate.position ?? "", city: candidate.city ?? "", address: candidate.address ?? "",
+  });
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!form.full_name.trim()) { toast.error("Le nom est requis."); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/api/rh/recruitment/candidates/${candidate.id}`, {
+        full_name: form.full_name, email: form.email || null, phone: form.phone || null,
+        position: form.position || null, city: form.city || null, address: form.address || null,
+      });
+      toast.success("Candidat modifié.");
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur lors de l'enregistrement.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Modifier le candidat" onClose={onClose}>
+      <label style={labelStyle}>Nom complet *</label>
+      <input type="text" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} className="u-input" style={fieldStyle} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label style={labelStyle}>Email</label>
+          <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className="u-input" style={fieldStyle} />
+        </div>
+        <div>
+          <label style={labelStyle}>Téléphone</label>
+          <input type="text" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="u-input" style={fieldStyle} />
+        </div>
+      </div>
+      <label style={labelStyle}>Poste visé</label>
+      <input type="text" value={form.position} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} className="u-input" style={fieldStyle} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div>
+          <label style={labelStyle}>Ville</label>
+          <input type="text" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} className="u-input" style={fieldStyle} />
+        </div>
+        <div>
+          <label style={labelStyle}>Adresse</label>
+          <input type="text" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="u-input" style={{ ...fieldStyle, marginBottom: 22 }} />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button onClick={onClose} className="btn-c btn-c-ghost">Annuler</button>
+        <button onClick={submit} disabled={busy} className="btn-c btn-c-primary">{busy ? "Enregistrement…" : "Enregistrer"}</button>
+      </div>
+    </Modal>
+  );
+}
+
 /* ─── Profil tab ─── */
 function ProfilTab({ candidate, onChanged }: { candidate: Candidate; onChanged: () => void }) {
   const [promoting, setPromoting] = useState(false);
+  const [editing, setEditing] = useState(false);
   const empty = (v?: string | null) => !v || !v.trim();
 
   async function downloadCv() {
@@ -78,6 +139,7 @@ function ProfilTab({ candidate, onChanged }: { candidate: Candidate; onChanged: 
   return (
     <div>
       {promoting && <PromoteModal candidate={candidate} onClose={() => setPromoting(false)} onSaved={onChanged} />}
+      {editing && <EditCandidateModal candidate={candidate} onClose={() => setEditing(false)} onSaved={onChanged} />}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <DetailField icon={<Mail size={12} strokeWidth={1.8} />} label="Email" color="var(--pal-primary)">{candidate.email || <em style={{ color: PAL.muted, fontStyle: "italic" }}>—</em>}</DetailField>
@@ -127,6 +189,7 @@ function ProfilTab({ candidate, onChanged }: { candidate: Candidate; onChanged: 
         {candidate.cv_path && (
           <button onClick={downloadCv} className="btn-c btn-c-sm btn-c-ghost"><FileDown size={13} strokeWidth={1.7} />Télécharger le CV</button>
         )}
+        <button onClick={() => setEditing(true)} className="btn-c btn-c-sm btn-c-ghost"><Pencil size={13} strokeWidth={1.7} />Modifier</button>
         <button onClick={() => setPromoting(true)} className="btn-c btn-c-sm btn-c-ghost"><ArrowUpRight size={13} strokeWidth={1.7} />Promouvoir</button>
         <button onClick={remove} className="btn-c btn-c-sm" style={{ color: "var(--pal-danger)" }}><Trash2 size={13} strokeWidth={1.7} />Supprimer</button>
       </div>

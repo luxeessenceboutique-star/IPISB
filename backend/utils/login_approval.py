@@ -8,6 +8,7 @@ never gated.
 import html
 import logging
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -36,10 +37,20 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_FRACTIONAL_SECONDS_RE = re.compile(r"\.(\d+)")
+
+
 def _parse(ts: str | None) -> datetime | None:
     if not ts:
         return None
-    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    ts = ts.replace("Z", "+00:00")
+    # PostgREST trims trailing zeros off the fractional-seconds part of a
+    # timestamptz, so it can come back with 1-6 digits (e.g. ".7744") instead
+    # of a fixed width. Python's datetime.fromisoformat() before 3.11 only
+    # accepts exactly 3 or 6 digits and raises ValueError on anything else —
+    # pad/truncate to 6 (microseconds) so any precision parses.
+    ts = _FRACTIONAL_SECONDS_RE.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), ts, count=1)
+    return datetime.fromisoformat(ts)
 
 
 def _approval_email_html(full_name: str, email: str, roles: list[str], reason: str, approve_url: str) -> str:

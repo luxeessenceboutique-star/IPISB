@@ -28,6 +28,7 @@ import { Route as DashboardTasksRouteImport } from './routes/dashboard.tasks'
 import { Route as DashboardStudentsRouteImport } from './routes/dashboard.students'
 import { Route as DashboardSchedulesRouteImport } from './routes/dashboard.schedules'
 import { Route as DashboardRosterRouteImport } from './routes/dashboard.roster'
+import { Route as DashboardRhTasksRouteImport } from './routes/dashboard.rh-tasks'
 import { Route as DashboardRhRouteImport } from './routes/dashboard.rh'
 import { Route as DashboardReunionsInstancesRouteImport } from './routes/dashboard.reunions-instances'
 import { Route as DashboardPurchaseRequestsRouteImport } from './routes/dashboard.purchase-requests'
@@ -154,6 +155,11 @@ const DashboardSchedulesRoute = DashboardSchedulesRouteImport.update({
 const DashboardRosterRoute = DashboardRosterRouteImport.update({
   id: '/roster',
   path: '/roster',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRhTasksRoute = DashboardRhTasksRouteImport.update({
+  id: '/rh-tasks',
+  path: '/rh-tasks',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardRhRoute = DashboardRhRouteImport.update({
@@ -356,6 +362,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
+  '/dashboard/rh-tasks': typeof DashboardRhTasksRoute
   '/dashboard/roster': typeof DashboardRosterRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
@@ -407,6 +414,7 @@ export interface FileRoutesByTo {
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
+  '/dashboard/rh-tasks': typeof DashboardRhTasksRoute
   '/dashboard/roster': typeof DashboardRosterRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
@@ -460,6 +468,7 @@ export interface FileRoutesById {
   '/dashboard/purchase-requests': typeof DashboardPurchaseRequestsRoute
   '/dashboard/reunions-instances': typeof DashboardReunionsInstancesRoute
   '/dashboard/rh': typeof DashboardRhRoute
+  '/dashboard/rh-tasks': typeof DashboardRhTasksRoute
   '/dashboard/roster': typeof DashboardRosterRoute
   '/dashboard/schedules': typeof DashboardSchedulesRoute
   '/dashboard/students': typeof DashboardStudentsRoute
@@ -514,6 +523,7 @@ export interface FileRouteTypes {
     | '/dashboard/purchase-requests'
     | '/dashboard/reunions-instances'
     | '/dashboard/rh'
+    | '/dashboard/rh-tasks'
     | '/dashboard/roster'
     | '/dashboard/schedules'
     | '/dashboard/students'
@@ -565,6 +575,7 @@ export interface FileRouteTypes {
     | '/dashboard/purchase-requests'
     | '/dashboard/reunions-instances'
     | '/dashboard/rh'
+    | '/dashboard/rh-tasks'
     | '/dashboard/roster'
     | '/dashboard/schedules'
     | '/dashboard/students'
@@ -617,6 +628,7 @@ export interface FileRouteTypes {
     | '/dashboard/purchase-requests'
     | '/dashboard/reunions-instances'
     | '/dashboard/rh'
+    | '/dashboard/rh-tasks'
     | '/dashboard/roster'
     | '/dashboard/schedules'
     | '/dashboard/students'
@@ -784,6 +796,13 @@ declare module '@tanstack/react-router' {
       path: '/roster'
       fullPath: '/dashboard/roster'
       preLoaderRoute: typeof DashboardRosterRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/rh-tasks': {
+      id: '/dashboard/rh-tasks'
+      path: '/rh-tasks'
+      fullPath: '/dashboard/rh-tasks'
+      preLoaderRoute: typeof DashboardRhTasksRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/rh': {
@@ -1029,6 +1048,7 @@ interface DashboardRouteChildren {
   DashboardPurchaseRequestsRoute: typeof DashboardPurchaseRequestsRoute
   DashboardReunionsInstancesRoute: typeof DashboardReunionsInstancesRoute
   DashboardRhRoute: typeof DashboardRhRoute
+  DashboardRhTasksRoute: typeof DashboardRhTasksRoute
   DashboardRosterRoute: typeof DashboardRosterRoute
   DashboardSchedulesRoute: typeof DashboardSchedulesRoute
   DashboardStudentsRoute: typeof DashboardStudentsRoute
@@ -1070,6 +1090,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPurchaseRequestsRoute: DashboardPurchaseRequestsRoute,
   DashboardReunionsInstancesRoute: DashboardReunionsInstancesRoute,
   DashboardRhRoute: DashboardRhRoute,
+  DashboardRhTasksRoute: DashboardRhTasksRoute,
   DashboardRosterRoute: DashboardRosterRoute,
   DashboardSchedulesRoute: DashboardSchedulesRoute,
   DashboardStudentsRoute: DashboardStudentsRoute,

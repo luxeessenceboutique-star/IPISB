@@ -5,6 +5,7 @@ from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
 from models import ScheduleCreate, ScheduleUpdate
 from utils.audit import log_audit
+from utils.dt import parse_iso_dt
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -24,8 +25,8 @@ def _find_conflicts(
     """Room/instructor conflict check. Recurring ('weekly') slots are compared
     by weekday + time-of-day only, since a fixed institute timetable repeats
     indefinitely; 'once' slots are compared on the exact calendar window."""
-    start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
-    end = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+    start = parse_iso_dt(start_time)
+    end = parse_iso_dt(end_time)
 
     candidates = db.from_("schedules").select("*").eq("room", room).execute().data or []
     if professor_id:
@@ -37,8 +38,8 @@ def _find_conflicts(
     for c in candidates:
         if exclude_id and c["id"] == exclude_id:
             continue
-        c_start = datetime.fromisoformat(c["start_time"].replace("Z", "+00:00"))
-        c_end = datetime.fromisoformat(c["end_time"].replace("Z", "+00:00"))
+        c_start = parse_iso_dt(c["start_time"])
+        c_end = parse_iso_dt(c["end_time"])
 
         if c.get("recurrence") == "weekly" or start.date() != c_start.date():
             # Compare weekday + time-of-day only

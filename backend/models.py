@@ -1004,23 +1004,33 @@ class PayrollUpdate(BaseModel):
 
 
 # ── RH — Performance reviews ────────────────────────────────────────────────────
+# review_type distingue les 3 cadences demandées : mensuelle (alimentée par
+# l'agrégat des tâches quotidiennes -> décision de prime de rendement),
+# semestrielle (projets + résultats moyen/long terme) et annuelle (objectifs
+# annuels -> note + évolution vs année précédente, calculée à la volée).
 class PerformanceReviewCreate(BaseModel):
     employee_id: str
     period: str
-    score: Optional[int] = None      # 1-5
+    review_type: str = "annual"      # 'monthly' | 'semestrial' | 'annual'
+    score: Optional[float] = None    # 0-20
     feedback: Optional[str] = None
     objectives: Optional[str] = None
     achievements: Optional[str] = None
     improvements: Optional[str] = None
     status: str = "draft"            # 'draft' | 'submitted' | 'acknowledged'
+    task_count: Optional[int] = None
+    bonus_suggested: Optional[float] = None
+    bonus_decided: Optional[float] = None
 
 
 class PerformanceReviewUpdate(BaseModel):
-    score: Optional[int] = None
+    score: Optional[float] = None
     feedback: Optional[str] = None
     objectives: Optional[str] = None
     achievements: Optional[str] = None
     improvements: Optional[str] = None
+    status: Optional[str] = None
+    bonus_decided: Optional[float] = None
 
 
 class GoalCreate(BaseModel):
@@ -1028,6 +1038,7 @@ class GoalCreate(BaseModel):
     title: str
     description: Optional[str] = None
     due_date: Optional[str] = None
+    year: Optional[int] = None       # regroupement "objectifs annuels"
 
 
 class GoalUpdate(BaseModel):
@@ -1036,6 +1047,57 @@ class GoalUpdate(BaseModel):
     status: Optional[str] = None      # 'pending' | 'in_progress' | 'done'
     progress: Optional[int] = None    # 0-100
     due_date: Optional[str] = None
+    year: Optional[int] = None
+
+
+# ── RH — Fiche de poste digitalisée (L63) ───────────────────────────────────────
+class JobDescriptionCreate(BaseModel):
+    department: str
+    position: str
+    mission: Optional[str] = None
+
+
+class JobDescriptionUpdate(BaseModel):
+    mission: Optional[str] = None
+
+
+class JobHeadingCreate(BaseModel):
+    parent_id: Optional[str] = None   # None = grand titre, sinon sous-titre
+    label: str
+    coefficient: float = 1
+    sort_order: int = 0
+
+
+class JobHeadingUpdate(BaseModel):
+    label: Optional[str] = None
+    coefficient: Optional[float] = None
+    sort_order: Optional[int] = None
+
+
+# ── RH — Tâches quotidiennes (L63) ──────────────────────────────────────────────
+DAILY_TASK_STATUSES = {"submitted", "validated", "returned"}
+
+
+class DailyTaskCreate(BaseModel):
+    employee_id: str
+    heading_id: Optional[str] = None  # None = "autre tâche" libre
+    label: str
+    coefficient: Optional[float] = None  # défaut : celui de la rubrique, sinon 1
+    task_date: Optional[str] = None
+    due_date: Optional[str] = None
+    employee_comment: Optional[str] = None
+
+
+class DailyTaskUpdate(BaseModel):
+    label: Optional[str] = None
+    due_date: Optional[str] = None
+    employee_comment: Optional[str] = None
+
+
+class DailyTaskValidate(BaseModel):
+    decision: str                     # 'validate' | 'return'
+    note: Optional[float] = None      # requis si decision == 'validate' (0-20)
+    manager_comment: str
 
 
 class ProbationDecision(BaseModel):
@@ -1065,6 +1127,35 @@ class ContractTypeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class FileCategoryCreate(BaseModel):
+    label: str
+
+
+class FileCategoryUpdate(BaseModel):
+    label: str
+
+
+class DocumentFolderCreate(BaseModel):
+    name: str
+    parent_id: Optional[str] = None
+
+
+class DocumentFolderUpdate(BaseModel):
+    name: str
+
+
+class DocumentFileCompose(BaseModel):
+    folder_id: Optional[str] = None
+    title: str
+    body_html: str
+
+
+class DocumentFileUpdate(BaseModel):
+    title: Optional[str] = None
+    folder_id: Optional[str] = None
+    body_html: Optional[str] = None
 
 
 # ── RH phase 2 — Assets ────────────────────────────────────────────────────────
@@ -1128,6 +1219,16 @@ class JobAdUpdate(BaseModel):
 
 class CandidateCreate(BaseModel):
     full_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CandidateUpdate(BaseModel):
+    full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     position: Optional[str] = None
@@ -1236,6 +1337,11 @@ class SlotCreate(BaseModel):
     start_time: str
     end_time: str
     ad_id: Optional[str] = None
+    interviewer_ids: list[str] = []   # jusqu'à MAX_INTERVIEWERS — voir rh_recruitment.py
+
+
+class SlotUpdate(BaseModel):
+    interviewer_ids: list[str]
 
 
 # ── RH phase 2 — Org chart ──────────────────────────────────────────────────────

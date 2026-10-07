@@ -5,7 +5,7 @@ import {
   Layers, Users, LogOut, X, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   User, RefreshCw, Briefcase, Landmark, MessageCircle,
-  ChevronDown, Plus,
+  ChevronDown, Plus, ClipboardCheck,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -171,6 +171,10 @@ function DashboardLayout() {
   ] : [
     // Notifications en tout premier, visible par tous.
     leaf({ key: "dash.notifications", to: "/dashboard/notifications", icon: Bell, badge: true }),
+
+    // Tâches quotidiennes — raccourci direct juste après Notifications
+    // (demande explicite) plutôt que noyé dans les onglets internes de RH.
+    ...(showRh ? [leaf({ key: "dash.dailyTasks", to: "/dashboard/rh-tasks", icon: ClipboardCheck })] : []),
 
     // Aperçu — page unique : Vue d'ensemble, Agenda formation, KPIs et Agenda
     // de gestion y sont tous réunis en onglets internes (dashboard.index.tsx)

@@ -43,25 +43,19 @@ function statusChip(status: string) {
 }
 
 /* ─── Fichiers tab ─── */
-const FILE_TYPES: { value: string; label: string }[] = [
-  { value: "cin", label: "CIN" },
-  { value: "diplome", label: "Diplôme" },
-  { value: "photo", label: "Photo d'identité" },
-  { value: "cv", label: "CV" },
-  { value: "contrat", label: "Contrat signé" },
-  { value: "autre", label: "Autre" },
-];
-const FILE_TYPE_LABEL = Object.fromEntries(FILE_TYPES.map(t => [t.value, t.label]));
+type FileCategory = { id: string; value: string; label: string };
 
 type EmployeeFile = { id: string; type: string; filename: string; content_type: string; created_at: string };
 
 function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: string; onPhotoChanged: () => void; onGoToAnalyse: () => void }) {
   const [files, setFiles] = useState<EmployeeFile[]>([]);
+  const [categories, setCategories] = useState<FileCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [fileType, setFileType] = useState("autre");
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const categoryLabel = Object.fromEntries(categories.map(c => [c.value, c.label]));
 
   async function load() {
     setLoading(true);
@@ -74,6 +68,9 @@ function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: s
     }
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [employeeId]);
+  useEffect(() => {
+    api.get("/api/rh/employee-file-categories").then(setCategories).catch(() => {});
+  }, []);
 
   async function upload(file: File) {
     setUploading(true);
@@ -145,8 +142,11 @@ function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: s
           <span style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".08em", textTransform: "uppercase" as const }}>Type :</span>
           <select value={fileType} onChange={e => setFileType(e.target.value)} className="u-input"
             style={{ padding: "6px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, color: PAL.ink, background: PAL.paper, outline: "none" }}>
-            {FILE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {categories.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
+          <a href="/dashboard/rh?tab=settings" style={{ fontSize: 11, fontWeight: 600, color: "var(--pal-primary-deep)", textDecoration: "none" }}>
+            Gérer les catégories →
+          </a>
         </div>
       </div>
 
@@ -169,7 +169,7 @@ function FilesTab({ employeeId, onPhotoChanged, onGoToAnalyse }: { employeeId: s
                 <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{f.filename}</div>
                 <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>{new Date(f.created_at).toLocaleDateString("fr-FR")}</div>
               </div>
-              <span className="chip-c">{FILE_TYPE_LABEL[f.type] ?? f.type}</span>
+              <span className="chip-c">{categoryLabel[f.type] ?? f.type}</span>
               <button type="button" onClick={() => openFile(f)} className="btn-c btn-c-sm btn-c-ghost" title="Ouvrir">Ouvrir</button>
               <button type="button" onClick={() => remove(f)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
             </div>
@@ -230,7 +230,7 @@ function GenerateForEmployeeModal({ employee, onClose, onGenerated, onPreview }:
         {templates.length === 0 ? (
           <p style={{ fontFamily: sans, fontSize: 13, color: PAL.muted }}>
             Aucun modèle pour employé disponible.{" "}
-            <Link to="/dashboard/documents" style={{ color: "var(--pal-primary-deep)", fontWeight: 600 }}>
+            <Link to="/dashboard/documents" search={{ tab: "templates" }} style={{ color: "var(--pal-primary-deep)", fontWeight: 600 }}>
               Ajoutez-en un depuis la page Documents →
             </Link>
           </p>
@@ -361,7 +361,7 @@ function CongesTab({ employeeId }: { employeeId: string }) {
 }
 
 /* ─── Paie tab ─── */
-type PayrollRecord = { id: string; month: number; year: number; base_salary: number; cnss: number; ir: number; net_salary: number; gross_salary: number; status: string };
+type PayrollRecord = { id: string; month: number; year: number; base_salary: number; bonuses: number; cnss: number; ir: number; net_salary: number; gross_salary: number; status: string };
 const PAYROLL_STATUS_LABEL: Record<string, string> = { draft: "Brouillon", validated: "Validé", paid: "Payé" };
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -397,10 +397,11 @@ function PaieTab({ employeeId }: { employeeId: string }) {
             <span className="chip-c">{PAYROLL_STATUS_LABEL[r.status] ?? r.status}</span>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Stat label="Brut" value={fmtMAD(r.gross_salary)} />
+            <Stat label="Brut mensuel" value={fmtMAD(r.gross_salary)} />
+            <Stat label="Prime except. mensuelle" value={fmtMAD(r.bonuses)} />
             <Stat label="CNSS" value={fmtMAD(r.cnss)} />
             <Stat label="IR" value={fmtMAD(r.ir)} />
-            <Stat label="Net" value={fmtMAD(r.net_salary)} />
+            <Stat label="Net mensuel" value={fmtMAD(r.net_salary)} />
           </div>
         </div>
       ))}
@@ -410,9 +411,10 @@ function PaieTab({ employeeId }: { employeeId: string }) {
 
 /* ─── Performance tab ─── */
 type Goal = { id: string; title: string; description: string | null; status: string; progress: number; due_date: string | null };
-type Review = { id: string; period: string; score: number | null; feedback: string | null; status: string };
+type Review = { id: string; period: string; score: number | null; feedback: string | null; status: string; review_type: string; evolution: number | null };
 const GOAL_STATUS_LABEL: Record<string, string> = { pending: "À faire", in_progress: "En cours", done: "Terminé" };
 const REVIEW_STATUS_LABEL: Record<string, string> = { draft: "Brouillon", submitted: "Soumise", acknowledged: "Validée" };
+const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle" };
 
 function AddGoalForm({ employeeId, onClose, onSaved }: { employeeId: string; onClose: () => void; onSaved: () => void }) {
   const [title, setTitle] = useState("");
@@ -447,8 +449,9 @@ function AddGoalForm({ employeeId, onClose, onSaved }: { employeeId: string; onC
 }
 
 function AddReviewForm({ employeeId, onClose, onSaved }: { employeeId: string; onClose: () => void; onSaved: () => void }) {
+  const [reviewType, setReviewType] = useState("annual");
   const [period, setPeriod] = useState("");
-  const [score, setScore] = useState("3");
+  const [score, setScore] = useState("12");
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -456,7 +459,7 @@ function AddReviewForm({ employeeId, onClose, onSaved }: { employeeId: string; o
     if (!period.trim()) { toast.error("La période est requise."); return; }
     setBusy(true);
     try {
-      await api.post("/api/rh/performance", { employee_id: employeeId, period, score: parseInt(score, 10), feedback: feedback || null });
+      await api.post("/api/rh/performance", { employee_id: employeeId, review_type: reviewType, period, score: parseFloat(score), feedback: feedback || null });
       toast.success("Évaluation ajoutée.");
       onSaved();
       onClose();
@@ -469,12 +472,16 @@ function AddReviewForm({ employeeId, onClose, onSaved }: { employeeId: string; o
 
   return (
     <div className="dash-card" style={{ padding: 16, marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-      <input type="text" placeholder="Période (ex. T1 2026)" value={period} onChange={e => setPeriod(e.target.value)} className="u-input"
-        style={{ flex: "1 1 160px", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
-      <select value={score} onChange={e => setScore(e.target.value)} className="u-input"
+      <select value={reviewType} onChange={e => setReviewType(e.target.value)} className="u-input"
         style={{ padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }}>
-        {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} / 5</option>)}
+        <option value="monthly">Mensuelle</option>
+        <option value="semestrial">Semestrielle</option>
+        <option value="annual">Annuelle</option>
       </select>
+      <input type="text" placeholder="Période (ex. 2026, 2026-08, 2026-S1)" value={period} onChange={e => setPeriod(e.target.value)} className="u-input"
+        style={{ flex: "1 1 160px", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
+      <input type="number" min={0} max={20} step="any" value={score} onChange={e => setScore(e.target.value)} placeholder="Note /20" className="u-input"
+        style={{ width: 90, padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
       <input type="text" placeholder="Commentaire (optionnel)" value={feedback} onChange={e => setFeedback(e.target.value)} className="u-input"
         style={{ flex: "1 1 200px", padding: "9px 12px", border: `1px solid ${PAL.line}`, borderRadius: 9, fontFamily: sans, fontSize: 13, background: PAL.paper }} />
       <button type="button" onClick={submit} disabled={busy} className="btn-c btn-c-sm btn-c-primary">{busy ? "…" : "Ajouter"}</button>
@@ -549,10 +556,13 @@ function PerformanceTab({ employeeId }: { employeeId: string }) {
           {reviews.map(r => (
             <div key={r.id} className="row-c flex-wrap">
               <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
-                <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{r.period}</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {r.period}</div>
                 {r.feedback && <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>{r.feedback}</div>}
               </div>
-              {r.score != null && <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{r.score} / 5</span>}
+              {r.evolution != null && (
+                <span className={`chip-c ${r.evolution >= 0 ? "chip-c-green" : "chip-c-red"}`}>{r.evolution >= 0 ? "+" : ""}{r.evolution}</span>
+              )}
+              {r.score != null && <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: PAL.ink }}>{r.score} / 20</span>}
               <span className="chip-c">{REVIEW_STATUS_LABEL[r.status] ?? r.status}</span>
             </div>
           ))}

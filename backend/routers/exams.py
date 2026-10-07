@@ -17,6 +17,7 @@ from utils.email import send_email
 from utils.exam_generation import generate_mcq_questions
 from utils.audit import log_audit
 from utils.safe_filename import safe_filename
+from utils.dt import parse_iso_dt
 
 router = APIRouter(prefix="/exams", tags=["exams"])
 
@@ -93,7 +94,7 @@ def _public_materials_url(path: str) -> str:
 
 
 def _parse_dt(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parse_iso_dt(value)
 
 
 def _with_image_url(q: dict) -> dict:

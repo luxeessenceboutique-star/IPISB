@@ -29,7 +29,6 @@ render_course_pdf (see routers/course_generation.py).
 import io
 import re
 from datetime import datetime
-from html.parser import HTMLParser
 from pathlib import Path
 
 import markdown
@@ -42,11 +41,12 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
-    BaseDocTemplate, Flowable, Frame, HRFlowable, Image, ListFlowable,
+    BaseDocTemplate, Flowable, Frame, Image, ListFlowable,
     ListItem, NextPageTemplate, PageBreak, PageTemplate, Paragraph, Spacer,
     Table, TableStyle,
 )
 
+from utils.html_flowables import _block_flowables, _esc, _TreeBuilder
 from utils.slide_template_m101 import (
     BLUE, BLUE_DEEP, FAINT, GREEN, GREEN_DEEP, INK, LINE, MUTED, ORANGE,
     PAPER, SAGE_1, SAGE_2, SAGE_BG, SKY_1, SKY_BG, TEAL_BAND,
@@ -85,8 +85,6 @@ def _logo() -> ImageReader | None:
     return _LOGO_READER
 
 
-INLINE_TAG_MAP = {"strong": "b", "em": "i"}
-
 PAGE_W, PAGE_H = A4
 
 # Content-page card geometry (mm from page edges) — the vertical green tab
@@ -109,115 +107,6 @@ def _y(mm_from_top: float) -> float:
     is bottom-left. Converting at this one boundary keeps every drawing
     function below written the intuitive way."""
     return PAGE_H - mm_from_top * mm
-
-
-# ─── Minimal HTML tree (html.parser gives events, not a tree — build one) ──
-class _Node:
-    __slots__ = ("tag", "attrs", "children")
-
-    def __init__(self, tag: str, attrs: dict | None = None):
-        self.tag = tag
-        self.attrs = attrs or {}
-        self.children: list = []  # list[_Node | str]
-
-
-class _TreeBuilder(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.root = _Node("root")
-        self.stack = [self.root]
-
-    def handle_starttag(self, tag, attrs):
-        node = _Node(tag, dict(attrs))
-        self.stack[-1].children.append(node)
-        if tag not in ("br", "hr", "img"):
-            self.stack.append(node)
-
-    def handle_startendtag(self, tag, attrs):
-        self.stack[-1].children.append(_Node(tag, dict(attrs)))
-
-    def handle_endtag(self, tag):
-        for i in range(len(self.stack) - 1, 0, -1):
-            if self.stack[i].tag == tag:
-                del self.stack[i:]
-                break
-
-    def handle_data(self, data):
-        self.stack[-1].children.append(data)
-
-
-def _esc(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _inline_text(node: _Node) -> str:
-    """Render a node's descendants as ReportLab's mini-markup (b/i/br)."""
-    parts = []
-    for child in node.children:
-        if isinstance(child, str):
-            parts.append(_esc(child))
-            continue
-        if child.tag in INLINE_TAG_MAP:
-            parts.append(f"<{INLINE_TAG_MAP[child.tag]}>{_inline_text(child)}</{INLINE_TAG_MAP[child.tag]}>")
-        elif child.tag == "br":
-            parts.append("<br/>")
-        elif child.tag == "code":
-            parts.append(f"<font face='Courier'>{_inline_text(child)}</font>")
-        elif child.tag == "p":
-            # markdown emits nested <p> inside "loose" <li> items — flatten
-            # it into the same run rather than starting a new flowable.
-            parts.append(_inline_text(child) + "<br/><br/>")
-        else:
-            parts.append(_inline_text(child))
-    return "".join(parts).strip()
-
-
-def _raw_text(node: _Node) -> str:
-    """Plain-text content, no mini-markup — for parsing (not displaying) a
-    fenced code block's contents."""
-    parts = []
-    for child in node.children:
-        parts.append(child if isinstance(child, str) else _raw_text(child))
-    return "".join(parts)
-
-
-def _table_flowable(table_node: _Node, styles: dict) -> list:
-    rows: list[list] = []
-    header_idx = None
-    for section in table_node.children:
-        if isinstance(section, str):
-            continue
-        if section.tag == "thead":
-            for tr in section.children:
-                if isinstance(tr, str) or tr.tag != "tr":
-                    continue
-                rows.append([Paragraph(_inline_text(c), styles["th"]) for c in tr.children if not isinstance(c, str)])
-                header_idx = len(rows) - 1
-        elif section.tag == "tbody":
-            for tr in section.children:
-                if isinstance(tr, str) or tr.tag != "tr":
-                    continue
-                rows.append([Paragraph(_inline_text(c), styles["td"]) for c in tr.children if not isinstance(c, str)])
-    if not rows:
-        return []
-    ncols = max(len(r) for r in rows)
-    for r in rows:
-        while len(r) < ncols:
-            r.append(Paragraph("", styles["td"]))
-
-    t = Table(rows, hAlign="LEFT", repeatRows=1 if header_idx == 0 else 0)
-    cmds = [
-        ("GRID", (0, 0), (-1, -1), 0.4, C_LINE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]
-    if header_idx is not None:
-        cmds.append(("BACKGROUND", (0, header_idx), (-1, header_idx), C_SAGE_BG))
-    t.setStyle(TableStyle(cmds))
-    return [t, Spacer(1, 3 * mm)]
 
 
 def _parse_diagram_dsl(text: str) -> dict | None:
@@ -300,50 +189,17 @@ def _image_flowables(images: list[dict], styles: dict) -> list:
     return flowables
 
 
-def _block_flowables(root: _Node, styles: dict) -> list:
-    flowables = []
-    for node in root.children:
-        if isinstance(node, str):
-            continue
-        if node.tag == "h2":
-            flowables += [Spacer(1, 5 * mm), Paragraph(_inline_text(node), styles["h2"])]
-        elif node.tag == "h3":
-            flowables += [Spacer(1, 4 * mm), Paragraph(_inline_text(node), styles["h3"])]
-        elif node.tag == "h4":
-            flowables += [Spacer(1, 3 * mm), Paragraph(_inline_text(node), styles["h4"])]
-        elif node.tag == "p":
-            txt = _inline_text(node)
-            if txt:
-                flowables += [Paragraph(txt, styles["body"]), Spacer(1, 2 * mm)]
-        elif node.tag in ("ul", "ol"):
-            items = [
-                ListItem(Paragraph(_inline_text(li), styles["body"]), spaceAfter=2 * mm)
-                for li in node.children if not isinstance(li, str) and li.tag == "li"
-            ]
-            if items:
-                flowables += [
-                    ListFlowable(items, bulletType="bullet" if node.tag == "ul" else "1", leftIndent=6 * mm),
-                    Spacer(1, 2 * mm),
-                ]
-        elif node.tag == "hr":
-            flowables += [Spacer(1, 2 * mm), HRFlowable(width="100%", thickness=0.5, color=C_LINE), Spacer(1, 2 * mm)]
-        elif node.tag == "table":
-            flowables += _table_flowable(node, styles)
-        elif node.tag == "pre":
-            code = next((c for c in node.children if not isinstance(c, str) and c.tag == "code"), None)
-            lang = (code.attrs.get("class") or "") if code else ""
-            raw = _raw_text(code) if code else _raw_text(node)
-            if "diagram" in lang:
-                spec = _parse_diagram_dsl(raw)
-                if spec:
-                    flowables += _diagram_flowable(spec, styles)
-                # malformed diagram block: drop it silently rather than dump
-                # the raw DSL as visible text in a student-facing PDF
-            else:
-                flowables += [Paragraph(f"<font face='Courier' size='8'>{_esc(raw)}</font>", styles["body"]), Spacer(1, 2 * mm)]
-        elif node.tag in ("div", "root"):
-            flowables += _block_flowables(node, styles)  # our own tbl-wrap-style wrappers, if any
-    return flowables
+def _course_pre_handler(lang: str, raw: str, styles: dict) -> list | None:
+    """Plugged into html_flowables._block_flowables as its pre_handler — the
+    only course-manual-specific block type: a ```diagram fenced block using
+    the mini-DSL above. Everything else falls through (returns None) to the
+    shared module's default plain-monospace rendering."""
+    if "diagram" not in lang:
+        return None
+    spec = _parse_diagram_dsl(raw)
+    # malformed diagram block: drop it silently rather than dump the raw DSL
+    # as visible text in a student-facing PDF
+    return _diagram_flowable(spec, styles) if spec else []
 
 
 def _styles() -> dict:
@@ -365,6 +221,8 @@ def _styles() -> dict:
         "body":          ParagraphStyle("body", fontName="Times-Roman", fontSize=10.5, textColor=C_INK, leading=15.5, alignment=TA_JUSTIFY),
         "th":            ParagraphStyle("th", fontName="Helvetica-Bold", fontSize=8.5, textColor=C_GREEN_DEEP),
         "td":            ParagraphStyle("td", fontName="Times-Roman", fontSize=9.5, textColor=C_INK, leading=13),
+        "table_grid_color": C_LINE,
+        "table_header_bg":  C_SAGE_BG,
         "diagram_title": ParagraphStyle("diagram_title", fontName="Helvetica-Bold", fontSize=9.5, textColor=C_ORANGE, spaceAfter=3, alignment=TA_CENTER),
         "diagram_cell":  ParagraphStyle("diagram_cell", fontName="Helvetica", fontSize=8.5, textColor=C_INK, leading=12.5),
         "caption":       ParagraphStyle("caption", fontName="Helvetica-Oblique", fontSize=8, textColor=C_MUTED, alignment=TA_CENTER),
@@ -672,7 +530,7 @@ def _render_lesson_body(content: str, images: list[dict], styles: dict) -> list:
         html = markdown.markdown(piece, extensions=["tables", "fenced_code"])
         tree = _TreeBuilder()
         tree.feed(html)
-        flowables += _block_flowables(tree.root, styles)
+        flowables += _block_flowables(tree.root, styles, pre_handler=_course_pre_handler)
 
     leftover = [img for img in images if img.get("id") not in used_ids]
     if leftover:

@@ -47,6 +47,14 @@ def _force_http1(client: Client) -> None:
     old_auth = client.auth._http_client
     new_auth = type(old_auth)(follow_redirects=True, http2=False)
     client.auth._http_client = new_auth
+    # client.auth.admin (SyncGoTrueAdminAPI) reçoit sa propre référence à
+    # _http_client à la construction de GoTrueClient (voir gotrue_client.py
+    # `self.admin = SyncGoTrueAdminAPI(http_client=self._http_client)`) —
+    # réassigner client.auth._http_client ci-dessus ne le met PAS à jour. Sans
+    # cette ligne, client.auth.admin garde le client HTTP/2 fermé juste après
+    # (old_auth.close()) et toute création/suppression d'utilisateur échoue
+    # avec "Cannot send a request, as the client has been closed."
+    client.auth.admin._http_client = new_auth
     try:
         old_auth.close()
     except Exception:

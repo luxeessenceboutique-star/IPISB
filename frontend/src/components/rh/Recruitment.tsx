@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages, MapPin, Home, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Pencil, Briefcase, UserRound, CalendarClock, Clock, ArrowUpRight, Sparkles, Send, Bot, X, Link2, Linkedin, Globe, FileDown, Eye, Search, Mail, Phone, Calendar, FileText, GraduationCap, Award, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, UploadCloud, Clock3, Languages, MapPin, Home, MessageSquare, Users } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { parseAdContent, renderInline } from "@/lib/adContent";
 
@@ -846,7 +846,7 @@ export function PromoteModal({ candidate, onClose, onSaved }: { candidate: Candi
 
 export type Interviewer = { id: string; full_name: string };
 export type Interview = { id: string; candidate_id: string; candidate_name: string | null; interviewers: Interviewer[]; date: string; start_time: string; end_time: string; type: string; status: string };
-export type Slot = { id: string; date: string; start_time: string; end_time: string; status: string };
+export type Slot = { id: string; date: string; start_time: string; end_time: string; status: string; interviewer_ids: string[] };
 export const INTERVIEW_TYPES = [{ value: "rh", label: "RH" }, { value: "technical", label: "Technique" }, { value: "final", label: "Final" }];
 export const INTERVIEW_STATUS: Record<string, string> = { pending: "En attente", confirmed: "Confirmé", completed: "Terminé", cancelled: "Annulé" };
 export const MAX_INTERVIEWERS = 3;
@@ -1008,9 +1008,13 @@ function InterviewsPanel() {
                 Aucun créneau disponible — créez-en un dans l'onglet « Créneaux », ou choisissez « Date libre ».
               </div>
             ) : (
-              <select value={form.slot_id} onChange={e => setForm(f => ({ ...f, slot_id: e.target.value }))} style={fieldStyle}>
+              <select value={form.slot_id} onChange={e => {
+                const slotId = e.target.value;
+                const slot = availableSlots.find(s => s.id === slotId);
+                setForm(f => ({ ...f, slot_id: slotId, interviewer_ids: slot?.interviewer_ids?.length ? slot.interviewer_ids : f.interviewer_ids }));
+              }} style={fieldStyle}>
                 <option value="">— Sélectionner un créneau —</option>
-                {availableSlots.map(s => <option key={s.id} value={s.id}>{slotLabel(s)}</option>)}
+                {availableSlots.map(s => <option key={s.id} value={s.id}>{slotLabel(s)}{s.interviewer_ids?.length ? ` (${s.interviewer_ids.length} interviewer${s.interviewer_ids.length > 1 ? "s" : ""})` : ""}</option>)}
               </select>
             )
           ) : (
@@ -1101,9 +1105,12 @@ function InterviewsPanel() {
 
 function SlotsPanel() {
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [interviewerPool, setInterviewerPool] = useState<Interviewer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), start_time: "09:00", end_time: "09:30" });
+  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), start_time: "09:00", end_time: "09:30", interviewer_ids: [] as string[] });
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editIds, setEditIds] = useState<string[]>([]);
 
   async function load() {
     setLoading(true);
@@ -1112,17 +1119,34 @@ function SlotsPanel() {
     finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.get("/api/rh/recruitment/interviewers").then(setInterviewerPool).catch(() => {}); }, []);
+
+  function interviewerNames(ids: string[]) {
+    return ids.map(id => interviewerPool.find(iv => iv.id === id)?.full_name).filter(Boolean).join(", ");
+  }
 
   async function addSlot() {
     setBusy(true);
     try {
       await api.post("/api/rh/recruitment/slots", [form]);
       toast.success("Créneau ajouté.");
+      setForm(f => ({ ...f, interviewer_ids: [] }));
       load();
     } catch (err: any) {
       toast.error(err?.message ?? "Erreur.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function saveInterviewers(slotId: string) {
+    try {
+      await api.patch(`/api/rh/recruitment/slots/${slotId}`, { interviewer_ids: editIds });
+      toast.success("Interviewers mis à jour.");
+      setEditingId(null);
+      load();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erreur.");
     }
   }
 
@@ -1133,11 +1157,15 @@ function SlotsPanel() {
 
   return (
     <div>
-      <div className="dash-card" style={{ padding: 18, marginBottom: 16, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div><label style={labelStyle}>Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
-        <div><label style={labelStyle}>Début</label><input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
-        <div><label style={labelStyle}>Fin</label><input type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
-        <button type="button" onClick={addSlot} disabled={busy} className="btn-c btn-c-primary" style={{ opacity: busy ? 0.6 : 1 }}><Plus size={14} strokeWidth={1.7} />Ajouter</button>
+      <div className="dash-card" style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 4 }}>
+          <div><label style={labelStyle}>Date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
+          <div><label style={labelStyle}>Début</label><input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
+          <div><label style={labelStyle}>Fin</label><input type="time" value={form.end_time} onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))} style={{ ...fieldStyle, marginBottom: 0 }} /></div>
+          <button type="button" onClick={addSlot} disabled={busy} className="btn-c btn-c-primary" style={{ opacity: busy ? 0.6 : 1 }}><Plus size={14} strokeWidth={1.7} />Ajouter</button>
+        </div>
+        <label style={labelStyle}>Interviewers pour ce créneau (optionnel)</label>
+        <InterviewerPicker interviewers={interviewerPool} selected={form.interviewer_ids} onChange={ids => setForm(f => ({ ...f, interviewer_ids: ids }))} />
       </div>
       {loading ? (
         <div className="dash-card" style={{ padding: 22 }}><div className="shimmer" style={{ height: 16, width: 160, borderRadius: 999 }} /></div>
@@ -1146,14 +1174,29 @@ function SlotsPanel() {
       ) : (
         <div className="dash-card overflow-hidden">
           {slots.map(s => (
-            <div key={s.id} className="row-c flex-wrap">
-              <div className="min-w-0 flex-1" style={{ fontSize: 13.5, color: PAL.ink, fontWeight: 600 }}>
-                {new Date(s.date).toLocaleDateString("fr-FR")} · {s.start_time}-{s.end_time}
+            <div key={s.id}>
+              <div className="row-c flex-wrap">
+                <div className="min-w-0 flex-1" style={{ fontSize: 13.5, color: PAL.ink, fontWeight: 600 }}>
+                  {new Date(s.date).toLocaleDateString("fr-FR")} · {s.start_time}-{s.end_time}
+                  {s.interviewer_ids?.length > 0 && (
+                    <div style={{ fontSize: 11.5, color: PAL.muted, fontWeight: 400, marginTop: 2 }}>{interviewerNames(s.interviewer_ids)}</div>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, color: s.status === "reserved" ? "var(--pal-warn)" : "var(--pal-good)", background: "var(--pal-pale)" }}>
+                  {s.status === "reserved" ? "Réservé" : "Libre"}
+                </span>
+                <button onClick={() => { setEditingId(editingId === s.id ? null : s.id); setEditIds(s.interviewer_ids ?? []); }} title="Interviewers" className="u-ghost" style={iconBtnStyle}><Users size={14} strokeWidth={1.7} /></button>
+                <button onClick={() => remove(s)} title="Supprimer" className="u-ghost" style={{ ...iconBtnStyle, color: "var(--pal-danger)" }}><Trash2 size={14} strokeWidth={1.7} /></button>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, color: s.status === "reserved" ? "var(--pal-warn)" : "var(--pal-good)", background: "var(--pal-pale)" }}>
-                {s.status === "reserved" ? "Réservé" : "Libre"}
-              </span>
-              <button onClick={() => remove(s)} title="Supprimer" className="u-ghost" style={{ ...iconBtnStyle, color: "var(--pal-danger)" }}><Trash2 size={14} strokeWidth={1.7} /></button>
+              {editingId === s.id && (
+                <div style={{ padding: "0 16px 14px" }}>
+                  <InterviewerPicker interviewers={interviewerPool} selected={editIds} onChange={setEditIds} />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => saveInterviewers(s.id)} className="btn-c btn-c-sm btn-c-primary">Enregistrer</button>
+                    <button onClick={() => setEditingId(null)} className="btn-c btn-c-sm btn-c-ghost">Annuler</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
