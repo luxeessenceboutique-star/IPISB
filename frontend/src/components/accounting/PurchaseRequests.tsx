@@ -327,7 +327,7 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
             <label style={labelStyle}>Demandeur</label>
             <input className="u-input" style={{ ...fieldStyle, background: "var(--pal-pale)", cursor: "not-allowed" }} value={form.requester_name} readOnly title="Le demandeur est le titulaire du compte connecté" />
           </div>
-          <div><label style={labelStyle}>Projet</label><input className="u-input" style={fieldStyle} value={form.project} onChange={e => set("project", e.target.value)} /></div>
+          <div><label style={labelStyle}>Imputation · Code analytique</label><input className="u-input" placeholder="ex. BUD-2026-FORM-01" style={fieldStyle} value={form.project} onChange={e => set("project", e.target.value)} /></div>
         </div>
         <label style={labelStyle}>Activité</label>
         <input className="u-input" style={fieldStyle} value={form.activity} onChange={e => set("activity", e.target.value)} />
@@ -813,7 +813,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
                 </select>
               </div>
               <div><label style={labelStyle}>Demandeur</label><input className="u-input" style={fieldStyle} value={editForm.requester_name} onChange={e => setEditField("requester_name", e.target.value)} /></div>
-              <div><label style={labelStyle}>Projet</label><input className="u-input" style={fieldStyle} value={editForm.project} onChange={e => setEditField("project", e.target.value)} /></div>
+              <div><label style={labelStyle}>Imputation · Code analytique</label><input className="u-input" placeholder="ex. BUD-2026-FORM-01" style={fieldStyle} value={editForm.project} onChange={e => setEditField("project", e.target.value)} /></div>
             </div>
             <label style={labelStyle}>Activité</label>
             <input className="u-input" style={fieldStyle} value={editForm.activity} onChange={e => setEditField("activity", e.target.value)} />
@@ -863,7 +863,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
             {info("Type", REQ_TYPE[pr.request_type])}
             {info("Catégorie", categories.find(c => c.id === pr.category_id)?.name ?? "—")}
             {info("Société", pr.company)} {info("Service", pr.service)}
-            {info("Demandeur", pr.requester_name)} {info("Projet", pr.project)}
+            {info("Demandeur", pr.requester_name)} {info("Imputation · Code analytique", pr.project)}
             {info("Activité", pr.activity)}
             {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
           </div>
