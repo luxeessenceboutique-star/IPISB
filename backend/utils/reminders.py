@@ -87,10 +87,12 @@ def compute_agenda_items(db: Client) -> list[dict]:
     # ── RH : congés en attente de décision ──────────────────────────────────
     leaves = _safe(lambda: db.from_("leave_requests").select("id, employee_id, type, start_date, created_at")
                     .eq("status", "pending").execute().data) or []
+    # leave_requests.employee_id référence employees(id) (pas profiles) : le
+    # nom se lit donc sur la fiche salarié.
     emp_ids = list({l["employee_id"] for l in leaves if l.get("employee_id")})
     emp_names = {}
     if emp_ids:
-        emp_names = {p["id"]: p.get("full_name") for p in (db.from_("profiles").select("id, full_name").in_("id", emp_ids).execute().data or [])}
+        emp_names = {e["id"]: e.get("full_name") for e in (db.from_("employees").select("id, full_name").in_("id", emp_ids).execute().data or [])}
     for lv in leaves:
         created = _parse_date(lv.get("created_at"))
         if not created or (today - created).days < LEAVE_PENDING_DAYS:
@@ -139,11 +141,16 @@ def compute_agenda_items(db: Client) -> list[dict]:
         })
 
     # ── Comptabilité : opérations en attente depuis trop longtemps ─────────
-    def _aged_pending(table: str, label: str, id_field: str = "id"):
-        try:
-            rows = db.from_(table).select(f"{id_field}, created_at").eq("status", "pending").execute().data or []
-        except Exception:
-            return
+    def _aged_pending(table: str, label: str, waiting: dict, id_field: str = "id"):
+        """`waiting` : colonnes = valeur qui caractérise « en attente de
+        décision » pour cette table — le vocabulaire de statut diffère d'une
+        table à l'autre (voir les CHECK des migrations SQL)."""
+        def fetch():
+            q = db.from_(table).select(f"{id_field}, created_at")
+            for col, val in waiting.items():
+                q = q.eq(col, val)
+            return q.execute().data
+        rows = _safe(fetch) or []
         for r in rows:
             created = _parse_date(r.get("created_at"))
             if not created or (today - created).days < APPROVAL_AGE_DAYS:
@@ -155,10 +162,15 @@ def compute_agenda_items(db: Client) -> list[dict]:
                 "link": f"/dashboard/accounting?tab=validations&focus={r[id_field]}",
             })
 
-    _aged_pending("pending_operations", "Opération de caisse/comptes")
-    _aged_pending("cash_notes", "Avance de caisse")
-    _aged_pending("mission_notes", "Avance de frais de mission")
-    _aged_pending("purchase_requests", "Demande d'achat")
+    _aged_pending("pending_operations", "Opération de caisse/comptes", {"status": "pending"})
+    _aged_pending("cash_notes", "Avance de caisse", {"status": "pending"})
+    _aged_pending("mission_notes", "Avance de frais de mission", {"status": "pending"})
+    # purchase_requests n'a jamais de statut « pending » (brouillon →
+    # besoin_valide → … → commande_emise) : une DA attend la décision de
+    # l'admin tant qu'elle est en brouillon avec need_decision = en_attente
+    # (c'est aussi l'état où la notification « Une décision est attendue »
+    # est envoyée à la création, et celui où l'annulation d'une décision la remet).
+    _aged_pending("purchase_requests", "Demande d'achat", {"status": "brouillon", "need_decision": "en_attente"})
 
     return items
 

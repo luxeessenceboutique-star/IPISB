@@ -37,6 +37,10 @@ const CATEGORY_ICON: Record<string, typeof ListChecks> = {
 const CATEGORY_LABEL: Record<string, string> = {
   task: "Tâche", hr_leave: "Congé", hr_contract: "Contrat", hr_probation: "Période d'essai", accounting_approval: "Approbation",
 };
+// Pastille d'en-tête à laquelle appartient chaque nature d'échéance.
+const CATEGORY_GROUP: Record<string, "rh" | "comptabilite" | "tasks"> = {
+  task: "tasks", hr_leave: "rh", hr_contract: "rh", hr_probation: "rh", accounting_approval: "comptabilite",
+};
 const SEVERITY_META: Record<Severity, { label: string; chip: string; icon: typeof AlertTriangle }> = {
   overdue: { label: "En retard", chip: "chip-c-red", icon: AlertTriangle },
   today: { label: "Aujourd'hui", chip: "chip-c-amber", icon: CalendarClock },
@@ -104,10 +108,17 @@ export function AgendaGestionPage() {
     return g;
   }, [items]);
 
-  const byDomain = useMemo(() => {
-    const counts = { rh: 0, comptabilite: 0, general: 0, scolarite: 0 } as Record<string, number>;
-    for (const it of items) counts[it.domain] = (counts[it.domain] ?? 0) + 1;
-    return counts;
+  // Les pastilles comptent par NATURE d'échéance (task / hr_* / accounting_approval,
+  // le même vocabulaire que les lignes ci-dessous), pas par `domain` : une
+  // tâche rattachée au domaine Comptabilité reste une tâche — la compter par
+  // domaine la faisait disparaître de « Tâches » et gonfler « Comptabilité ».
+  const counts = useMemo(() => {
+    const c = { rh: 0, comptabilite: 0, tasks: 0 };
+    for (const it of items) {
+      const group = CATEGORY_GROUP[it.category];
+      if (group) c[group]++;
+    }
+    return c;
   }, [items]);
 
   return (
@@ -125,9 +136,9 @@ export function AgendaGestionPage() {
       />
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
-        <span className="chip-c chip-c-blue" style={{ fontSize: 11.5 }}><UserCog size={12} strokeWidth={1.8} />RH · {byDomain.rh} échéance{byDomain.rh !== 1 ? "s" : ""}</span>
-        <span className="chip-c chip-c-green" style={{ fontSize: 11.5 }}><Wallet size={12} strokeWidth={1.8} />Comptabilité · {byDomain.comptabilite} échéance{byDomain.comptabilite !== 1 ? "s" : ""}</span>
-        <span className="chip-c" style={{ fontSize: 11.5 }}><ListChecks size={12} strokeWidth={1.8} />Tâches · {(byDomain.general ?? 0) + (byDomain.scolarite ?? 0)} échéance{((byDomain.general ?? 0) + (byDomain.scolarite ?? 0)) !== 1 ? "s" : ""}</span>
+        <span className="chip-c chip-c-blue" style={{ fontSize: 11.5 }}><UserCog size={12} strokeWidth={1.8} />RH · {counts.rh} échéance{counts.rh !== 1 ? "s" : ""}</span>
+        <span className="chip-c chip-c-green" style={{ fontSize: 11.5 }}><Wallet size={12} strokeWidth={1.8} />Comptabilité · {counts.comptabilite} échéance{counts.comptabilite !== 1 ? "s" : ""}</span>
+        <span className="chip-c" style={{ fontSize: 11.5 }}><ListChecks size={12} strokeWidth={1.8} />Tâches · {counts.tasks} échéance{counts.tasks !== 1 ? "s" : ""}</span>
       </div>
 
       {loading ? (
