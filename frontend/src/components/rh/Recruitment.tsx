@@ -110,19 +110,61 @@ function AdsPanel() {
   );
 }
 
+/** « Excel, Word ; Anglais » → ["Excel", "Word", "Anglais"]. Les compétences
+ * d'une annonce restent stockées dans une seule colonne texte, séparées par
+ * des virgules : aucune migration, et les annonces existantes se relisent. */
+function splitCompetences(s: string | null | undefined): string[] {
+  return (s ?? "").split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+}
+
 function AdFormModal({ editing, onClose, onSaved }: { editing: Ad | null; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
-    poste: editing?.poste ?? "", description: editing?.description ?? "", competences: editing?.competences ?? "",
+    poste: editing?.poste ?? "", description: editing?.description ?? "",
     experience: editing?.experience ?? "", contenu: editing?.contenu ?? "", is_active: editing?.is_active ?? true,
   });
+  // Plusieurs compétences : une pastille chacune ; `draft` est la saisie en cours.
+  const [competences, setCompetences] = useState<string[]>(() => splitCompetences(editing?.competences));
+  const [draft, setDraft] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Suggestions tirées du référentiel de compétences (Formation > Compétences) ;
+  // la saisie libre reste possible, et un échec de chargement n'est pas bloquant.
+  useEffect(() => {
+    api.get("/api/rh/training/skills")
+      .then((r: { name: string }[]) => setSuggestions((r ?? []).map(s => s.name)))
+      .catch(() => {});
+  }, []);
+
+  /** `current` + les compétences de `raw`, sans doublon (casse ignorée). */
+  function withCompetences(current: string[], raw: string): string[] {
+    const next = [...current];
+    for (const c of splitCompetences(raw)) {
+      if (!next.some(x => x.toLowerCase() === c.toLowerCase())) next.push(c);
+    }
+    return next;
+  }
+
+  function commitDraft() {
+    if (!draft.trim()) return;
+    setCompetences(cs => withCompetences(cs, draft));
+    setDraft("");
+  }
+
+  function onDraftChange(v: string) {
+    // Une virgule / un point-virgule valide la saisie (et un collage « a, b, c » les ajoute toutes).
+    if (/[,;]/.test(v)) { setCompetences(cs => withCompetences(cs, v)); setDraft(""); }
+    else setDraft(v);
+  }
 
   async function submit() {
     if (!form.poste.trim() || !form.contenu.trim()) { toast.error("Le poste et le contenu sont requis."); return; }
+    // Une compétence tapée mais pas encore validée est incluse, jamais perdue.
+    const payload = { ...form, competences: withCompetences(competences, draft).join(", ") };
     setBusy(true);
     try {
-      if (editing) await api.patch(`/api/rh/recruitment/ads/${editing.id}`, form);
-      else await api.post("/api/rh/recruitment/ads", form);
+      if (editing) await api.patch(`/api/rh/recruitment/ads/${editing.id}`, payload);
+      else await api.post("/api/rh/recruitment/ads", payload);
       toast.success("Annonce enregistrée.");
       onSaved();
       onClose();
@@ -139,16 +181,34 @@ function AdFormModal({ editing, onClose, onSaved }: { editing: Ad | null; onClos
       <input type="text" value={form.poste} onChange={e => setForm(f => ({ ...f, poste: e.target.value }))} style={fieldStyle} />
       <label style={labelStyle}>Description</label>
       <input type="text" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={fieldStyle} />
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <label style={labelStyle}>Compétences</label>
-          <input type="text" value={form.competences} onChange={e => setForm(f => ({ ...f, competences: e.target.value }))} style={fieldStyle} />
+      <label style={labelStyle}>Compétences — ajoutez-en autant que nécessaire</label>
+      {competences.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+          {competences.map(c => (
+            <span key={c} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "4px 10px", borderRadius: 999, background: "var(--pal-pale)", color: PAL.ink }}>
+              {c}
+              <button type="button" onClick={() => setCompetences(cs => cs.filter(x => x !== c))} title="Retirer" style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, display: "flex", padding: 0 }}><X size={11} strokeWidth={2} /></button>
+            </span>
+          ))}
         </div>
-        <div>
-          <label style={labelStyle}>Expérience</label>
-          <input type="text" value={form.experience} onChange={e => setForm(f => ({ ...f, experience: e.target.value }))} style={fieldStyle} />
-        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          type="text" list="ad-competences-suggestions" value={draft} placeholder="Ex. Techniques des soins — Entrée ou virgule pour ajouter"
+          onChange={e => onDraftChange(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); commitDraft(); }
+            else if (e.key === "Backspace" && !draft && competences.length > 0) setCompetences(cs => cs.slice(0, -1));
+          }}
+          style={{ ...fieldStyle, flex: 1, width: "auto", minWidth: 0 }}
+        />
+        <button type="button" onClick={commitDraft} className="btn-c btn-c-sm btn-c-primary" style={{ alignSelf: "flex-start", marginTop: 8 }}><Plus size={13} strokeWidth={1.7} />Ajouter</button>
       </div>
+      <datalist id="ad-competences-suggestions">
+        {suggestions.filter(s => !competences.some(c => c.toLowerCase() === s.toLowerCase())).map(s => <option key={s} value={s} />)}
+      </datalist>
+      <label style={labelStyle}>Expérience</label>
+      <input type="text" value={form.experience} onChange={e => setForm(f => ({ ...f, experience: e.target.value }))} style={fieldStyle} />
       <label style={labelStyle}>Contenu de l'annonce *</label>
       <textarea value={form.contenu} onChange={e => setForm(f => ({ ...f, contenu: e.target.value }))} rows={5} style={{ ...fieldStyle, resize: "vertical" as const }} />
       <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: PAL.ink, marginBottom: 20 }}>

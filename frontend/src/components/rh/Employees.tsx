@@ -150,7 +150,7 @@ export function FormModal({ editing, departments, contractTypes, onClose, onSave
       ...form,
       hire_date: form.hire_date || null,
       salary: form.salary ? parseFloat(form.salary) : null,
-      cin: form.cin || null,
+      cin: form.cin.trim() || null,
       matricule: form.matricule || null,
       email: form.email || null,
       phone: form.phone || null,
@@ -294,7 +294,10 @@ export function FormModal({ editing, departments, contractTypes, onClose, onSave
         <Field label="Email personnel"><input type="email" value={form.personal_email} onChange={e => set("personal_email", e.target.value)} className="u-input" style={fieldStyle} /></Field>
 
         <SectionTitle>Pièce d'identité</SectionTitle>
-        <Field label="CIN — Date de délivrance"><input type="date" value={form.cin_issue_date} onChange={e => set("cin_issue_date", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="N° CIN"><input type="text" value={form.cin} onChange={e => set("cin", e.target.value)} className="u-input" style={fieldStyle} placeholder="ex. AB123456" /></Field>
+          <Field label="CIN — Date de délivrance"><input type="date" value={form.cin_issue_date} onChange={e => set("cin_issue_date", e.target.value)} className="u-input" style={fieldStyle} /></Field>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field label="N° Passeport"><input type="text" value={form.passport_number} onChange={e => set("passport_number", e.target.value)} className="u-input" style={fieldStyle} /></Field>
           <Field label="Passeport — Date de validité"><input type="date" value={form.cin_expiry_date} onChange={e => set("cin_expiry_date", e.target.value)} className="u-input" style={fieldStyle} /></Field>

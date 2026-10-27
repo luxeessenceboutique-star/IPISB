@@ -18,7 +18,15 @@ const REVIEW_TYPES = [
 type ReviewType = (typeof REVIEW_TYPES)[number]["key"];
 export const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle" };
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - 3 + i);
+// Plage d'années proposée pour la période d'une évaluation : large (plus de
+// limite à ±3 ans), et toujours élargie à l'année déjà choisie pour qu'une
+// évaluation ancienne ou lointaine s'affiche et se modifie correctement.
+const FIRST_YEAR = 2000;
+const LAST_YEAR = Math.max(2050, CURRENT_YEAR + 10);
+function yearOptions(selected: number): number[] {
+  const first = Math.min(FIRST_YEAR, selected), last = Math.max(LAST_YEAR, selected);
+  return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+}
 const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
 export type Review = {
@@ -53,10 +61,11 @@ function fmtMAD(v: number | null | undefined) {
  * côté backend, qui parsent ce format. */
 function periodPicker(type: ReviewType, period: string, setPeriod: (p: string) => void) {
   const year = parseInt(period.split("-")[0], 10) || CURRENT_YEAR;
+  const years = yearOptions(year);
   if (type === "annual") {
     return (
       <select value={year} onChange={e => setPeriod(e.target.value)} className="u-input" style={fieldStyle}>
-        {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        {years.map(y => <option key={y} value={y}>{y}</option>)}
       </select>
     );
   }
@@ -65,7 +74,7 @@ function periodPicker(type: ReviewType, period: string, setPeriod: (p: string) =
     return (
       <div style={{ display: "flex", gap: 8 }}>
         <select value={year} onChange={e => setPeriod(`${e.target.value}-${sem}`)} className="u-input" style={fieldStyle}>
-          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
         </select>
         <select value={sem} onChange={e => setPeriod(`${year}-${e.target.value}`)} className="u-input" style={fieldStyle}>
           <option value="S1">Semestre 1</option>
@@ -81,7 +90,7 @@ function periodPicker(type: ReviewType, period: string, setPeriod: (p: string) =
         {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
       </select>
       <select value={year} onChange={e => setPeriod(`${e.target.value}-${String(month).padStart(2, "0")}`)} className="u-input" style={fieldStyle}>
-        {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        {years.map(y => <option key={y} value={y}>{y}</option>)}
       </select>
     </div>
   );

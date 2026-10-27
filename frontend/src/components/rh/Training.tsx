@@ -245,8 +245,23 @@ function AssignmentsPanel({ employees, catalog }: { employees: Employee[]; catal
 
 // ── Skills ───────────────────────────────────────────────────────────────
 
-type Skill = { id: string; name: string; category: string };
+type Skill = { id: string; name: string; category: string; description?: string | null };
 type EmployeeSkill = { id: string; employee_id: string; skill_id: string; skill_name: string | null; level: string };
+
+const CATEGORY_LABEL: Record<string, string> = {
+  technique: "Technique", soft_skills: "Savoir-être", compliance: "Conformité",
+  management: "Management", langue: "Langues", securite: "Santé et sécurité",
+};
+const categoryLabel = (c: string) => CATEGORY_LABEL[c] ?? c;
+
+/** Compétences du référentiel regroupées par catégorie (ordre de CATEGORIES,
+ * puis les catégories libres éventuelles) — le dictionnaire compte des dizaines
+ * d'entrées, une liste à plat ne serait pas exploitable. */
+function groupByCategory(skills: Skill[]): { category: string; items: Skill[] }[] {
+  const present = new Set(skills.map(s => s.category));
+  const ordered = [...CATEGORIES.filter(c => present.has(c)), ...[...present].filter(c => !CATEGORIES.includes(c))];
+  return ordered.map(category => ({ category, items: skills.filter(s => s.category === category) }));
+}
 
 function SkillsPanel({ employees }: { employees: Employee[] }) {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -298,16 +313,23 @@ function SkillsPanel({ employees }: { employees: Employee[] }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <input type="text" placeholder="Nom de la compétence" value={newSkill.name} onChange={e => setNewSkill(s => ({ ...s, name: e.target.value }))} className="u-input" style={{ padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, flex: "1 1 180px" }} />
           <select value={newSkill.category} onChange={e => setNewSkill(s => ({ ...s, category: e.target.value }))} className="u-input" style={{ padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5 }}>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {CATEGORIES.map(c => <option key={c} value={c}>{categoryLabel(c)}</option>)}
           </select>
           <button type="button" onClick={addSkill} className="btn-c btn-c-sm btn-c-primary"><Plus size={13} strokeWidth={1.7} />Ajouter</button>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {skills.map(s => (
-            <span key={s.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "4px 10px", borderRadius: 999, background: "var(--pal-pale)", color: PAL.ink }}>
-              {s.name}
-              <button onClick={() => removeSkill(s)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, display: "flex" }}><Trash2 size={11} strokeWidth={1.7} /></button>
-            </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {groupByCategory(skills).map(g => (
+            <div key={g.category}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: PAL.muted, letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 6 }}>{categoryLabel(g.category)} · {g.items.length}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {g.items.map(s => (
+                  <span key={s.id} title={s.description ?? undefined} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, padding: "4px 10px", borderRadius: 999, background: "var(--pal-pale)", color: PAL.ink }}>
+                    {s.name}
+                    <button onClick={() => removeSkill(s)} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, display: "flex" }}><Trash2 size={11} strokeWidth={1.7} /></button>
+                  </span>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -321,7 +343,11 @@ function SkillsPanel({ employees }: { employees: Employee[] }) {
           </select>
           <select value={assign.skill_id} onChange={e => setAssign(a => ({ ...a, skill_id: e.target.value }))} className="u-input" style={{ padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5, flex: "1 1 160px" }}>
             <option value="">Compétence…</option>
-            {skills.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {groupByCategory(skills).map(g => (
+              <optgroup key={g.category} label={categoryLabel(g.category)}>
+                {g.items.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </optgroup>
+            ))}
           </select>
           <select value={assign.level} onChange={e => setAssign(a => ({ ...a, level: e.target.value }))} className="u-input" style={{ padding: "8px 10px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 12.5 }}>
             {LEVELS.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}
