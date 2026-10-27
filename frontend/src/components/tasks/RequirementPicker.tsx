@@ -76,23 +76,40 @@ function HeadingRow({ heading, depth, selected, onSelect }: {
  * à la tâche en cours de création — remplit linked_entity_type/
  * linked_entity_id (colonnes déjà présentes en base, jusqu'ici jamais
  * renseignées par aucune UI). Sélection unique : cliquer un autre élément
- * remplace la sélection, re-cliquer le même l'efface. */
-export function RequirementPicker({ selected, onChange }: {
-  selected: LinkedEntity | null; onChange: (e: LinkedEntity | null) => void;
+ * remplace la sélection, re-cliquer le même l'efface.
+ *
+ * Les fiches de poste proposées sont uniquement celles du poste réellement
+ * occupé par les `assigneeIds` (jamais celles de tout le monde) : sans
+ * assigné, aucune fiche n'est listée. */
+export function RequirementPicker({ selected, assigneeIds, onChange }: {
+  selected: LinkedEntity | null; assigneeIds: string[]; onChange: (e: LinkedEntity | null) => void;
 }) {
   const [jds, setJds] = useState<JobDescription[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingGoals, setLoadingGoals] = useState(true);
+  const [loadingJds, setLoadingJds] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      api.get("/api/rh/job-descriptions").catch(() => []),
-      api.get("/api/rh/performance/goals").catch(() => []),
-    ]).then(([jdRes, goalRes]) => {
-      setJds(jdRes ?? []);
-      setGoals(goalRes ?? []);
-    }).finally(() => setLoading(false));
+    api.get("/api/rh/performance/goals").catch(() => [])
+      .then((res: Goal[]) => setGoals(res ?? []))
+      .finally(() => setLoadingGoals(false));
   }, []);
+
+  const assigneeKey = assigneeIds.join(",");
+  useEffect(() => {
+    if (assigneeIds.length === 0) { setJds([]); setLoadingJds(false); return; }
+    let active = true;
+    setLoadingJds(true);
+    const qs = new URLSearchParams();
+    for (const id of assigneeIds) qs.append("user_ids", id);
+    api.get(`/api/rh/job-descriptions?${qs.toString()}`).catch(() => [])
+      .then((res: JobDescription[]) => { if (active) setJds(res ?? []); })
+      .finally(() => { if (active) setLoadingJds(false); });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assigneeKey]);
+
+  const loading = loadingGoals || loadingJds;
 
   function select(e: LinkedEntity) {
     onChange(selected?.type === e.type && selected.id === e.id ? null : e);
@@ -117,7 +134,11 @@ export function RequirementPicker({ selected, onChange }: {
         {loading ? (
           <div className="shimmer" style={{ height: 16, borderRadius: 999, margin: 4 }} />
         ) : goals.length === 0 && jdsWithHeadings.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 12, color: PAL.muted, padding: 6 }}>Aucune exigence disponible pour l'instant.</p>
+          <p style={{ margin: 0, fontSize: 12, color: PAL.muted, padding: 6 }}>
+            {assigneeIds.length === 0
+              ? "Choisissez d'abord un assigné pour voir sa fiche de poste."
+              : "Aucune fiche de poste trouvée pour l'assigné (poste non renseigné ou fiche non digitalisée)."}
+          </p>
         ) : (
           <>
             {goals.length > 0 && (
@@ -132,6 +153,13 @@ export function RequirementPicker({ selected, onChange }: {
                   );
                 })}
               </div>
+            )}
+            {jdsWithHeadings.length === 0 && (
+              <p style={{ margin: 0, fontSize: 12, color: PAL.muted, padding: "4px 8px" }}>
+                {assigneeIds.length === 0
+                  ? "Choisissez d'abord un assigné pour voir sa fiche de poste."
+                  : "Aucune fiche de poste trouvée pour l'assigné (poste non renseigné ou fiche non digitalisée)."}
+              </p>
             )}
             {jdsWithHeadings.length > 0 && (
               <div>

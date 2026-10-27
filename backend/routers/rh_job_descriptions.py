@@ -1,5 +1,5 @@
 from typing import Annotated, Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
@@ -48,13 +48,39 @@ def _load_heading_tasks(db: Client, heading_ids: list[str]) -> dict[str, list[di
     return out
 
 
+def _positions_of_users(db: Client, user_ids: list[str]) -> set[tuple[str, str]]:
+    """(département, poste) des fiches salarié correspondant aux comptes
+    `user_ids`. employees n'a pas de colonne user_id : le lien compte → salarié
+    se fait par email, à défaut par nom complet (insensible à la casse)."""
+    profiles = db.from_("profiles").select("email, full_name").in_("id", user_ids).execute().data or []
+    emails = {p["email"].strip().lower() for p in profiles if p.get("email")}
+    names = {p["full_name"].strip().lower() for p in profiles if p.get("full_name")}
+    employees = db.from_("employees").select("email, full_name, department, position").execute().data or []
+    out: set[tuple[str, str]] = set()
+    for e in employees:
+        if not e.get("position"):
+            continue
+        by_email = bool(e.get("email")) and e["email"].strip().lower() in emails
+        by_name = bool(e.get("full_name")) and e["full_name"].strip().lower() in names
+        if by_email or by_name:
+            # Le département est souvent vide côté salarié (NULL) comme côté
+            # fiche de poste ('') : les deux comptent comme « sans service ».
+            out.add((e.get("department") or "", e["position"]))
+    return out
+
+
 @router.get("")
 async def list_job_descriptions(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
     department: Optional[str] = None,
     position: Optional[str] = None,
+    user_ids: Annotated[Optional[list[str]], Query()] = None,
 ):
+    """`user_ids` (répétable, optionnel) restreint aux fiches de poste du poste
+    réellement occupé par ces comptes — utilisé par la modale de création de
+    tâche pour ne proposer que la fiche de l'assigné, jamais celle de tout le
+    monde. Aucun salarié correspondant → liste vide."""
     _require_admin(user)
     query = db.from_("job_descriptions").select("*")
     if department:
@@ -62,6 +88,10 @@ async def list_job_descriptions(
     if position:
         query = query.eq("position", position)
     rows = query.order("department").order("position").execute().data or []
+
+    if user_ids:
+        wanted = _positions_of_users(db, user_ids)
+        rows = [r for r in rows if (r.get("department") or "", r["position"]) in wanted]
 
     if not rows:
         return []

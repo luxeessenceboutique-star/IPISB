@@ -174,7 +174,7 @@ const translations = {
     "dash.courses":       "Cours",
     "dash.assignments":   "Contrôle continu",
     "dash.tasks":         "Tâches",
-    "dash.accountingTasks": "Tâches Comptabilité",
+    "dash.accountingTasks": "Tâches et instances",
     "dash.exams":         "Examens",
     "dash.agenda":        "Agenda",
     "dash.notifications": "Notifications",

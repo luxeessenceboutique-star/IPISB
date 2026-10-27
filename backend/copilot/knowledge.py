@@ -106,7 +106,7 @@ PLATFORM_SECTIONS: list[dict] = [
         ),
     },
     {
-        "key": "accounting_tasks", "title": "Tâches Comptabilité", "path": "/dashboard/accounting-tasks", "roles": ["admin"],
+        "key": "accounting_tasks", "title": "Tâches et instances", "path": "/dashboard/accounting-tasks", "roles": ["admin"],
         "body": (
             "Tableau Kanban (vue Kanban ou liste) dédié aux tâches de l'équipe Comptabilité, séparé du "
             "module Comptabilité lui-même — raccourci direct dans la barre latérale, juste après "

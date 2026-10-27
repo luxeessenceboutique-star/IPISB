@@ -53,7 +53,15 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
 
   function toggleChannel(c: TaskChannel) {
     setChannels(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]);
-    setAssigneeIds([]);
+    changeAssignees([]);
+  }
+
+  // La fiche de poste liée appartient à l'assigné : si les assignés changent,
+  // on retire un lien fiche de poste devenu potentiellement étranger (les
+  // objectifs RH ne dépendent pas de l'assigné).
+  function changeAssignees(ids: string[]) {
+    setAssigneeIds(ids);
+    setLinkedEntity(le => (le && le.type !== "performance_goal" ? null : le));
   }
 
   async function submit() {
@@ -164,7 +172,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
           options={assigneeOptions}
           disabled={isComptabilite && (channels.length === 0 || loadingChannelUsers)}
           placeholder="— Non assignée (backlog) —"
-          onChange={setAssigneeIds}
+          onChange={changeAssignees}
         />
         {isComptabilite && channels.length === 0 && (
           <p style={{ margin: "8px 0 0", fontSize: 11.5, color: PAL.muted }}>Choisissez d'abord au moins un canal pour voir les profils correspondants.</p>
@@ -172,7 +180,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
 
         <label style={{ ...labelStyle, display: "block", marginTop: 18 }}>Lier à une exigence (fiche de poste / objectif RH)</label>
         <div style={{ marginTop: 8 }}>
-          <RequirementPicker selected={linkedEntity} onChange={setLinkedEntity} />
+          <RequirementPicker selected={linkedEntity} assigneeIds={assigneeIds} onChange={setLinkedEntity} />
         </div>
 
         <div style={{ marginBottom: 24 }} />
