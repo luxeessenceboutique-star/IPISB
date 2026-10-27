@@ -349,7 +349,7 @@ function CongesTab({ employeeId }: { employeeId: string }) {
           <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
             <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{LEAVE_TYPE_LABEL[l.type] ?? l.type}</div>
             <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>
-              {new Date(l.start_date).toLocaleDateString("fr-FR")} → {new Date(l.end_date).toLocaleDateString("fr-FR")} · {l.days} j
+              {new Date(l.start_date).toLocaleDateString("fr-FR")} → {new Date(l.end_date).toLocaleDateString("fr-FR")} · {String(l.days).replace(".", ",")} j
             </div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999, color: leaveStatusColor(l.status), background: "var(--pal-pale)" }}>

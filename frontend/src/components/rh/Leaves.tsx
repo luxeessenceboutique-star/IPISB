@@ -63,11 +63,24 @@ type Balance = {
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
+// 0.5 → « 0,5 » : les durées peuvent être des demi-journées.
+const fmtDays = (n: number) => String(n).replace(".", ",");
+
 function statusColor(status: string) {
   if (status === "approved") return "var(--pal-good)";
   if (status === "rejected") return "var(--pal-danger)";
   if (status === "cancelled") return CANCELLED_MARKER.color;
   return "var(--pal-warn)";
+}
+
+/** Nombre de jours calendaires entre deux dates ISO, bornes incluses (du 01/10
+ * au 10/10 → 10), ou null si une date manque ou si la fin précède le début.
+ * Calcul en UTC pour qu'un changement d'heure ne décale jamais le résultat. */
+function daysBetweenInclusive(start: string, end: string): number | null {
+  const s = Date.parse(`${start}T00:00:00Z`);
+  const e = Date.parse(`${end}T00:00:00Z`);
+  if (Number.isNaN(s) || Number.isNaN(e) || e < s) return null;
+  return Math.round((e - s) / 86_400_000) + 1;
 }
 
 function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onClose: () => void; onSaved: () => void }) {
@@ -81,10 +94,24 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
   const [busy, setBusy] = useState(false);
   const docRequired = form.type !== "unjustified_absence";
 
+  // Le nombre de jours suit les dates (le champ reste modifiable ensuite, p. ex.
+  // 0,5 pour une demi-journée). Une fin avant le début est ramenée au début.
+  function setDate(key: "start_date" | "end_date", value: string) {
+    setForm(f => {
+      const next = { ...f, [key]: value };
+      if (key === "start_date" && value && next.end_date < value) next.end_date = value;
+      const n = daysBetweenInclusive(next.start_date, next.end_date);
+      return n === null ? next : { ...next, days: String(n) };
+    });
+  }
+
   async function submit() {
     if (!form.employee_id) { toast.error("Sélectionnez un employé."); return; }
-    const days = parseInt(form.days, 10);
-    if (!days || days <= 0) { toast.error("Le nombre de jours doit être positif."); return; }
+    if (daysBetweenInclusive(form.start_date, form.end_date) === null) { toast.error("Renseignez des dates valides (la fin ne peut pas précéder le début)."); return; }
+    // Demi-journée autorisée (0,5) : on accepte la virgule saisie à la main et
+    // on exige un pas de 0,5 (0,5 ; 1 ; 1,5…), comme le backend.
+    const days = parseFloat(form.days.replace(",", "."));
+    if (!(days > 0) || !Number.isInteger(days * 2)) { toast.error("Le nombre de jours doit être positif, par pas de 0,5 (ex. 0,5 ; 1 ; 1,5)."); return; }
     setBusy(true);
     try {
       const created = await api.post("/api/rh/leaves", {
@@ -132,16 +159,19 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <label style={labelStyle}>Du</label>
-            <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className="u-input" style={fieldStyle} />
+            <input type="date" value={form.start_date} onChange={e => setDate("start_date", e.target.value)} className="u-input" style={fieldStyle} />
           </div>
           <div>
             <label style={labelStyle}>Au</label>
-            <input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="u-input" style={fieldStyle} />
+            <input type="date" value={form.end_date} min={form.start_date || undefined} onChange={e => setDate("end_date", e.target.value)} className="u-input" style={fieldStyle} />
           </div>
         </div>
 
-        <label style={labelStyle}>Nombre de jours</label>
-        <input type="number" min="1" value={form.days} onChange={e => setForm(f => ({ ...f, days: e.target.value }))} className="u-input" style={fieldStyle} />
+        <label style={labelStyle}>
+          Nombre de jours{" "}
+          <span style={{ fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>— calculé d'après les dates, modifiable (ex. 0,5)</span>
+        </label>
+        <input type="number" min="0.5" step="0.5" value={form.days} onChange={e => setForm(f => ({ ...f, days: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <label style={labelStyle}>Motif</label>
         <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />
@@ -160,17 +190,12 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
   );
 }
 
-function BalanceRow({ label, used, total }: { label: string; used: number; total: number }) {
-  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+// Jours consommés uniquement : le plafond annuel (12 j, 0 j…) n'est pas affiché.
+function BalanceRow({ label, used }: { label: string; used: number }) {
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
-        <span style={{ color: PAL.muted }}>{label}</span>
-        <span style={{ color: PAL.ink, fontWeight: 600 }}>{used} / {total} j</span>
-      </div>
-      <div style={{ height: 5, borderRadius: 99, background: "var(--pal-pale)", overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: "var(--pal-primary)" }} />
-      </div>
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 10 }}>
+      <span style={{ color: PAL.muted }}>{label}</span>
+      <span style={{ color: PAL.ink, fontWeight: 600 }}>{fmtDays(used)} j</span>
     </div>
   );
 }
@@ -469,7 +494,7 @@ export function RhLeaves() {
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{l.employee_name || "—"}</div>
                     <div className="mt-0.5" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: PAL.muted }}>
-                      {typeInfo(l.type).label} · {new Date(l.start_date).toLocaleDateString("fr-FR")} → {new Date(l.end_date).toLocaleDateString("fr-FR")} · {l.days} j
+                      {typeInfo(l.type).label} · {new Date(l.start_date).toLocaleDateString("fr-FR")} → {new Date(l.end_date).toLocaleDateString("fr-FR")} · {fmtDays(l.days)} j
                       {l.document_path && <FileText size={12} strokeWidth={1.8} />}
                     </div>
                   </div>
@@ -511,12 +536,15 @@ export function RhLeaves() {
                 </span>
                 <div style={{ fontSize: 16, fontWeight: 700, color: PAL.ink }}>{selected.employee_name}</div>
               </div>
-              <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 16 }}>{typeInfo(selected.type).label} · Solde de congés — année en cours</div>
+              <div style={{ fontSize: 12.5, color: PAL.muted, marginBottom: 16 }}>{typeInfo(selected.type).label} · Jours consommés — année en cours</div>
               {balance ? (
                 <>
-                  <BalanceRow label="Autre (A)" used={balance.annual_used} total={balance.annual_total} />
-                  <BalanceRow label="Maladie (M)" used={balance.sick_used} total={balance.sick_total} />
-                  <BalanceRow label="Permission (P)" used={balance.personal_used} total={balance.personal_total} />
+                  {/* Catégories les plus utilisées en premier (à égalité : ordre A, M, P). */}
+                  {[
+                    { label: "Autre (A)", used: balance.annual_used },
+                    { label: "Maladie (M)", used: balance.sick_used },
+                    { label: "Permission (P)", used: balance.personal_used },
+                  ].sort((a, b) => b.used - a.used).map(r => <BalanceRow key={r.label} label={r.label} used={r.used} />)}
                 </>
               ) : (
                 <div className="shimmer" style={{ height: 40, borderRadius: 8 }} />

@@ -156,12 +156,17 @@ async def create_leave(
     db: Annotated[Client, Depends(get_db)],
 ):
     _require_write(user)
-    if body.days <= 0:
-        raise HTTPException(400, "days must be positive")
+    if body.days <= 0 or (body.days * 2) % 1 != 0:
+        raise HTTPException(400, "Le nombre de jours doit être positif, par pas de 0,5 (ex. 0,5 ; 1 ; 1,5).")
     if body.type not in VALID_LEAVE_TYPES:
         raise HTTPException(400, f"type must be one of: {', '.join(sorted(VALID_LEAVE_TYPES))}")
 
     data = body.model_dump()
+    # Une durée entière reste un entier (1, pas 1.0) : la colonne n'accepte une
+    # fraction qu'après la migration phase 14, mais les jours entiers doivent
+    # continuer de passer même si le backend est déployé avant elle.
+    if data["days"] == int(data["days"]):
+        data["days"] = int(data["days"])
     data["status"] = "pending"
     data["created_by"] = user.id
 

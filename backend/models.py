@@ -981,7 +981,7 @@ class LeaveRequestCreate(BaseModel):
     type: str = "other"              # 'recovery'(R) | 'sick'(M) | 'unpaid'(CS) | 'permission'(P) | 'other'(A) | 'unjustified_absence'(AJ)
     start_date: str
     end_date: str
-    days: int
+    days: float                      # multiple de 0,5 (demi-journée possible) — voir create_leave
     reason: Optional[str] = None
 
 
