@@ -144,7 +144,7 @@ function DashboardHome() {
                   padding: "10px 16px", marginBottom: -1,
                   border: "none", borderBottom: active ? "2px solid var(--pal-primary)" : "2px solid transparent",
                   background: "transparent", cursor: "pointer",
-                  fontFamily: '"Manrope", system-ui, sans-serif', fontSize: 13.5, fontWeight: active ? 700 : 600,
+                  fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 13.5, fontWeight: active ? 700 : 600,
                   color: active ? "var(--pal-ink)" : "var(--pal-muted)",
                 }}
               >

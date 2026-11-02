@@ -70,7 +70,7 @@ const PAL = {
   cream:   "oklch(97% 0.012 90)",
   success: "oklch(55% 0.14 145)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 // ── Create Account Modal ──────────────────────────────────────────────────────
 

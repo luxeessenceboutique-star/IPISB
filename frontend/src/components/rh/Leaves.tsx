@@ -10,7 +10,7 @@ import type { Employee } from "./Employees";
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 // Taxonomie officielle : 6 types de congé demandables, chacun avec un code
 // et une couleur distincte pour le calendrier. "Travail" (T, vert) n'est pas
@@ -114,7 +114,7 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 26, fontWeight: 700, color: PAL.ink, margin: "0 0 20px" }}>
           Nouvelle demande de congé
         </h2>
 
@@ -210,7 +210,7 @@ function LeaveCalendar({ leaves }: { leaves: Leave[] }) {
           <button type="button" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))} className="btn-c btn-c-sm btn-c-ghost">
             <ChevronLeft size={14} strokeWidth={1.7} />
           </button>
-          <div style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 600, color: PAL.ink, textTransform: "capitalize" as const, minWidth: 170, textAlign: "center" as const }}>
+          <div style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 22, fontWeight: 700, color: PAL.ink, textTransform: "capitalize" as const, minWidth: 170, textAlign: "center" as const }}>
             {monthLabel}
           </div>
           <button type="button" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))} className="btn-c btn-c-sm btn-c-ghost">

@@ -27,7 +27,7 @@ export const Route = createFileRoute("/dashboard/tasks")({
   component: TasksPage,
 });
 
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 function TasksPage() {
   const { can } = usePermissions();

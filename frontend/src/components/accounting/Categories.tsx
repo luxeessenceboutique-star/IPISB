@@ -8,7 +8,7 @@ import { fmtMAD } from "./Overview";
 const PAL_LINE = "oklch(88% 0.015 170)";
 const PAL_PAPER = "oklch(99% 0.005 160)";
 const PAL_MUTED = "oklch(48% 0.02 180)";
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 const SUGGESTED = [

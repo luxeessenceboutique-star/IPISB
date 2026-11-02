@@ -14,7 +14,7 @@ const PAL = {
   line:    "oklch(88% 0.015 170)",
   paper:   "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 export type Preview = { url: string; title: string; isPdf: boolean };
 

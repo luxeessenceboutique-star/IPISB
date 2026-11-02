@@ -34,7 +34,7 @@ export const Route = createFileRoute("/dashboard/accounting-tasks")({
   component: AccountingTasksPage,
 });
 
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 function AccountingTasksPage() {
   const { roles } = useAuth();
@@ -73,7 +73,7 @@ function AccountingTasksPage() {
     <div style={{ fontFamily: sans }}>
       <PageHead
         eyebrow="Comptabilité"
-        title="Tâches Comptabilité"
+        title="Tâches et instances"
         sub="Suivi des tâches de l'équipe par canal V0/V1/V2 — vue Kanban ou liste."
         actions={
           <>

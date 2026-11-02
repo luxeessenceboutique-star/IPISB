@@ -20,8 +20,8 @@ const PAL = {
   paper:   "oklch(99% 0.005 160)",
   line:    "oklch(88% 0.015 170)",
 };
-const serif = '"Cormorant Garamond", Georgia, serif';
-const sans  = '"Manrope", system-ui, sans-serif';
+const serif = '"Plus Jakarta Sans", system-ui, sans-serif';
+const sans  = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono  = '"JetBrains Mono", ui-monospace, monospace';
 
 export const Route = createFileRoute("/auth")({

@@ -21,7 +21,7 @@ function assignableUrl(channels: TaskChannel[]): string {
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
@@ -196,7 +196,7 @@ export function TaskDetailModal({ taskId, users, onClose, onChanged }: {
             defaultValue={task.title}
             disabled={!canEdit || busy}
             onBlur={e => e.target.value.trim() && e.target.value !== task.title && patch({ title: e.target.value.trim() })}
-            style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 24, fontWeight: 500, color: PAL.ink, border: 0, background: "transparent", outline: "none", flex: 1, padding: 0 }}
+            style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 24, fontWeight: 700, color: PAL.ink, border: 0, background: "transparent", outline: "none", flex: 1, padding: 0 }}
           />
           {showDelete && (
             <button onClick={remove} title="Supprimer" style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }}><Trash2 size={16} strokeWidth={1.8} /></button>

@@ -14,9 +14,9 @@ const PAL = {
   pale: "var(--pal-pale)",
   primary: "var(--pal-primary)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
-const titleFont = '"Cormorant Garamond", Georgia, serif';
+const titleFont = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 type Purchase = {
   id: string;

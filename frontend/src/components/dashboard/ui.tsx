@@ -6,18 +6,23 @@
  */
 import type { CSSProperties, ReactNode } from "react";
 
-/** Eyebrow + 34px serif title + optional sub + right-aligned actions. */
+/** Eyebrow + 34px serif title + optional sub + right-aligned actions.
+ * `size="lg"` is the redesigned scale (42px title, teal eyebrow) used by the
+ * pages already migrated to the new mockup. */
 export function PageHead({
   eyebrow,
   title,
   sub,
   actions,
+  size = "md",
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
   sub?: ReactNode;
   actions?: ReactNode;
+  size?: "md" | "lg";
 }) {
+  const lg = size === "lg";
   return (
     <div
       style={{
@@ -25,17 +30,21 @@ export function PageHead({
         alignItems: "flex-end",
         justifyContent: "space-between",
         gap: 16,
-        marginBottom: 26,
+        marginBottom: lg ? 30 : 26,
         flexWrap: "wrap",
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
-        <h1 className="h-serif" style={{ fontSize: 34, lineHeight: 1.05, letterSpacing: ".005em" }}>
+        {eyebrow ? (
+          <span className="eyebrow" style={lg ? { color: "var(--pal-primary-deep)" } : undefined}>
+            {eyebrow}
+          </span>
+        ) : null}
+        <h1 className="h-serif" style={{ fontSize: lg ? 42 : 34, lineHeight: 1.05, letterSpacing: ".005em" }}>
           {title}
         </h1>
         {sub ? (
-          <p style={{ color: "var(--pal-muted)", fontSize: 13.5, marginTop: 2 }}>{sub}</p>
+          <p style={{ color: "var(--pal-muted)", fontSize: lg ? 15 : 13.5, marginTop: 2 }}>{sub}</p>
         ) : null}
       </div>
       {actions ? (

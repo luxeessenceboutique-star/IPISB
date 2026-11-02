@@ -8,7 +8,7 @@ import {
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const selectStyle = {
   fontFamily: sans, fontSize: 12.5, color: PAL.ink, border: `1px solid ${PAL.line}`,
   borderRadius: 8, padding: "6px 10px", background: "transparent", outline: "none",

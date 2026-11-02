@@ -36,7 +36,7 @@ type Summary = {
   outflow_composition: StatusRow[];
 };
 
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 const MONTHS_SHORT = ["janv.","fevr.","mars","avr.","mai","juin","juil.","aout","sept.","oct.","nov.","dec."];
 const C = {

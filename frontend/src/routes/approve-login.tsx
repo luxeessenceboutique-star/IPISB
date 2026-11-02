@@ -17,8 +17,8 @@ const PAL = {
   danger: "oklch(64% 0.18 25)",
   success:"oklch(55% 0.14 150)",
 };
-const serif = '"Cormorant Garamond", Georgia, serif';
-const sans  = '"Manrope", system-ui, sans-serif';
+const serif = '"Plus Jakarta Sans", system-ui, sans-serif';
+const sans  = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 function ApproveLoginPage() {
   const { token } = Route.useSearch();

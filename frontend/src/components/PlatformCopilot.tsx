@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Sparkles, X, Send, ChevronDown, Check, Loader2 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 type Lang = "fr" | "ar" | "en" | "darija";
 // Une action proposée par le copilote (créer/modifier/supprimer/approuver…)

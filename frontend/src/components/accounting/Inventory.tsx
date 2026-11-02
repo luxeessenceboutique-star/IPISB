@@ -19,9 +19,9 @@ const PAL = {
   pale: "var(--pal-pale)",
   primary: "var(--pal-primary)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
-const titleFont = '"Cormorant Garamond", Georgia, serif';
+const titleFont = '"Plus Jakarta Sans", system-ui, sans-serif';
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 
 const UNITS = ["pièce", "boîte", "carton", "paquet", "lot", "kg", "g", "L", "mL", "m", "m²", "rame", "flacon"];

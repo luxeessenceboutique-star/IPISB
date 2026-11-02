@@ -18,7 +18,7 @@ export const Route = createFileRoute("/dashboard/reunions-instances")({
   component: ReunionsInstancesPage,
 });
 
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 function ReunionsInstancesPage() {
   const [niveau, setNiveau] = useState<1 | 2>(1);
