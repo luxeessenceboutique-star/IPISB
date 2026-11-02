@@ -3,24 +3,26 @@ import { Logo } from "@/components/Logo";
 interface WordmarkProps {
   size?: number;
   dark?: boolean;
+  showText?: boolean;
 }
 
-export function Wordmark({ size = 36, dark = false }: WordmarkProps) {
+export function Wordmark({ size = 36, dark = false, showText = true }: WordmarkProps) {
   const inkColor = dark ? "oklch(99% 0.005 160)" : "oklch(22% 0.025 175)";
   const subColor = dark ? "oklch(82% 0.045 165)" : "oklch(48% 0.085 175)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <Logo size={size} mono={dark} onDark={dark} />
+      {showText && (
       <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
         <span style={{
-          fontFamily: '"Cormorant Garamond", Georgia, serif',
-          fontWeight: 600,
+          fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+          fontWeight: 800,
           fontSize: size * 0.52,
           color: inkColor,
-          letterSpacing: ".005em",
+          letterSpacing: "-.01em",
         }}>IPISB</span>
         <span style={{
-          fontFamily: '"Manrope", system-ui, sans-serif',
+          fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
           fontSize: size * 0.24,
           fontWeight: 600,
           letterSpacing: ".24em",
@@ -29,6 +31,7 @@ export function Wordmark({ size = 36, dark = false }: WordmarkProps) {
           marginTop: 3,
         }}>Connect</span>
       </div>
+      )}
     </div>
   );
 }

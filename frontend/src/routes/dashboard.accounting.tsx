@@ -43,7 +43,7 @@ export const Route = createFileRoute("/dashboard/accounting")({
   component: AccountingPage,
 });
 
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 type Tab = "overview" | "tuition" | "revenues" | "invoices" | "purchase_requests" | "purchases" | "payments" | "inventory" | "locaux" | "budgets" | "suppliers" | "categories" | "cash_journal" | "bank_journal" | "cheques" | "cash_notes" | "mission_notes" | "journal" | "validations" | "mine";
 

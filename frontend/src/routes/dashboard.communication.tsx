@@ -25,7 +25,7 @@ const PAL = {
   line:    "oklch(88% 0.015 170)",
   paper:   "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 const ROLES = [
   { value: "admin", label: "Administrateurs" },
@@ -99,7 +99,7 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-          <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 20px" }}>
+          <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 26, fontWeight: 700, color: PAL.ink, margin: "0 0 20px" }}>
             Nouvelle annonce
           </h2>
           <button type="button" onClick={onClose} title="Fermer" aria-label="Fermer" style={{ border: "none", background: "transparent", cursor: "pointer", color: PAL.muted, padding: 0, lineHeight: 0 }}><X size={20} /></button>
@@ -265,7 +265,7 @@ function GroupDetailModal({ groupId, groupName, onClose }: { groupId: string; gr
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 520, maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-          <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 21, fontWeight: 500, color: PAL.ink, margin: 0, minWidth: 0 }}>{groupName}</h2>
+          <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 21, fontWeight: 700, color: PAL.ink, margin: 0, minWidth: 0 }}>{groupName}</h2>
           <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, flexShrink: 0 }}><X size={18} strokeWidth={1.7} /></button>
         </div>
 

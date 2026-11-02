@@ -16,7 +16,7 @@ const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", primary: "oklch(48% 0.085 175)",
   line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13.5, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 const MAX_DEPTH = 2; // 0/1/2 = 3 levels, mirrors backend/routers/document_library.py
@@ -51,7 +51,7 @@ function FolderModal({ editing, onClose, onSave }: {
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 400, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 22, fontWeight: 700, color: PAL.ink, margin: "0 0 16px" }}>
           {editing ? "Renommer le dossier" : "Nouveau dossier"}
         </h2>
         <label style={labelStyle}>Nom *</label>
@@ -92,7 +92,7 @@ function ImportFileModal({ targetLabel, onClose, onImport }: {
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 32, width: 440, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 6px" }}>Importer un fichier</h2>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 24, fontWeight: 700, color: PAL.ink, margin: "0 0 6px" }}>Importer un fichier</h2>
         <p style={{ fontFamily: sans, fontSize: 12.5, color: PAL.muted, margin: "0 0 20px" }}>Dans : {targetLabel}</p>
 
         <label style={labelStyle}>Fichier</label>
@@ -157,7 +157,7 @@ function ComposeDocumentModal({ targetLabel, editing, onClose, onSaved }: {
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 720, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div>
-            <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 4px" }}>
+            <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 24, fontWeight: 700, color: PAL.ink, margin: "0 0 4px" }}>
               {editing ? "Modifier le document" : "Composer un document"}
             </h2>
             <p style={{ fontFamily: sans, fontSize: 12.5, color: PAL.muted, margin: 0 }}>Dans : {targetLabel} — en-tête/pied de page officiel appliqués automatiquement</p>

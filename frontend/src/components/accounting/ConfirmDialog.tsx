@@ -8,8 +8,8 @@ import { AlertTriangle, HelpCircle, Trash2 } from "lucide-react";
  * dans un état, et ne l'exécute que sur `onConfirm`.
  */
 
-const sans = '"Manrope", system-ui, sans-serif';
-const serif = '"Cormorant Garamond", Georgia, serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
+const serif = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 type Tone = "danger" | "primary";
@@ -88,7 +88,7 @@ export function ConfirmDialog({
             <Icon size={19} strokeWidth={1.8} />
           </span>
           <div style={{ minWidth: 0 }}>
-            <h2 style={{ fontFamily: serif, fontSize: 23, fontWeight: 500, color: "var(--pal-ink)", margin: 0, lineHeight: 1.2 }}>
+            <h2 style={{ fontFamily: serif, fontSize: 23, fontWeight: 700, color: "var(--pal-ink)", margin: 0, lineHeight: 1.2 }}>
               {title}
             </h2>
             {message && (

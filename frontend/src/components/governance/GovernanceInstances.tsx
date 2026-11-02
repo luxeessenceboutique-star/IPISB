@@ -5,7 +5,7 @@ import { Plus, Trash2, Pencil, X, Landmark, ChevronDown, ChevronUp, CalendarCloc
 import { EmptyHint } from "@/components/dashboard/ui";
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)", pale: "oklch(96% 0.01 170)" };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 export type Meeting = {
@@ -48,7 +48,7 @@ function Backdrop({ children, width = 620 }: { children: React.ReactNode; width?
 }
 
 function H2({ children }: { children: React.ReactNode }) {
-  return <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>{children}</h2>;
+  return <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 24, fontWeight: 700, color: PAL.ink, margin: "0 0 16px" }}>{children}</h2>;
 }
 
 /* ─── Instance form (création / édition) ─── */

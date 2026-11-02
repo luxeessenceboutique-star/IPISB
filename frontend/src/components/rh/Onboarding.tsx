@@ -8,7 +8,7 @@ import type { Employee } from "./Employees";
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 type PlanItem = { id: string; label: string; done: boolean };
 type Onboarding = {

@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth";
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ function Backdrop({ children, width = 480 }: { children: React.ReactNode; width?
   );
 }
 function H2({ children }: { children: React.ReactNode }) {
-  return <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 25, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>{children}</h2>;
+  return <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 25, fontWeight: 700, color: PAL.ink, margin: "0 0 16px" }}>{children}</h2>;
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label style={{ display: "block" }}><span style={labelStyle}>{label}</span>{children}</label>;
@@ -767,7 +767,7 @@ export function AccountingTuitionTracking({ readOnly = false }: { readOnly?: boo
         <button onClick={() => setSelected(null)} className="btn-c btn-c-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <ChevronLeft size={16} /> Promos
         </button>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: 0, flex: 1 }}>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 26, fontWeight: 700, color: PAL.ink, margin: 0, flex: 1 }}>
           {matrix?.class_name ?? "…"}
         </h2>
         {canEdit && (

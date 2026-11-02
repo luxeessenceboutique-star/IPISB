@@ -17,7 +17,7 @@ async function authHeader(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 14, width: "100%", padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 const iconBtnStyle = { background: "transparent", border: `1px solid ${PAL.line}`, borderRadius: 6, padding: "5px 7px", cursor: "pointer", display: "flex" as const };
@@ -26,7 +26,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 24, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>{title}</h2>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 24, fontWeight: 700, color: PAL.ink, margin: "0 0 16px" }}>{title}</h2>
         {children}
       </div>
     </div>
@@ -364,7 +364,7 @@ function AiAdGeneratorModal({ ads, onClose, onSaved }: { ads: Ad[]; onClose: () 
               <textarea value={ad.contenu} onChange={e => setAd(a => a ? { ...a, contenu: e.target.value } : a)} style={{ width: "100%", height: "100%", border: 0, padding: 20, fontFamily: sans, fontSize: 13.5, lineHeight: 1.6, resize: "none" as const, outline: "none", boxSizing: "border-box" as const }} />
             ) : (
               <div style={{ padding: 20 }}>
-                <input value={ad.poste} onChange={e => setAd(a => a ? { ...a, poste: e.target.value } : a)} style={{ ...fieldStyle, marginTop: 0, fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 20, fontWeight: 600, border: "none", padding: "0 0 8px" }} />
+                <input value={ad.poste} onChange={e => setAd(a => a ? { ...a, poste: e.target.value } : a)} style={{ ...fieldStyle, marginTop: 0, fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 20, fontWeight: 700, border: "none", padding: "0 0 8px" }} />
                 <AdContentPreview contenu={ad.contenu} />
               </div>
             )}

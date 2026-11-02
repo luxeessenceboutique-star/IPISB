@@ -34,7 +34,7 @@ export const Route = createFileRoute("/dashboard/accounting-tasks")({
   component: AccountingTasksPage,
 });
 
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 function AccountingTasksPage() {
   const { roles } = useAuth();

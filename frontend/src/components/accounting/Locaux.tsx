@@ -49,8 +49,8 @@ export function groupByFloor(locaux: Local[]): { floor: string; rooms: Local[] }
 }
 
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
-const sans = '"Manrope", system-ui, sans-serif';
-const titleFont = '"Cormorant Garamond", Georgia, serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
+const titleFont = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 const inputStyle: React.CSSProperties = { padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13.5, background: PAL.paper, outline: "none", boxSizing: "border-box" };
 const labelStyle: React.CSSProperties = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".05em", textTransform: "uppercase", marginBottom: 4, display: "block" };

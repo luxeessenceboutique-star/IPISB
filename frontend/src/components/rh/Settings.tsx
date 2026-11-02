@@ -7,7 +7,7 @@ import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13.5, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
@@ -38,7 +38,7 @@ function LookupModal({ title, editing, hideDescription, onClose, onSave }: {
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 420, maxWidth: "95vw", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 22, fontWeight: 500, color: PAL.ink, margin: "0 0 16px" }}>{title}</h2>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 22, fontWeight: 700, color: PAL.ink, margin: "0 0 16px" }}>{title}</h2>
         <label style={labelStyle}>Nom *</label>
         <input type="text" value={name} onChange={e => setName(e.target.value)} className="u-input" style={hideDescription ? { ...fieldStyle, marginBottom: 22 } : fieldStyle} autoFocus />
         {!hideDescription && (<>

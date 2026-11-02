@@ -16,7 +16,7 @@ import { SupplierFormModal } from "./Suppliers";
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
+const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const mono = '"JetBrains Mono", ui-monospace, monospace';
 
 const STATUS: Record<string, { label: string; tone: string }> = {
@@ -122,7 +122,7 @@ function Backdrop({ children, width = 560, z = 200, dim = 0.45 }: { children: Re
 }
 
 function H2({ children }: { children: React.ReactNode }) {
-  return <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 26, fontWeight: 500, color: PAL.ink, margin: "0 0 18px" }}>{children}</h2>;
+  return <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 26, fontWeight: 700, color: PAL.ink, margin: "0 0 18px" }}>{children}</h2>;
 }
 
 // ── Panier multi-articles (l77) — piocher plusieurs articles du catalogue
@@ -452,7 +452,7 @@ function QuoteFormModal({ prId, nextRank, suppliers, onClose, onSaved }: {
       {/* ── En-tête ── */}
       <div style={{ borderBottom: `1px solid ${PAL.line}`, paddingBottom: 12, marginBottom: 16 }}>
         <div style={{ fontFamily: sans, fontSize: 10.5, fontWeight: 700, letterSpacing: ".18em", textTransform: "uppercase", color: "var(--pal-primary)", marginBottom: 4 }}>Consultation fournisseurs</div>
-        <h2 style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontSize: 27, fontWeight: 500, color: PAL.ink, margin: 0 }}>Ajouter un devis</h2>
+        <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 27, fontWeight: 700, color: PAL.ink, margin: 0 }}>Ajouter un devis</h2>
       </div>
 
       {/* ── Corps : 2 colonnes ── */}

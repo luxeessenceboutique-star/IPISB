@@ -2,14 +2,17 @@ import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } 
 import { useEffect, useState } from "react";
 import {
   Home, ClipboardList, GraduationCap, Bell,
-  Users, LogOut, X, FileText, Wallet,
+  Users, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   RefreshCw, Briefcase, Landmark, MessageCircle,
-  ChevronDown, Kanban,
+  Kanban,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
 import { PlatformCopilot } from "@/components/PlatformCopilot";
+import { DashboardSidebar, leaf, group, type NavEntry } from "@/components/dashboard/DashboardSidebar";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { BreadcrumbLabelProvider } from "@/lib/breadcrumbLabel";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/lib/i18n";
@@ -17,15 +20,8 @@ import { useBreakpoint } from "@/lib/useBreakpoint";
 
 const PAL = {
   ink:     "oklch(22% 0.025 175)",
-  muted:   "oklch(48% 0.02 180)",
-  mid:     "oklch(62% 0.085 170)",
-  pale:    "oklch(94% 0.025 165)",
   cream:   "oklch(97% 0.012 90)",
-  paper:   "oklch(99% 0.005 160)",
-  danger:  "oklch(64% 0.18 25)",
-  lineSoft:"oklch(92% 0.012 170)",
 };
-const sans = '"Manrope", system-ui, sans-serif';
 
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
@@ -34,28 +30,6 @@ export const Route = createFileRoute("/dashboard")({
   },
   component: DashboardLayout,
 });
-
-type NavLeaf = {
-  type: "leaf"; key: string; to: string; icon: typeof Home;
-  exact?: boolean; badge?: boolean; label?: string; search?: Record<string, string>;
-};
-type NavGroup = {
-  type: "group"; key: string; icon: typeof Home; homeTo?: string; exact?: boolean; label?: string; children: NavEntry[];
-};
-type NavEntry = NavLeaf | NavGroup;
-
-function entryMatchesPath(entry: NavEntry, pathname: string): boolean {
-  return entry.type === "leaf"
-    ? pathname.startsWith(entry.to)
-    : entry.children.some(c => entryMatchesPath(c, pathname));
-}
-
-function leaf(partial: Omit<NavLeaf, "type">): NavLeaf {
-  return { type: "leaf", ...partial };
-}
-function group(partial: Omit<NavGroup, "type">): NavGroup {
-  return { type: "group", ...partial };
-}
 
 function DashboardLayout() {
   const { user, roles, signOut } = useAuth();
@@ -66,11 +40,13 @@ function DashboardLayout() {
   const pathname = routerState.location.pathname;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unread, setUnread] = useState(0);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  function toggleGroup(key: string) {
-    setCollapsedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return localStorage.getItem("sidebar-collapsed") === "1"; } catch { return false; }
+  });
+  function toggleRail() {
+    setRailCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem("sidebar-collapsed", next ? "1" : "0"); } catch { /* ignore */ }
       return next;
     });
   }
@@ -203,155 +179,84 @@ function DashboardLayout() {
     navigate({ to: "/auth" });
   }
 
-  // Rendu récursif : un groupe (ex. Comptabilité) peut lui-même contenir des
-  // groupes — chaque niveau d'imbrication ajoute son propre repli/dépli et
-  // un retrait supplémentaire.
-  function renderNavEntry(it: NavEntry, depth: number): React.ReactNode {
-    const nested = depth > 0 ? { paddingInlineStart: 34 + (depth - 1) * 18, fontSize: 13 } : {};
-    const iconSize = depth > 0 ? 15 : 17;
-
-    if (it.type === "leaf") {
-      const isActive = it.exact ? pathname === it.to : pathname.startsWith(it.to);
-      const I = it.icon;
-      return (
-        <Link key={it.key} to={it.to as "/dashboard"} search={it.search}
-          className={isActive ? "side-link is-active" : "side-link"}
-          style={{ textDecoration: "none", fontFamily: sans, ...nested }}>
-          <I size={iconSize} strokeWidth={1.7} />
-          {it.label ?? t(it.key)}
-          {it.badge && unread > 0 && (
-            <span style={{ marginInlineStart: "auto", fontSize: 10, fontWeight: 800, color: PAL.paper, background: PAL.danger, padding: "2px 7px", borderRadius: 999 }}>{unread}</span>
-          )}
-        </Link>
-      );
-    }
-
-    const GI = it.icon;
-    const isGroupActive = it.children.some(c => entryMatchesPath(c, pathname));
-    const isCollapsed = collapsedGroups.has(it.key);
-    return (
-      <div key={it.key}>
-        <button
-          type="button"
-          onClick={() => toggleGroup(it.key)}
-          className={isGroupActive ? "side-link is-active" : "side-link"}
-          style={{ textDecoration: "none", fontFamily: sans, width: "100%", border: 0, background: "transparent", cursor: "pointer", textAlign: "start", ...nested }}
-        >
-          <GI size={iconSize} strokeWidth={1.7} />
-          {it.label ?? t(it.key)}
-          <ChevronDown size={14} strokeWidth={2}
-            style={{ marginInlineStart: "auto", transition: "transform .15s ease", transform: isCollapsed ? "rotate(-90deg)" : "none", opacity: .6 }} />
-        </button>
-        {!isCollapsed && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 2 }}>
-            {it.children.map(c => renderNavEntry(c, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const Sidebar = (
-    <aside style={{
-      background: PAL.paper,
-      borderInlineEnd: `1px solid ${PAL.lineSoft}`,
-      padding: "22px 16px",
-      display: "flex", flexDirection: "column", gap: 22,
-      width: isTablet ? 280 : "auto",
-      height: isTablet ? "100%" : "auto",
-      minHeight: 0,
-    }}>
-      <div style={{ padding: "0 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Link to="/dashboard" style={{ textDecoration: "none" }}>
-          <Wordmark size={36} />
-        </Link>
-        {isTablet && (
-          <button onClick={() => setDrawerOpen(false)} aria-label="Close" style={{
-            background: "none", border: 0, cursor: "pointer", color: PAL.muted, lineHeight: 1, display: "flex", padding: 4,
-          }}><X size={18} /></button>
-        )}
-      </div>
-
-      <nav className="scroll-y" style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0 }}>
-        <span className="eyebrow" style={{ padding: "2px 12px 8px", fontSize: 9.5 }}>{spaceLabel}</span>
-        {visibleEntries.map((it) => renderNavEntry(it, 0))}
-      </nav>
-
-      <div style={{ height: 1, background: PAL.lineSoft }} />
-
-      {/* user card */}
-      <div style={{ padding: 12, borderRadius: 14, background: PAL.pale, display: "flex", flexDirection: "column", gap: 10 }}>
-        <Link to="/dashboard/profile" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-          <DashAvatar name={fullName} size={34} tone="primary" />
-          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: PAL.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-              {fullName}
-            </span>
-            <span style={{ fontSize: 10.5, color: PAL.muted }}>{roleLabel}</span>
-          </div>
-        </Link>
-        <button onClick={handleLogout} className="btn-c btn-c-ghost btn-c-sm" style={{ width: "100%" }}>
-          <LogOut size={14} strokeWidth={1.7} />
-          {t("dash.logout")}
-        </button>
-      </div>
-    </aside>
+  const sidebarNode = (onClose?: () => void) => (
+    <DashboardSidebar
+      entries={visibleEntries}
+      unread={unread}
+      fullName={fullName}
+      roleLabel={roleLabel}
+      spaceLabel={spaceLabel}
+      onLogout={handleLogout}
+      t={t}
+      width={isTablet ? 280 : "auto"}
+      height={isTablet ? "100%" : "auto"}
+      onClose={onClose}
+      collapsed={!isTablet && railCollapsed}
+      onToggleCollapse={!isTablet ? toggleRail : undefined}
+    />
   );
 
   // ── Mobile / tablet layout: top bar + drawer ──────────────────────
   if (isTablet) {
     return (
-      <div style={{ width: "100%", minHeight: "100vh", background: PAL.cream, fontFamily: sans }}>
-        {/* Top bar */}
-        <header style={{
-          position: "sticky", top: 0, zIndex: 30,
-          background: PAL.paper, borderBottom: `1px solid ${PAL.lineSoft}`,
-          padding: "12px 16px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <button onClick={() => setDrawerOpen(true)} aria-label="Menu" style={{
-            display: "flex", flexDirection: "column", gap: 4, background: "none", border: 0, cursor: "pointer", padding: 6,
+      <BreadcrumbLabelProvider>
+        <div style={{ width: "100%", minHeight: "100vh", background: PAL.cream }}>
+          {/* Top bar */}
+          <header style={{
+            position: "sticky", top: 0, zIndex: 30,
+            background: "var(--pal-paper)", borderBottom: "1px solid var(--pal-line-soft)",
+            padding: "12px 16px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
           }}>
-            {[0,1,2].map(i => <span key={i} style={{ width: 22, height: 2, background: PAL.ink, borderRadius: 2, display: "block" }} />)}
-          </button>
-          <Link to="/dashboard" style={{ textDecoration: "none" }}><Wordmark size={26} /></Link>
-          <Link to="/dashboard/profile" aria-label={t("dash.profile")} style={{ textDecoration: "none" }}>
-            <DashAvatar name={fullName} size={30} tone="primary" />
-          </Link>
-        </header>
+            <button onClick={() => setDrawerOpen(true)} aria-label="Menu" style={{
+              display: "flex", flexDirection: "column", gap: 4, background: "none", border: 0, cursor: "pointer", padding: 6,
+            }}>
+              {[0,1,2].map(i => <span key={i} style={{ width: 22, height: 2, background: PAL.ink, borderRadius: 2, display: "block" }} />)}
+            </button>
+            <Link to="/dashboard" style={{ textDecoration: "none" }}><Wordmark size={26} /></Link>
+            <Link to="/dashboard/profile" aria-label={t("dash.profile")} style={{ textDecoration: "none" }}>
+              <DashAvatar name={fullName} size={30} tone="primary" />
+            </Link>
+          </header>
 
-        {/* Drawer overlay */}
-        {drawerOpen && (
-          <>
-            <div onClick={() => setDrawerOpen(false)} className="anim-fade" style={{ position: "fixed", inset: 0, background: "oklch(0% 0 0 / .4)", zIndex: 40, backdropFilter: "blur(2px)" }} />
-            <div style={{ position: "fixed", top: 0, insetInlineStart: 0, bottom: 0, zIndex: 41, animation: "drawer-in .28s cubic-bezier(.22,1,.36,1)", boxShadow: "8px 0 32px oklch(0% 0 0 / .12)" }}>
-              <style>{`@keyframes drawer-in{from{transform:translateX(-100%)}to{transform:none}}`}</style>
-              {Sidebar}
+          {/* Drawer overlay */}
+          {drawerOpen && (
+            <>
+              <div onClick={() => setDrawerOpen(false)} className="anim-fade" style={{ position: "fixed", inset: 0, background: "oklch(0% 0 0 / .4)", zIndex: 40, backdropFilter: "blur(2px)" }} />
+              <div style={{ position: "fixed", top: 0, insetInlineStart: 0, bottom: 0, zIndex: 41, animation: "drawer-in .28s cubic-bezier(.22,1,.36,1)", boxShadow: "8px 0 32px oklch(0% 0 0 / .12)" }}>
+                <style>{`@keyframes drawer-in{from{transform:translateX(-100%)}to{transform:none}}`}</style>
+                {sidebarNode(() => setDrawerOpen(false))}
+              </div>
+            </>
+          )}
+
+          {/* Main */}
+          <main style={{ padding: "20px 16px", overflow: "auto" }}>
+            <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
+              <Outlet />
             </div>
-          </>
-        )}
-
-        {/* Main */}
-        <main style={{ padding: "20px 16px", overflow: "auto" }}>
-          <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
-            <Outlet />
-          </div>
-        </main>
-        <PlatformCopilot />
-      </div>
+          </main>
+          <PlatformCopilot />
+        </div>
+      </BreadcrumbLabelProvider>
     );
   }
 
   // ── Desktop layout ────────────────────────────────────────────────
   return (
-    <div style={{ width: "100%", height: "100vh", overflow: "hidden", display: "grid", gridTemplateColumns: "248px 1fr", background: PAL.cream, fontFamily: sans }}>
-      {Sidebar}
-      <main className="scroll-y" style={{ minHeight: 0, padding: "30px 36px" }}>
-        <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <Outlet />
+    <BreadcrumbLabelProvider>
+      <div style={{ width: "100%", height: "100vh", overflow: "hidden", display: "grid", gridTemplateColumns: `${railCollapsed ? 84 : 248}px 1fr`, transition: "grid-template-columns .5s cubic-bezier(.2,.8,.2,1)", background: PAL.cream }}>
+        {sidebarNode()}
+        <div style={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <DashboardHeader unread={unread} />
+          <main className="scroll-y" style={{ minHeight: 0, flex: 1, padding: "30px 36px" }}>
+            <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
+              <Outlet />
+            </div>
+          </main>
         </div>
-      </main>
-      <PlatformCopilot />
-    </div>
+        <PlatformCopilot />
+      </div>
+    </BreadcrumbLabelProvider>
   );
 }
