@@ -312,25 +312,66 @@
   box-shadow: 0 0 0 3px oklch(48% 0.085 175 / .14);
 }
 
-/* Dashboard sidebar links — dark rail (IPISB Sidebar design, Oct 2026) */
+/* Dashboard sidebar — rail vert clair « santé » (refonte Nov 2026) */
 .side-link {
   display: flex; align-items: center; gap: 13px;
   padding: 11px 12px;
   border-radius: 14px;
   font-size: 14px; font-weight: 700;
-  color: var(--pal-soft);
+  color: oklch(36% 0.035 172);
   background: transparent;
   position: relative;
-  transition: background-color .25s ease, color .25s ease;
+  transition: background-color .25s ease, color .25s ease, box-shadow .25s ease;
 }
-.side-link:hover { background: var(--pal-ink2); color: var(--pal-paper); }
-.side-link.is-active { background: var(--pal-primary); color: var(--pal-paper); }
+.side-link:hover { background: oklch(100% 0 0 / .6); color: var(--pal-ink); }
+.side-link.is-active {
+  background: var(--pal-paper); color: var(--pal-primary-deep);
+  box-shadow: 0 1px 2px oklch(0% 0 0 / .05), 0 8px 20px oklch(45% 0.08 160 / .14);
+}
 .side-link.is-active::before {
   content: ''; position: absolute; inset-inline-start: -4px; top: 50%; margin-top: -11px;
-  width: 4px; height: 22px; border-radius: 0 4px 4px 0; background: var(--pal-accent);
+  width: 4px; height: 22px; border-radius: 0 4px 4px 0; background: var(--pal-primary);
 }
-.side-link svg { flex-shrink: 0; opacity: .85; transition: opacity .15s ease; }
+.side-link svg { flex-shrink: 0; opacity: .85; transition: opacity .15s ease, transform .3s cubic-bezier(.22,1,.36,1); }
+.side-link:hover svg { transform: translateX(2px); }
 .side-link.is-active svg { opacity: 1; }
+
+/* Halo vert flottant derrière le menu */
+.sb-halo {
+  position: absolute; z-index: 0; width: 280px; height: 280px; inset-inline-start: -90px; top: 35%;
+  border-radius: 50%; pointer-events: none; filter: blur(24px);
+  background: radial-gradient(circle, oklch(86% 0.09 158 / .55), oklch(86% 0.09 158 / 0) 70%);
+  animation: sb-float 16s ease-in-out infinite;
+}
+@keyframes sb-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(70px, -140px) scale(1.15); }
+}
+
+/* Indicateur « en ligne » + tracé ECG fin (séparateur sous le logo) */
+.sb-pulse {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 2px 8px 12px; border-bottom: 1px solid oklch(84% 0.045 160);
+}
+.sb-pulse-label {
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  font-size: 11px; font-weight: 700; color: oklch(36% 0.05 168);
+}
+.sb-pulse-label::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: oklch(60% 0.14 155); box-shadow: 0 0 0 3px oklch(60% 0.14 155 / .18);
+}
+.sb-pulse svg { flex: 1; min-width: 0; height: 18px; }
+.sb-pulse-bg { fill: none; stroke: oklch(48% 0.085 175 / .1); stroke-width: 1.5; }
+.sb-pulse-line {
+  fill: none; stroke: var(--pal-primary); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 100; stroke-dashoffset: 100; animation: sb-pulse 3.2s linear infinite;
+}
+@keyframes sb-pulse {
+  0%   { stroke-dashoffset: 100; opacity: 1; }
+  62%  { stroke-dashoffset: 0;   opacity: 1; }
+  100% { stroke-dashoffset: 0;   opacity: 0; }
+}
 
 /* Filière sub-links — 2-letter badge + left status dot, no solid active bg */
 .sb-sublink {
@@ -338,13 +379,13 @@
   padding: 9px 12px;
   border-radius: 12px;
   font-size: 13.5px; font-weight: 600;
-  color: var(--pal-soft);
+  color: oklch(36% 0.035 172);
   background: transparent;
   position: relative;
   transition: background-color .2s ease, color .2s ease, transform .2s ease;
 }
-.sb-sublink:hover { transform: translateX(3px); color: var(--pal-paper); }
-.sb-sublink.is-active { background: var(--pal-ink2); color: var(--pal-paper); }
+.sb-sublink:hover { transform: translateX(3px); color: var(--pal-ink); background: oklch(100% 0 0 / .45); }
+.sb-sublink.is-active { background: var(--pal-paper); color: var(--pal-primary-deep); }
 
 /* "Ajouter une filière" — dashed outline, distinct from real filière rows */
 .sb-addlink {
@@ -352,18 +393,19 @@
   padding: 9px 12px;
   border-radius: 12px;
   font-size: 13px; font-weight: 700;
-  color: var(--pal-mid);
+  color: var(--pal-primary-deep);
   background: transparent;
-  border: 1px dashed oklch(100% 0 0 / .14);
+  border: 1px dashed oklch(80% 0.05 160);
   margin-top: 4px;
   transition: border-color .25s ease, color .25s ease;
 }
 .sb-addlink:hover { border-color: var(--pal-accent); color: var(--pal-accent); }
 
 /* Collapsed rail (icon-only, 84px) */
-.sb-nav-scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--pal-ink2) transparent; }
+.sb-nav-scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: oklch(80% 0.05 160) transparent; }
 .sb-nav-scroll::-webkit-scrollbar { width: 4px; }
-.sb-nav-scroll::-webkit-scrollbar-thumb { background: var(--pal-ink2); border-radius: 99px; }
+.sb-nav-scroll::-webkit-scrollbar-thumb { background: oklch(80% 0.05 160); border-radius: 99px; }
+@media (prefers-reduced-motion: reduce) { .sb-halo, .sb-pulse-line { animation: none; } .sb-pulse-line { stroke-dashoffset: 0; } }
 
 @keyframes sb-ecg {
   0%   { stroke-dashoffset: 300; }

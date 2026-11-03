@@ -157,28 +157,27 @@ export function DashboardSidebar({
   return (
     <aside style={{
       position: "relative", overflow: "hidden",
-      background: "var(--pal-ink)", color: "var(--pal-soft)",
+      // Rail vert clair (identité santé) — dégradé doux, texte encre.
+      background: "linear-gradient(180deg, oklch(96.5% 0.035 155) 0%, oklch(94% 0.045 158) 55%, oklch(92% 0.05 162) 100%)",
+      borderInlineEnd: "1px solid oklch(86% 0.045 160)",
+      color: "var(--pal-ink)",
       padding: collapsed ? "20px 10px 16px" : "20px 14px 16px",
       display: "flex", flexDirection: "column", gap: 18,
       width, height, minHeight: 0,
       transition: "width .5s cubic-bezier(.2,.8,.2,1), padding .3s",
     }}>
-      {/* decorative glow blob — purely cosmetic, matches brand header elsewhere */}
-      <div aria-hidden style={{
-        position: "absolute", insetInlineStart: -120, top: -120, width: 320, height: 320, borderRadius: "50%",
-        background: "radial-gradient(circle, color-mix(in oklch, var(--pal-mid) 22%, transparent), transparent 70%)",
-        pointerEvents: "none", animation: "glow-pulse 6s ease-in-out infinite",
-      }} />
+      {/* halo vert flottant — purement décoratif, très lent */}
+      <div aria-hidden className="sb-halo" />
 
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 10, padding: "2px 4px" }}>
         <Link to="/dashboard" style={{ textDecoration: "none", display: "flex", flexShrink: 0 }}>
-          <Wordmark size={34} dark showText={!collapsed} />
+          <Wordmark size={34} showText={!collapsed} />
         </Link>
         {onToggleCollapse && !onClose && (
           <button onClick={onToggleCollapse} title={collapsed ? t("dash.expand") : t("dash.collapse")}
             style={{
               marginInlineStart: collapsed ? 0 : "auto", flexShrink: 0, width: 28, height: 28, borderRadius: 10,
-              border: "1px solid oklch(100% 0 0 / .1)", background: "var(--pal-ink2)", color: "var(--pal-soft)",
+              border: "1px solid oklch(86% 0.045 160)", background: "oklch(100% 0 0 / .65)", color: "var(--pal-primary-deep)",
               cursor: "pointer", display: "grid", placeItems: "center",
               transition: "transform .5s cubic-bezier(.2,.8,.2,1)", transform: collapsed ? "rotate(180deg)" : "none",
             }}>
@@ -187,21 +186,26 @@ export function DashboardSidebar({
         )}
         {onClose && (
           <button onClick={onClose} aria-label="Close" style={{
-            marginInlineStart: "auto", background: "none", border: 0, cursor: "pointer", color: "var(--pal-soft)", lineHeight: 1, display: "flex", padding: 4,
+            marginInlineStart: "auto", background: "none", border: 0, cursor: "pointer", color: "var(--pal-primary-deep)", lineHeight: 1, display: "flex", padding: 4,
           }}><X size={18} /></button>
         )}
       </div>
 
+      {/* Indicateur « en ligne » + tracé ECG fin, qui sert de séparateur */}
       {!collapsed && (
-        <svg viewBox="0 0 300 30" preserveAspectRatio="none" aria-hidden style={{ position: "relative", width: "100%", height: 20 }}>
-          <path d="M0 18 H110 L120 18 L128 6 L136 27 L145 2 L154 24 L162 18 H300" fill="none"
-            stroke="var(--pal-mid)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
-            strokeDasharray="300" style={{ animation: "sb-ecg 5s cubic-bezier(.6,0,.3,1) infinite" }} />
-        </svg>
+        <div aria-hidden className="sb-pulse">
+          <span className="sb-pulse-label">{t("dash.online") === "dash.online" ? "En ligne" : t("dash.online")}</span>
+          <svg viewBox="0 0 100 32" preserveAspectRatio="none">
+            <path className="sb-pulse-bg" vectorEffect="non-scaling-stroke"
+              d="M0 17 H20 L24 17 L27 12 L30 17 L36 17 L39 20 L43 3 L47 29 L51 17 L58 17 L62 13 L67 17 H100" />
+            <path className="sb-pulse-line" pathLength={100} vectorEffect="non-scaling-stroke"
+              d="M0 17 H20 L24 17 L27 12 L30 17 L36 17 L39 20 L43 3 L47 29 L51 17 L58 17 L62 13 L67 17 H100" />
+          </svg>
+        </div>
       )}
 
       {!collapsed && (
-        <span className="eyebrow" style={{ position: "relative", padding: "0 10px", fontSize: 9.5, color: "var(--pal-mid)" }}>{spaceLabel}</span>
+        <span className="eyebrow" style={{ position: "relative", padding: "0 10px", fontSize: 9.5, color: "oklch(40% 0.05 165)" }}>{spaceLabel}</span>
       )}
 
       <nav className="sb-nav-scroll" style={{ position: "relative", display: "flex", flexDirection: "column", gap: 3, flex: 1, minHeight: 0 }}>
@@ -209,24 +213,24 @@ export function DashboardSidebar({
       </nav>
 
       {/* user card */}
-      <div style={{ position: "relative", padding: 12, borderRadius: 18, background: "var(--pal-ink2)", border: "1px solid oklch(100% 0 0 / .06)", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ position: "relative", padding: 12, borderRadius: 18, background: "oklch(100% 0 0 / .72)", border: "1px solid oklch(100% 0 0 / .9)", boxShadow: "0 1px 2px oklch(0% 0 0 / .04), 0 8px 24px oklch(45% 0.08 160 / .1)", display: "flex", flexDirection: "column", gap: 10 }}>
         <Link to="/dashboard/profile" title={fullName} style={{ display: "flex", alignItems: "center", gap: collapsed ? 0 : 11, justifyContent: collapsed ? "center" : "flex-start", textDecoration: "none" }}>
           <span style={{ position: "relative", flexShrink: 0 }}>
             <DashAvatar name={fullName} size={collapsed ? 34 : 38} tone="accent" />
-            <span style={{ position: "absolute", insetInlineEnd: -2, bottom: -2, width: 10, height: 10, borderRadius: "50%", background: "var(--pal-good)", border: "2.5px solid var(--pal-ink2)" }} />
+            <span style={{ position: "absolute", insetInlineEnd: -2, bottom: -2, width: 10, height: 10, borderRadius: "50%", background: "var(--pal-good)", border: "2.5px solid var(--pal-paper)" }} />
           </span>
           {!collapsed && (
             <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25, flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--pal-paper)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--pal-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
                 {fullName}
               </span>
-              <span style={{ fontSize: 11.5, color: "var(--pal-mid)" }}>{roleLabel}</span>
+              <span style={{ fontSize: 11.5, color: "var(--pal-primary-deep)" }}>{roleLabel}</span>
             </div>
           )}
         </Link>
-        <button onClick={onLogout} title={t("dash.logout")} style={{
+        <button onClick={onLogout} title={t("dash.logout")} className="u-ghost" style={{
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 10, borderRadius: 12,
-          border: "1px solid oklch(100% 0 0 / .1)", background: "transparent", color: "var(--pal-soft)",
+          border: "1px solid oklch(86% 0.045 160)", background: "transparent", color: "var(--pal-text)",
           cursor: "pointer", font: "inherit", fontSize: 13, fontWeight: 700,
         }}>
           <LogOut size={15} strokeWidth={1.8} />
