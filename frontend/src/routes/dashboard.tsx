@@ -232,7 +232,7 @@ function DashboardLayout() {
 
           {/* Main */}
           <main style={{ padding: "20px 16px", overflow: "auto" }}>
-            <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
+            <div key={pathname} className="page-enter dash-glow" style={{ maxWidth: 1180, margin: "0 auto" }}>
               <Outlet />
             </div>
           </main>
@@ -250,7 +250,7 @@ function DashboardLayout() {
         <div style={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
           <DashboardHeader unread={unread} />
           <main className="scroll-y" style={{ minHeight: 0, flex: 1, padding: "30px 36px" }}>
-            <div key={pathname} className="page-enter" style={{ maxWidth: 1180, margin: "0 auto" }}>
+            <div key={pathname} className="page-enter dash-glow" style={{ maxWidth: 1180, margin: "0 auto" }}>
               <Outlet />
             </div>
           </main>

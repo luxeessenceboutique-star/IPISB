@@ -40,11 +40,11 @@ export function PageHead({
             {eyebrow}
           </span>
         ) : null}
-        <h1 className="h-serif" style={{ fontSize: lg ? 42 : 34, lineHeight: 1.05, letterSpacing: ".005em" }}>
+        <h1 className="h-serif page-title" style={{ fontSize: lg ? 40 : 34, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-.03em" }}>
           {title}
         </h1>
         {sub ? (
-          <p style={{ color: "var(--pal-muted)", fontSize: lg ? 15 : 13.5, marginTop: 2 }}>{sub}</p>
+          <p className="page-sub" style={{ color: "var(--pal-muted)", fontSize: lg ? 15 : 14, marginTop: 2 }}>{sub}</p>
         ) : null}
       </div>
       {actions ? (

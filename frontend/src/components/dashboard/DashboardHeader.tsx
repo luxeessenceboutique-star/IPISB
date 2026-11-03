@@ -30,14 +30,15 @@ export function DashboardHeader({ unread }: { unread: number }) {
         position: "sticky", top: 0, zIndex: 20,
         display: "flex", alignItems: "center", gap: 12,
         padding: "14px clamp(16px, 3vw, 32px)",
-        background: `color-mix(in oklab, ${PAL.cream} 85%, transparent)`,
-        backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+        background: `color-mix(in oklab, ${PAL.paper} 78%, transparent)`,
+        backdropFilter: "blur(14px) saturate(1.2)", WebkitBackdropFilter: "blur(14px) saturate(1.2)",
         borderBottom: `1px solid ${PAL.lineSoft}`,
       }}>
         <button
           type="button"
           onClick={() => router.history.back()}
           title="Retour"
+          className="u-ghost"
           disabled={isHome}
           style={{
             flexShrink: 0, width: 36, height: 36, borderRadius: 11,
@@ -52,6 +53,7 @@ export function DashboardHeader({ unread }: { unread: number }) {
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
+          className="u-ghost"
           style={{
             flexShrink: 0, display: "flex", alignItems: "center", gap: 9,
             padding: "9px 11px 9px 13px", borderRadius: 11,
@@ -68,6 +70,7 @@ export function DashboardHeader({ unread }: { unread: number }) {
           type="button"
           onClick={() => router.navigate({ to: "/dashboard/notifications" })}
           title="Notifications"
+          className="u-ghost"
           style={{
             position: "relative", flexShrink: 0, width: 36, height: 36, borderRadius: 11,
             border: `1px solid ${PAL.line}`, background: PAL.paper, cursor: "pointer",

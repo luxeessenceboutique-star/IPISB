@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Wordmark } from "@/components/Wordmark";
-import authIllustration from "@/assets/auth-illustration.png";
+import emblem from "@/assets/ipisb-emblem.png";
+import { Eye, EyeOff } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { useBreakpoint } from "@/lib/useBreakpoint";
@@ -29,11 +30,11 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-function Field({ label, type = "text", placeholder, value, onChange, testId }: {
-  label: string; type?: string; placeholder?: string; value: string; onChange?: (v: string) => void; testId?: string;
+function Field({ label, type = "text", placeholder, value, onChange, testId, trailing }: {
+  label: string; type?: string; placeholder?: string; value: string; onChange?: (v: string) => void; testId?: string; trailing?: React.ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 16, position: "relative" }}>
       <label style={{ fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const }}>{label}</label>
       <input
         type={type}
@@ -43,8 +44,9 @@ function Field({ label, type = "text", placeholder, value, onChange, testId }: {
         required
         className="u-input"
         data-testid={testId}
-        style={{ marginTop: 8, width: "100%", padding: "12px 16px", background: PAL.paper, border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, outline: "none", boxSizing: "border-box" as const }}
+        style={{ marginTop: 8, width: "100%", padding: trailing ? "12px 48px 12px 16px" : "12px 16px", background: PAL.paper, border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, outline: "none", boxSizing: "border-box" as const }}
       />
+      {trailing ? <div style={{ position: "absolute", insetInlineEnd: 4, bottom: 2 }}>{trailing}</div> : null}
     </div>
   );
 }
@@ -92,6 +94,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   useEffect(() => { if (user) navigate({ to: "/dashboard" }); }, [user, navigate]);
 
@@ -117,15 +120,10 @@ function AuthPage() {
 
       {/* Left panel — hidden on mobile */}
       <div style={{ background: PAL.ink, padding: "48px 52px", position: "relative", display: isMobile ? "none" : "flex", flexDirection: "column", justifyContent: "space-between", overflow: "hidden" }}>
-        <img
-          src={authIllustration}
-          alt=""
-          aria-hidden="true"
-          style={{
-            position: "absolute", right: -60, bottom: -30, width: 480,
-            opacity: .92, pointerEvents: "none", zIndex: 0,
-          }}
-        />
+        {/* Lueurs douces + trame de points (décor) */}
+        <div aria-hidden className="auth-dots" />
+        <div aria-hidden className="auth-glow-a" />
+        <div aria-hidden className="auth-glow-b" />
 
         {/* Top row: wordmark + stamp badge */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", position: "relative", zIndex: 1 }}>
@@ -151,31 +149,34 @@ function AuthPage() {
           <div style={{ fontFamily: mono, fontSize: 11, color: PAL.mid, letterSpacing: ".14em", textTransform: "uppercase" as const, fontWeight: 600, marginBottom: 16 }}>
             {t("auth.side_eyebrow")}
           </div>
-          <h2 style={{ fontFamily: serif, fontSize: 44, fontWeight: 500, color: PAL.paper, lineHeight: 1.05, letterSpacing: "-.02em", maxWidth: 440 }}>
+          <h2 className="page-title" style={{ fontFamily: serif, fontSize: 40, fontWeight: 800, color: PAL.paper, lineHeight: 1.08, letterSpacing: "-.03em", maxWidth: 460 }}>
             {t("auth.side_h2a")}{" "}
-            <span style={{ fontStyle: "italic", color: PAL.soft }}>{t("auth.side_h2b")}</span>
+            <span style={{ color: PAL.soft }}>{t("auth.side_h2b")}</span>
           </h2>
           <p style={{ fontFamily: sans, fontSize: 13.5, color: "oklch(78% .03 180)", marginTop: 16, maxWidth: 420, lineHeight: 1.6 }}>
             {t("auth.platform_sub")}
           </p>
 
-          <div style={{ marginTop: 28, display: "flex", flexDirection: "column", maxWidth: 300 }}>
-            {(SERVICES[lang] ?? SERVICES.fr).map((s, i) => (
-              <div key={s.label} style={{
-                display: "flex", alignItems: "center", gap: 14, padding: "9px 0",
-                borderTop: i === 0 ? "none" : "1px solid oklch(38% 0.03 175)",
-              }}>
-                <span style={{ fontFamily: mono, fontSize: 11, color: PAL.mid, minWidth: 20 }}>
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 600, color: PAL.paper, flex: 1 }}>
-                  {s.label}
-                </span>
-                <span style={{ fontFamily: mono, fontSize: 11, color: PAL.mid }}>
-                  {s.tag}
-                </span>
-              </div>
-            ))}
+          {/* Médaillon : emblème officiel, les 7 services en orbite */}
+          <div aria-hidden className="auth-stage">
+            <span className="auth-ring r2" />
+            <span className="auth-ring r1" />
+            <span className="auth-arc" />
+            <span className="auth-halo" />
+            <span className="auth-halo h2" />
+            <span className="auth-medal"><img src={emblem} alt="" /></span>
+            <span className="auth-orbit">
+              {(SERVICES[lang] ?? SERVICES.fr).map((sv, i, all) => {
+                const a = (360 / all.length) * i;
+                return (
+                  <span key={sv.label} className="auth-slot" style={{ transform: `rotate(${a}deg) translateY(-210px) rotate(${-a}deg)` }}>
+                    <span className="auth-counter">
+                      <span className="auth-svc"><b>{sv.label}</b><em>{sv.tag}</em></span>
+                    </span>
+                  </span>
+                );
+              })}
+            </span>
           </div>
         </div>
 
@@ -207,32 +208,41 @@ function AuthPage() {
             </button>
           ))}
         </div>
-        <div className="anim-rise" style={{ maxWidth: 460, margin: "0 auto", width: "100%" }}>
+        <div className="anim-rise dash-card" style={{ maxWidth: 460, margin: "0 auto", width: "100%", padding: isMobile ? "28px 22px" : "36px 34px", boxShadow: "var(--shadow-pop)" }}>
 
           <div style={{ fontFamily: mono, fontSize: 11, color: PAL.primary, letterSpacing: ".14em", textTransform: "uppercase" as const, fontWeight: 600 }}>
             {t("auth.eyebrow")}
           </div>
-          <h1 style={{ fontFamily: serif, fontSize: 48, fontWeight: 500, color: PAL.ink, margin: "16px 0 32px", letterSpacing: "-.02em" }}>
+          <span style={{ width: 56, height: 56, borderRadius: 16, display: "grid", placeItems: "center", background: PAL.pale, boxShadow: `inset 0 0 0 1px ${PAL.line}`, marginTop: 18 }}>
+            <img src={emblem} alt="" style={{ width: 40, height: "auto" }} />
+          </span>
+          <h1 className="page-title" style={{ fontFamily: serif, fontSize: 40, fontWeight: 800, color: PAL.ink, margin: "16px 0 28px", letterSpacing: "-.03em", lineHeight: 1.08 }}>
             {t("auth.login_ta")}{" "}
-            <span style={{ fontStyle: "italic", color: PAL.primary }}>
+            <span style={{ color: PAL.primary }}>
               {t("auth.login_tb")}
             </span>
           </h1>
 
           <form onSubmit={handleSubmit}>
             <Field label={t("auth.email")} type="email" value={email} onChange={setEmail} placeholder="prenom.nom@ipisb.ma" testId="auth-email" />
-            <Field label={t("auth.password")} type="password" value={password} onChange={setPassword} placeholder="••••••••" testId="auth-password" />
+            <Field label={t("auth.password")} type={showPw ? "text" : "password"} value={password} onChange={setPassword} placeholder="••••••••" testId="auth-password"
+              trailing={
+                <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? "Masquer le mot de passe" : "Afficher le mot de passe"} aria-pressed={showPw}
+                  className="u-ghost" style={{ width: 40, height: 40, borderRadius: 8, border: 0, background: "transparent", color: PAL.muted, cursor: "pointer", display: "grid", placeItems: "center" }}>
+                  {showPw ? <EyeOff size={17} strokeWidth={1.8} /> : <Eye size={17} strokeWidth={1.8} />}
+                </button>
+              } />
 
             <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginTop: 8 }}>
               <a href="#" style={{ fontFamily: sans, fontSize: 12, color: PAL.primary, fontWeight: 600 }}>{t("auth.forgot")}</a>
             </div>
 
-            <button type="submit" disabled={busy} data-testid="auth-submit" className="u-hover-lift" style={{
-              background: PAL.ink, color: PAL.paper, border: 0, fontFamily: sans, fontSize: 14, fontWeight: 600,
-              padding: "14px 0", borderRadius: 999, cursor: busy ? "wait" : "pointer", letterSpacing: ".01em",
-              width: "100%", marginTop: 28, opacity: busy ? 0.6 : 1,
+            <button type="submit" disabled={busy} data-testid="auth-submit" className="btn-c btn-c-green" style={{
+              fontSize: 14.5, padding: "15px 0", borderRadius: 10, cursor: busy ? "wait" : "pointer",
+              width: "100%", marginTop: 24, opacity: busy ? 0.85 : 1,
             }}>
-              {busy ? "…" : t("auth.btn_login")}
+              {busy ? <span className="auth-spin" aria-hidden /> : null}
+              {t("auth.btn_login")}
             </button>
           </form>
 
@@ -242,7 +252,7 @@ function AuthPage() {
             <div style={{ flex: 1, height: 1, background: PAL.line }}></div>
           </div>
 
-          <button className="u-ghost" style={{ background: "transparent", color: PAL.ink, border: `1px solid ${PAL.line}`, fontFamily: sans, fontSize: 14, fontWeight: 500, padding: "12px 0", borderRadius: 999, cursor: "pointer", width: "100%" }}>
+          <button className="u-ghost" style={{ background: "transparent", color: PAL.ink, border: `1px solid ${PAL.line}`, fontFamily: sans, fontSize: 14, fontWeight: 600, padding: "13px 0", borderRadius: 10, cursor: "pointer", width: "100%" }}>
             {t("auth.sso")}
           </button>
 

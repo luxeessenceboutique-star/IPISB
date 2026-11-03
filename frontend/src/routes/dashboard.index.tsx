@@ -106,15 +106,19 @@ function DashboardHome() {
 
   return (
     <div className="space-y-6">
+      <section className="dash-card dash-hero" aria-label="Bienvenue">
+        <div aria-hidden className="dash-hero-mesh a" />
+        <div aria-hidden className="dash-hero-mesh b" />
+        <div style={{ position: "relative", flex: "1 1 380px" }}>
       <PageHead
-        eyebrow={today}
-        title={
-          <span>
-            {lang === "fr" ? "Bonjour" : lang === "ar" ? "مرحباً" : "Hello"}
-            {firstName ? (
-              <>
-                , <em style={{ fontStyle: "italic", color: "var(--pal-primary)" }}>{firstName}</em>
-              </>
+          eyebrow={today}
+          title={
+            <span>
+              {lang === "fr" ? "Bonjour" : lang === "ar" ? "مرحباً" : "Hello"}
+              {firstName ? (
+                <>
+                  , <em style={{ fontStyle: "normal", color: "var(--pal-primary)" }}>{firstName}</em>
+                </>
             ) : null}
             .
           </span>
@@ -125,6 +129,24 @@ function DashboardHome() {
           ? `هذه نظرة عامة على فضائك.`
           : `Here's an overview of your ${t(`dash.role.${role}`).toLowerCase()} space.`}
       />
+        </div>
+        <button type="button" className="dash-cmd" onClick={() => window.dispatchEvent(new Event("ipisb:open-copilot"))}>
+          <span aria-hidden className="pc-orb" style={{ ["--orb" as string]: "40px" } as React.CSSProperties}>
+            <i className="o-glow" /><i className="o-ring" /><i className="o-core" />
+          </span>
+          <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3, textAlign: "start" }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--pal-primary)" }}>
+              {lang === "fr" ? "Demandez au Copilote" : lang === "ar" ? "اسأل المساعد" : "Ask the Copilot"}
+            </span>
+            <span className="dash-cmd-txt">
+              <span style={{ animationDelay: "0s" }}>{lang === "fr" ? "« Quelles notes de caisse attendent mon approbation ? »" : lang === "ar" ? "« ما الطلبات التي تنتظر موافقتي؟ »" : "“Which cash notes are waiting for my approval?”"}</span>
+              <span style={{ animationDelay: "3.2s" }}>{lang === "fr" ? "« Prépare une demande d'achat »" : lang === "ar" ? "« حضّر طلب شراء »" : "“Draft a purchase request”"}</span>
+              <span style={{ animationDelay: "6.4s" }}>{lang === "fr" ? "« Où générer la paie ? »" : lang === "ar" ? "« أين أولّد كشف الرواتب؟ »" : "“Where do I generate payroll?”"}</span>
+            </span>
+          </span>
+          <span className="btn-c btn-c-primary btn-c-sm" style={{ borderRadius: 8 }}>{lang === "fr" ? "Ouvrir" : lang === "ar" ? "فتح" : "Open"}</span>
+        </button>
+      </section>
 
       {extraTabsVisible && (
         <div style={{ display: "flex", gap: 6, marginBottom: 4, borderBottom: "1px solid var(--pal-line)", flexWrap: "wrap" }}>

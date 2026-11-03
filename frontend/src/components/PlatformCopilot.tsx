@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useBreakpoint } from "@/lib/useBreakpoint";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { Sparkles, X, Send, ChevronDown, Check, Loader2 } from "lucide-react";
+import { X, Send, ChevronDown, Check, Loader2 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
 const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
@@ -208,6 +208,13 @@ export function PlatformCopilot() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   }
 
+  // Ouverture depuis ailleurs (barre « Demandez au Copilote » de l'Aperçu).
+  useEffect(() => {
+    const openIt = () => setOpen(true);
+    window.addEventListener("ipisb:open-copilot", openIt);
+    return () => window.removeEventListener("ipisb:open-copilot", openIt);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -236,10 +243,9 @@ export function PlatformCopilot() {
           fontFamily: sans,
         }}>
           <div style={{ background: "var(--pal-cream)", borderBottom: "1px solid var(--pal-line)", padding: "14px 16px", display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: 999, background: "var(--pal-primary)",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}><Sparkles size={16} color="var(--pal-paper)" strokeWidth={1.9} /></div>
+            <span aria-hidden className={streaming ? "pc-orb busy" : "pc-orb"} style={{ ["--orb" as string]: "34px" } as React.CSSProperties}>
+              <i className="o-glow" /><i className="o-ring" /><i className="o-core" />
+            </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-ink)" }}>Copilote IPISB</div>
               <div style={{ fontSize: 11, color: "var(--pal-muted)" }}>Assistant d'utilisation de la plateforme</div>
@@ -386,19 +392,26 @@ export function PlatformCopilot() {
         onClick={() => setOpen(o => !o)}
         aria-label={open ? "Fermer le copilote" : "Ouvrir le copilote IPISB"}
         aria-expanded={open}
-        className="pc-focus"
+        className="pc-focus pc-launcher"
         style={{
           position: "fixed", bottom: 24, left: 24, zIndex: open ? 1000 : 50,
-          width: 52, height: 52, borderRadius: 999, border: 0, cursor: "pointer",
-          background: "var(--pal-primary)", color: "var(--pal-paper)",
+          width: 58, height: 58, borderRadius: 999, border: "1px solid var(--pal-line-soft)", cursor: "pointer",
+          background: "var(--pal-paper)", color: "var(--pal-primary-deep)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(0,0,0,.25)", transition: "transform .2s",
+          boxShadow: "0 10px 30px oklch(30% 0.03 175 / .18)", transition: "transform .35s cubic-bezier(.22,1,.36,1)",
         }}
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1.07)"; }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
         title="Copilote IPISB Connect"
       >
-        {open ? <X size={19} strokeWidth={2} /> : <Sparkles size={20} strokeWidth={1.8} />}
+        {open ? <X size={19} strokeWidth={2} /> : (
+          <>
+            <span aria-hidden className="pc-ripple" /><span aria-hidden className="pc-ripple r2" />
+            <span aria-hidden className="pc-orb" style={{ ["--orb" as string]: "42px" } as React.CSSProperties}>
+              <i className="o-glow" /><i className="o-ring" /><i className="o-core" />
+            </span>
+          </>
+        )}
       </button>
     </>
   );
