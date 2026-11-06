@@ -7,7 +7,7 @@
 Phrase à coller dans Claude Code sur le nouveau poste :
 
 ```
-Lis SETUP_NOUVEAU_PC.md à la racine et fais ce qu'il dit.
+Lis docs/SETUP_NOUVEAU_PC.md et fais ce qu'il dit.
 ```
 
 ---

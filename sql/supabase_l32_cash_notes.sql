@@ -8,7 +8,7 @@
 --   * Créer la table des NOTES DE CAISSE : document justifiant une avance /
 --     un remboursement de caisse au profit d'un bénéficiaire, avec un tableau
 --     détaillé (Article / Prestataire / Montant), un total et des visas.
---   * Reproduit le modèle Word « Note de Caisse.doc » (dossier bébleo/).
+--   * Reproduit le modèle Word « Note de Caisse.doc » (docs/references/modeles-bebleo/).
 --   * Numérotation automatique : NDC-AAAA-NNNN (préfixe NDC, compteur annuel).
 --
 -- Le tableau des lignes est stocké en JSONB : [{article, prestataire, montant}].

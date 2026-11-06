@@ -8,7 +8,7 @@
 --   * Créer la table des NOTES DE FRAIS DE MISSION : document justifiant les
 --     frais engagés lors d'une mission (transport, hébergement, repas, divers),
 --     ventilés par thème/article ET par jour (matrice J1..J7).
---   * Reproduit le modèle Word « Note des frais de mission.doc » (dossier bébleo/).
+--   * Reproduit le modèle Word « Note des frais de mission.doc » (docs/references/modeles-bebleo/).
 --   * Numérotation automatique : NFM-AAAA-NNNN (préfixe NFM, compteur annuel).
 --
 --   Comme la note de caisse (l32/l34), la note de frais de mission est une

@@ -3,7 +3,7 @@
 ## Design System (OBLIGATOIRE)
 
 Pour tout travail UI (composant, page, modification visuelle) :
-**Toujours lire et appliquer `DESIGN_SYSTEM.md` à la racine.**
+**Toujours lire et appliquer `docs/DESIGN_SYSTEM.md`.**
 
 ### Règles de design à respecter
 - Couleurs : utiliser les variables `--pal-*` (OKLCH) définies dans le design system
@@ -12,7 +12,7 @@ Pour tout travail UI (composant, page, modification visuelle) :
 - Boutons custom : `.btn-c-primary`, `.btn-c-ghost`, `.btn-c-soft`, `.btn-c-danger`
 - Badges/chips : `.chip-c` avec variantes `-green`, `-amber`, `-red`, `-blue`
 - Animations : `.anim-rise`, `.anim-pop`, `.anim-fade`
-- Aperçu visuel : `Système Designe ipisbe/Design System.dc.html`
+- Aperçu visuel : `docs/design-system/Design System.dc.html`
 
 ## Stack technique
 - Frontend : React 19 + TypeScript + Vite + TanStack Router + Tailwind CSS v4 + shadcn/ui

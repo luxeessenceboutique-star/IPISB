@@ -33,11 +33,11 @@
 
 ## 3. Design system (OBLIGATOIRE)
 
-Toute UI doit respecter `DESIGN_SYSTEM.md` (racine) :
+Toute UI doit respecter `DESIGN_SYSTEM.md` (dans `docs/`) :
 - **Couleurs :** variables `--pal-*` (OKLCH). Identité **teal** premium.
 - **Polices :** Cormorant Garamond (titres), Manrope (UI).
 - **Composants :** cartes `.dash-card` ; boutons `.btn-c-primary` / `.btn-c-ghost` / `.btn-c-soft` / `.btn-c-danger` ; badges `.chip-c` (`-green`, `-amber`, `-red`, `-blue`) ; animations `.anim-rise` / `.anim-pop` / `.anim-fade`.
-- Aperçu visuel : `Système Designe ipisbe/Design System.dc.html`.
+- Aperçu visuel : `design-system/Design System.dc.html`.
 
 ---
 

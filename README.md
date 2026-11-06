@@ -54,7 +54,8 @@ Le projet est divisé en 3 dossiers principaux :
 IPISB-CONNECT/
 ├── frontend/    → Ce que l'utilisateur voit dans son navigateur (React)
 ├── backend/     → Le serveur qui traite les données (Python/FastAPI)
-└── sql/         → Les scripts de création de la base de données
+├── sql/         → Les scripts de création de la base de données
+└── docs/        → Documentation, design system et références (modèles Word/Excel d'origine)
 ```
 
 ### Comment les 3 parties communiquent
