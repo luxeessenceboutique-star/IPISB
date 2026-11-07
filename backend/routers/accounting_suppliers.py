@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
+from security import sanitize_filter_term
 from models import SupplierCreate, SupplierUpdate
 from utils.audit import log_audit
 
@@ -26,6 +27,7 @@ async def list_suppliers(
 ):
     _require_admin(user)
     query = db.from_("suppliers").select("*")
+    q = sanitize_filter_term(q or "")
     if q:
         query = query.or_(f"company_name.ilike.%{q}%,email.ilike.%{q}%")
     suppliers = query.order("company_name").execute().data or []

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, Form, Respons
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
+from security import sanitize_filter_term
 from models import TuitionPlanUpdate, TuitionPlanBulkUpdate, ClassScheduleUpdate, TuitionPaymentCreate, TuitionPaymentUpdate
 from utils.audit import log_audit
 from utils.uploads import validate_and_read
@@ -1281,13 +1282,13 @@ async def search_students(
     Renvoie l'élève, son numéro d'inscription et la promo à laquelle il est inscrit
     (pour naviguer directement vers sa promo)."""
     _require_read(user)
-    term = (q or "").strip()
+    term = sanitize_filter_term(q or "")
     if len(term) < 2:
         return {"items": []}
     lterm = term.lower()
     # Wildcard PostgREST dans un filtre .or_() : c'est « * » (et non « % » comme en SQL).
-    # Les virgules casseraient la syntaxe du .or_() : on les neutralise.
-    pat = f"*{term.replace(',', ' ')}*"
+    # `term` est déjà assaini (virgules, parenthèses, guillemets, jokers retirés).
+    pat = f"*{term}*"
 
     # Élèves dont le nom ou l'e-mail correspond
     name_hits = (

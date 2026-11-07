@@ -13,3 +13,15 @@ frontend/playwright-report/
 frontend/test-results/
 backend/Manuel_Comptabilite_IPISB.pdf
 backend/Manuel_Comptabilite_IPISB_AR.pdf
+
+# Secrets et clés (ne jamais committer)
+.env.*
+!.env.example
+!.env.e2e.example
+eNV REEL.txt
+eNV*REEL*.txt
+*secret*.txt
+*.pem
+*.key
+*.pk
+backend/secrets/

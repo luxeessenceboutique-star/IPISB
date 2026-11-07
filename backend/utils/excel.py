@@ -26,6 +26,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from security import neutralize_formula
+
 XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
@@ -121,10 +123,10 @@ def make_xlsx(
                 cell.number_format = _INT_FMT
                 cell.alignment = Alignment(horizontal=align or "center")
             elif typ == "date":
-                cell.value = "" if val is None else str(val)
+                cell.value = "" if val is None else neutralize_formula(str(val))
                 cell.alignment = Alignment(horizontal=align or "center")
             else:
-                cell.value = "" if val is None else str(val)
+                cell.value = "" if val is None else neutralize_formula(str(val))
                 cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=False)
             cell.border = border
             # Coloration conditionnelle de la cellule (situation, statut, mois…).

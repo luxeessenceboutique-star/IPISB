@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 from contextlib import asynccontextmanager
 import httpcore
 import httpx
@@ -9,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from deps import FRONTEND_URL, get_db, reset_db_client
+from security import IS_PRODUCTION, SECURITY_HEADERS, build_allowed_origins
 from utils.reminders import scan_and_notify
 from routers import meetings, notifications, users, dashboard
 from routers import documents, announcements
@@ -68,43 +68,34 @@ async def lifespan(app: FastAPI):
         task.cancel()
 
 
-app = FastAPI(title="IPISBE Connect API", version="1.0.0", lifespan=lifespan)
+# /docs, /redoc et /openapi.json cartographient toute l'API : désactivés en production.
+app = FastAPI(
+    title="IPISBE Connect API", version="1.0.0", lifespan=lifespan,
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
 
-ALLOWED_ORIGINS = [
-    FRONTEND_URL,
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:5176",
-    "http://localhost:5177",
-    "http://localhost:5178",
-    "http://localhost:5179",
-    "http://localhost:5180",
-    "http://localhost:5181",
-    "http://localhost:5182",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-    "http://127.0.0.1:5175",
-    "http://127.0.0.1:5176",
-    "http://127.0.0.1:5177",
-    "http://127.0.0.1:5178",
-    "http://127.0.0.1:5179",
-    "http://127.0.0.1:5180",
-    "http://127.0.0.1:5181",
-    "http://127.0.0.1:5182",
-]
-ALLOWED_ORIGIN_REGEX = re.compile(r"https://.*\.vercel\.app")
+# CORS strict : URL exacte du frontend (+ ports locaux hors production). Plus de
+# joker *.vercel.app : n'importe qui peut déployer un site sur ce domaine.
+ALLOWED_ORIGINS = build_allowed_origins(FRONTEND_URL)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=ALLOWED_ORIGIN_REGEX.pattern,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
 
 app.include_router(meetings.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
@@ -210,7 +201,7 @@ async def cors_safe_error_handler(request: Request, call_next):
                 logging.exception("Échec après reconnexion sur %s %s", request.method, request.url.path)
         response = JSONResponse(status_code=503, content={"detail": "Service temporairement indisponible, réessayez."})
         origin = request.headers.get("origin")
-        if origin and (origin in ALLOWED_ORIGINS or ALLOWED_ORIGIN_REGEX.match(origin)):
+        if origin and origin in ALLOWED_ORIGINS:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Vary"] = "Origin"
@@ -219,7 +210,7 @@ async def cors_safe_error_handler(request: Request, call_next):
         logging.exception("Unhandled exception on %s %s", request.method, request.url.path)
         response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
         origin = request.headers.get("origin")
-        if origin and (origin in ALLOWED_ORIGINS or ALLOWED_ORIGIN_REGEX.match(origin)):
+        if origin and origin in ALLOWED_ORIGINS:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Vary"] = "Origin"

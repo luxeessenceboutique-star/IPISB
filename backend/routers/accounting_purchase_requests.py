@@ -5,6 +5,7 @@ from typing import Annotated, Optional
 from pydantic import BaseModel
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
+from security import sanitize_filter_term
 from models import PurchaseRequestCreate, PurchaseRequestUpdate, DecisionInput, QuoteSelectInput, PurchaseInstallmentsReplace
 from permissions import Channel, channel_for
 from utils.audit import log_audit
@@ -123,6 +124,7 @@ async def list_requests(
     query = db.from_("purchase_requests").select("*", count="exact")
     if not user.can_access_accounting_full():
         query = query.eq("created_by", user.id)
+    q = sanitize_filter_term(q or "")
     if q:
         query = query.or_(f"request_number.ilike.%{q}%,justification.ilike.%{q}%")
     if status:

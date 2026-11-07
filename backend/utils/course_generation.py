@@ -1,3 +1,4 @@
+from security import sanitize_filter_term
 import io
 import json
 import logging
@@ -141,7 +142,7 @@ def gather_grounding_text(
 
     query = db.from_("library_files").select("*").in_("category", categories)
     if specialty_id:
-        query = query.or_(f"specialty_id.eq.{specialty_id},specialty_id.is.null")
+        query = query.or_(f"specialty_id.eq.{sanitize_filter_term(specialty_id, 64)},specialty_id.is.null")
     else:
         query = query.is_("specialty_id", "null")
     rows = query.order("created_at").execute().data or []

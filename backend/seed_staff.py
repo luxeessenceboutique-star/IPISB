@@ -1,20 +1,29 @@
 # Run this script ONCE (after applying sql/supabase_l19_roles_caisse_approvals.sql)
 # to seed the caisse (cashier) and comptable (accountant) staff accounts.
 import os
+import sys
 from datetime import datetime, timezone
 from supabase import create_client
 from dotenv import load_dotenv
 
 load_dotenv()
 
+if os.environ.get("ENV", "").lower() == "production" and os.environ.get("SEED_ALLOW_PRODUCTION") != "1":
+    sys.exit("Refus : ENV=production. Définir SEED_ALLOW_PRODUCTION=1 pour un amorçage volontaire.")
+
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+
+CAISSE_PASSWORD = os.environ.get("SEED_CAISSE_PASSWORD", "")
+COMPTABLE_PASSWORD = os.environ.get("SEED_COMPTABLE_PASSWORD", "")
+if len(CAISSE_PASSWORD) < 12 or len(COMPTABLE_PASSWORD) < 12:
+    sys.exit("Définir SEED_CAISSE_PASSWORD et SEED_COMPTABLE_PASSWORD (12 caractères minimum).")
 
 db = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 STAFF = [
-    {"email": "caisse@ipisb.ma",    "password": "Caisse@IPISB2026!", "full_name": "Caisse IPISB",    "role": "cashier"},
-    {"email": "comptable@ipisb.ma", "password": "Compta@IPISB2026!", "full_name": "Comptable IPISB", "role": "accountant"},
+    {"email": "caisse@ipisb.ma",    "password": CAISSE_PASSWORD, "full_name": "Caisse IPISB",    "role": "cashier"},
+    {"email": "comptable@ipisb.ma", "password": COMPTABLE_PASSWORD, "full_name": "Comptable IPISB", "role": "accountant"},
 ]
 
 
@@ -62,7 +71,7 @@ def seed_staff(email: str, password: str, full_name: str, role: str):
         print("        (Did you run sql/supabase_l19_roles_caisse_approvals.sql first?)")
         return
 
-    print(f"[OK] {role:10s} {email}  /  {password}")
+    print(f"[OK] {role:10s} {email}")
 
 
 if __name__ == "__main__":

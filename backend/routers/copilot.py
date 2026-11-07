@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from supabase import Client
 from openai import AsyncOpenAI
 
 from deps import get_current_user, get_db, CurrentUser
+from security import validate_chat_messages
 from copilot.agent import copilot_graph, LANG_SYSTEM, BASE_URL, API_KEY, CHAT_MODEL
 from copilot.actions import (
     ACTIONS, build_tool_schemas, split_arguments, validate_body, summarize_action, execute_action,
@@ -20,7 +21,12 @@ log = logging.getLogger(__name__)
 
 class CopilotRequest(BaseModel):
     messages: list[dict]
-    language: str = "fr"
+    language: str = Field("fr", max_length=5)
+
+    @field_validator("messages")
+    @classmethod
+    def _check_messages(cls, v):
+        return validate_chat_messages(v)
 
 
 def _openai_client() -> AsyncOpenAI:

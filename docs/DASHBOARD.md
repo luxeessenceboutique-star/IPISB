@@ -123,8 +123,8 @@ venv/Scripts/python.exe explore_db.py courses 20     # 20 premières lignes de "
 
 | E-mail | Mot de passe | Rôle |
 |---|---|---|
-| `admin1@ipisb.ma` | `Admin@IPISB2026!` | Administrateur |
-| `admin2@ipisb.ma` | `Admin@IPISB2026!` | Administrateur |
+| `admin1@ipisb.ma` | `<SEED_ADMIN_PASSWORD>` | Administrateur |
+| `admin2@ipisb.ma` | `<SEED_ADMIN_PASSWORD>` | Administrateur |
 
 ## ▶️ Lancer en local
 

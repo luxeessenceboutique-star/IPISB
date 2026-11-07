@@ -5,6 +5,8 @@ from deps import get_current_user, get_db, CurrentUser, ACCOUNTING_CHANNELS, ACC
 from models import RoleAction, CreateUserRequest
 from datetime import datetime, timezone
 
+VALID_ROLES = {"admin", "professor", "rh", "assistant_rh", "comptabilite", "cashier", "accountant", "student"}
+
 router = APIRouter(prefix="/users", tags=["users"])
 
 
@@ -192,6 +194,8 @@ async def update_role(
 ):
     if not user.is_admin():
         raise HTTPException(403, "Admin only")
+    if body.role not in VALID_ROLES:
+        raise HTTPException(400, "Rôle inconnu")
     if body.action == "add":
         try:
             db.from_("user_roles").insert({"user_id": user_id, "role": body.role}).execute()

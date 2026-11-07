@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from supabase import Client
 
 from deps import get_current_user, get_db, CurrentUser
+from security import rate_limit
 from utils.login_approval import approve_login_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -16,7 +17,7 @@ async def me(user: Annotated[CurrentUser, Depends(get_current_user)]):
     return {"id": user.id, "email": user.email, "roles": user.roles}
 
 
-@router.post("/login-approvals/{token}/approve")
+@router.post("/login-approvals/{token}/approve", dependencies=[Depends(rate_limit(20, 600, "approve"))])
 async def approve_login(token: str, db: Annotated[Client, Depends(get_db)]):
     """Public — no auth. Hit by the one-click link in the approval email."""
     ok = approve_login_token(db, token)

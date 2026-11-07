@@ -1,5 +1,8 @@
+import logging
 from typing import Any
 from supabase import Client
+
+log = logging.getLogger(__name__)
 
 
 def log_audit(
@@ -20,4 +23,5 @@ def log_audit(
             "meta": meta,
         }).execute()
     except Exception:
-        pass
+        # Ne casse jamais l'opération appelante, mais une trace d'audit perdue doit se voir.
+        log.exception("audit write failed: %s %s %s", action, entity_type, entity_id)

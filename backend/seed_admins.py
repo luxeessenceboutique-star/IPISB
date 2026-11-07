@@ -1,19 +1,30 @@
-# Run this script ONCE to seed the two IPISB admin accounts
+# Run this script ONCE to seed the two IPISB admin accounts.
+#   SEED_ADMIN_PASSWORD=<mot de passe fort, 12+ caractères> python seed_admins.py
+# Le mot de passe n'est JAMAIS écrit dans le code ni affiché. Refus en production
+# sauf SEED_ALLOW_PRODUCTION=1 (premier amorçage voulu).
 import os
+import sys
 from datetime import datetime, timezone
 from supabase import create_client
 from dotenv import load_dotenv
 
 load_dotenv()
 
+if os.environ.get("ENV", "").lower() == "production" and os.environ.get("SEED_ALLOW_PRODUCTION") != "1":
+    sys.exit("Refus : ENV=production. Définir SEED_ALLOW_PRODUCTION=1 pour un amorçage volontaire.")
+
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+
+SEED_ADMIN_PASSWORD = os.environ.get("SEED_ADMIN_PASSWORD", "")
+if len(SEED_ADMIN_PASSWORD) < 12:
+    sys.exit("Définir SEED_ADMIN_PASSWORD (12 caractères minimum) dans l'environnement.")
 
 db = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 ADMINS = [
-    {"email": "admin1@ipisb.ma", "password": "Admin@IPISB2026!", "full_name": "Admin IPISB 1"},
-    {"email": "admin2@ipisb.ma", "password": "Admin@IPISB2026!", "full_name": "Admin IPISB 2"},
+    {"email": "admin1@ipisb.ma", "password": SEED_ADMIN_PASSWORD, "full_name": "Admin IPISB 1"},
+    {"email": "admin2@ipisb.ma", "password": SEED_ADMIN_PASSWORD, "full_name": "Admin IPISB 2"},
 ]
 
 

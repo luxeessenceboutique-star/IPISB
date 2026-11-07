@@ -4,10 +4,11 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from openai import AsyncOpenAI
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
+from security import validate_chat_messages, rate_limit, sanitize_filter_term
 from models import (
     JobAdCreate, JobAdUpdate,
     CandidateCreate, CandidateUpdate, CandidateCommentCreate, CandidatePromote,
@@ -181,7 +182,7 @@ async def _process_cv(db: Client, cv: UploadFile, storage_prefix: str) -> tuple[
     return extracted, file_path
 
 
-@router.post("/ads/{ad_id}/apply")
+@router.post("/ads/{ad_id}/apply", dependencies=[Depends(rate_limit(5, 3600, "apply"))])
 async def apply_to_ad(
     ad_id: str,
     db: Annotated[Client, Depends(get_db)],
@@ -255,6 +256,11 @@ AD_CHAT_SYSTEM = (
 
 class AdChatGenerateRequest(BaseModel):
     messages: list[dict]
+
+    @field_validator("messages")
+    @classmethod
+    def _check_messages(cls, v):
+        return validate_chat_messages(v)
 
 
 @router.post("/ads/chat-generate")
@@ -881,7 +887,7 @@ async def list_slots(
     _require_admin(user)
     query = db.from_("hr_slots").select("*")
     if ad_id:
-        query = query.or_(f"ad_id.eq.{ad_id},ad_id.is.null")
+        query = query.or_(f"ad_id.eq.{sanitize_filter_term(ad_id, 64)},ad_id.is.null")
     if slot_date:
         query = query.eq("date", slot_date)
 

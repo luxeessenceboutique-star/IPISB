@@ -24,6 +24,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated, Optional
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser
+from security import sanitize_filter_term
 from models import ChequeCreate, ChequeUpdate, ChequeStatusUpdate
 from utils.audit import log_audit
 from utils.excel import make_xlsx
@@ -538,7 +539,7 @@ def _filtered(
     if date_to:
         query = query.lte("issue_date", date_to)
     if q:
-        term = q.replace("%", "").replace(",", " ").strip()
+        term = sanitize_filter_term(q)
         if term:
             query = query.or_(
                 f"cheque_number.ilike.%{term}%,counterparty.ilike.%{term}%,"

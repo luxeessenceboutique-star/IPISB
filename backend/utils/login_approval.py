@@ -196,9 +196,13 @@ def enforce_login_gate(db: Client, user_id: str, email: str, roles: list[str]) -
             .eq("id", user_id).execute().data
         )
     except Exception:
-        # login_approved_at/last_login_at not provisioned yet (migration not
-        # run) — fail open rather than locking every admin/professor out.
+        # Colonnes login_approved_at/last_login_at absentes (migration non
+        # appliquée) ou erreur transitoire. En production on ferme l'accès
+        # (fail closed) : une panne ne doit pas contourner l'approbation.
+        # Hors production on laisse passer pour ne pas bloquer le dev local.
         log.warning("Login approval gate: could not read profiles columns — is the migration applied?", exc_info=True)
+        if os.environ.get("ENV", "").lower() == "production":
+            raise HTTPException(503, "login_gate_unavailable")
         return
     profile = rows[0] if rows else {}
     full_name = profile.get("full_name") or email

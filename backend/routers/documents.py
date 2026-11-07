@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
 from supabase import Client
 from deps import get_current_user, get_db, CurrentUser, FRONTEND_URL
+from security import rate_limit
 from models import DocumentGenerate
 from utils.audit import log_audit
 from utils.documents import (
@@ -205,7 +206,7 @@ async def delete_document(
     return {"ok": True}
 
 
-@router.get("/verify/{code}")
+@router.get("/verify/{code}", dependencies=[Depends(rate_limit(30, 600, "verify"))])
 async def verify_document(
     code: str,
     db: Annotated[Client, Depends(get_db)],
