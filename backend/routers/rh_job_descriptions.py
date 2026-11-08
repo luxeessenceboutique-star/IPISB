@@ -48,20 +48,28 @@ def _load_heading_tasks(db: Client, heading_ids: list[str]) -> dict[str, list[di
     return out
 
 
+def _norm_name(s: str) -> str:
+    """Nom comparable : sans accents, casse ni espaces multiples, et sans
+    dépendre de l'ordre prénom/nom (« GHOULAM Houda » == « Houda Ghoulam »)."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    return " ".join(sorted(s.split()))
+
+
 def _positions_of_users(db: Client, user_ids: list[str]) -> set[tuple[str, str]]:
     """(département, poste) des fiches salarié correspondant aux comptes
     `user_ids`. employees n'a pas de colonne user_id : le lien compte → salarié
     se fait par email, à défaut par nom complet (insensible à la casse)."""
     profiles = db.from_("profiles").select("email, full_name").in_("id", user_ids).execute().data or []
     emails = {p["email"].strip().lower() for p in profiles if p.get("email")}
-    names = {p["full_name"].strip().lower() for p in profiles if p.get("full_name")}
+    names = {_norm_name(p["full_name"]) for p in profiles if p.get("full_name")}
     employees = db.from_("employees").select("email, full_name, department, position").execute().data or []
     out: set[tuple[str, str]] = set()
     for e in employees:
         if not e.get("position"):
             continue
         by_email = bool(e.get("email")) and e["email"].strip().lower() in emails
-        by_name = bool(e.get("full_name")) and e["full_name"].strip().lower() in names
+        by_name = bool(e.get("full_name")) and _norm_name(e["full_name"]) in names
         if by_email or by_name:
             # Le département est souvent vide côté salarié (NULL) comme côté
             # fiche de poste ('') : les deux comptent comme « sans service ».
