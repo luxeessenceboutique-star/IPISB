@@ -2,6 +2,7 @@ import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { toast } from "sonner";
 import { Bell, Loader2, CheckCheck, Info, CheckCircle2, AlertTriangle, XCircle, Trash2 } from "lucide-react";
@@ -22,7 +23,8 @@ const TYPE_ICON: Record<string, typeof Info> = { info: Info, success: CheckCircl
 
 function NotificationsPage() {
   const { t, lang } = useI18n();
-  const { user } = useAuth();
+  const { user, roles } = useAuth();
+  const isAdmin = roles.includes("admin");
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +78,22 @@ function NotificationsPage() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   }
 
+  /** Suppression en masse : `mine` = toutes les miennes, `read` = les lues, `all` = TOUS les utilisateurs (admin). */
+  async function bulkDelete(scope: "mine" | "read" | "all") {
+    if (scope === "mine" && !window.confirm(t("notifications.confirm_delete_all"))) return;
+    if (scope === "all" && !window.confirm(t("notifications.confirm_purge_all"))) return;
+    try {
+      await api.delete(`/api/notifications?scope=${scope}`);
+      toast.success(t("notifications.deleted"));
+      if (scope === "read") setNotifications(prev => prev.filter(n => !n.read));
+      else setNotifications([]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   const unreadCount = notifications.filter(n => !n.read).length;
+  const readCount = notifications.length - unreadCount;
   const visible = filter === "unread" ? notifications.filter(n => !n.read) : notifications;
   const fmtAgo = (d: string) => {
     const mins = Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 60000));
@@ -120,11 +137,28 @@ function NotificationsPage() {
             {lang === "fr" ? "Non lues" : lang === "ar" ? "غير المقروءة" : "Unread"}
           </button>
         </div>
-        {unreadCount > 0 && (
-          <button type="button" onClick={markAllRead} style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-primary-deep)" }}>
-            {t("notifications.mark_all_read")}
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-4">
+          {unreadCount > 0 && (
+            <button type="button" onClick={markAllRead} style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-primary-deep)" }}>
+              {t("notifications.mark_all_read")}
+            </button>
+          )}
+          {readCount > 0 && (
+            <button type="button" onClick={() => bulkDelete("read")} style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-primary-deep)" }}>
+              {t("notifications.delete_read")}
+            </button>
+          )}
+          {notifications.length > 0 && (
+            <button type="button" onClick={() => bulkDelete("mine")} className="inline-flex items-center gap-1" style={{ fontSize: 13.5, fontWeight: 700, color: "oklch(55% 0.2 25)" }}>
+              <Trash2 className="h-3.5 w-3.5" /> {t("notifications.delete_all")}
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" onClick={() => bulkDelete("all")} className="inline-flex items-center gap-1" style={{ fontSize: 13.5, fontWeight: 700, color: "oklch(55% 0.2 25)" }}>
+              <Trash2 className="h-3.5 w-3.5" /> {t("notifications.purge_all")}
+            </button>
+          )}
+        </div>
       </div>
 
       {loading ? (
