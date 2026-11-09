@@ -521,7 +521,8 @@ class PurchaseRequestCreate(BaseModel):
     company: Optional[str] = None
     service: Optional[str] = None
     requester_name: Optional[str] = None
-    project: Optional[str] = None
+    project: Optional[str] = None            # « Code analytique »
+    imputation: Optional[str] = None
     activity: Optional[str] = None
     justification: Optional[str] = None
     request_type: str = "nouveau_besoin"        # 'nouveau_besoin' | 'renouvellement'
@@ -547,7 +548,8 @@ class PurchaseRequestUpdate(BaseModel):
     company: Optional[str] = None
     service: Optional[str] = None
     requester_name: Optional[str] = None
-    project: Optional[str] = None
+    project: Optional[str] = None            # « Code analytique »
+    imputation: Optional[str] = None
     activity: Optional[str] = None
     justification: Optional[str] = None
     request_type: Optional[str] = None

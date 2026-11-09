@@ -12,8 +12,13 @@ const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 14, width: "100%", padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 8, fontFamily: sans, fontSize: 13, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 const CATEGORIES = ["technique", "soft_skills", "compliance", "management", "langue", "securite"];
-const LEVELS = ["beginner", "intermediate", "advanced", "expert"];
-const LEVEL_LABEL: Record<string, string> = { beginner: "Débutant", intermediate: "Intermédiaire", advanced: "Avancé", expert: "Expert" };
+// Niveaux 1 à 5 du dictionnaire des compétences ; les anciennes valeurs
+// (beginner…expert) restent lisibles pour les évaluations déjà saisies.
+const LEVELS = ["level_1", "level_2", "level_3", "level_4", "level_5"];
+const LEVEL_LABEL: Record<string, string> = {
+  level_1: "Niveau 1", level_2: "Niveau 2", level_3: "Niveau 3", level_4: "Niveau 4", level_5: "Niveau 5",
+  beginner: "Débutant", intermediate: "Intermédiaire", advanced: "Avancé", expert: "Expert",
+};
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -245,7 +250,7 @@ function AssignmentsPanel({ employees, catalog }: { employees: Employee[]; catal
 
 // ── Skills ───────────────────────────────────────────────────────────────
 
-type Skill = { id: string; name: string; category: string; description?: string | null };
+type Skill = { id: string; name: string; category: string; description?: string | null; levels?: string[] | null };
 type EmployeeSkill = { id: string; employee_id: string; skill_id: string; skill_name: string | null; level: string };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -268,7 +273,12 @@ function SkillsPanel({ employees }: { employees: Employee[] }) {
   const [matrix, setMatrix] = useState<EmployeeSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [newSkill, setNewSkill] = useState({ name: "", category: "technique" });
-  const [assign, setAssign] = useState({ employee_id: "", skill_id: "", level: "beginner" });
+  const [assign, setAssign] = useState({ employee_id: "", skill_id: "", level: "level_1" });
+  const selectedSkill = skills.find(s => s.id === assign.skill_id) ?? null;
+  const levelText = (skill: Skill | null | undefined, level: string): string | undefined => {
+    const n = LEVELS.indexOf(level);
+    return n >= 0 ? skill?.levels?.[n] : undefined;
+  };
 
   async function load() {
     setLoading(true);
@@ -355,6 +365,27 @@ function SkillsPanel({ employees }: { employees: Employee[] }) {
           <button type="button" onClick={assignSkill} className="btn-c btn-c-sm btn-c-primary"><Sparkles size={13} strokeWidth={1.7} />Évaluer</button>
         </div>
 
+        {selectedSkill && (selectedSkill.description || selectedSkill.levels?.length) && (
+          <div style={{ border: `1px solid ${PAL.line}`, borderRadius: 10, padding: 12, marginBottom: 14, background: PAL.paper }}>
+            {selectedSkill.description && (
+              <p style={{ margin: "0 0 8px", fontSize: 12.5, fontStyle: "italic", color: PAL.muted, lineHeight: 1.5 }}>{selectedSkill.description}</p>
+            )}
+            {selectedSkill.levels?.map((txt, i) => {
+              const key = LEVELS[i];
+              const active = assign.level === key;
+              return (
+                <button key={key} type="button" onClick={() => setAssign(a => ({ ...a, level: key }))}
+                  style={{ display: "flex", gap: 10, width: "100%", textAlign: "left", cursor: "pointer", border: 0, borderRadius: 8, padding: "7px 8px", marginBottom: 2,
+                    background: active ? "var(--pal-pale)" : "transparent", fontFamily: sans, fontSize: 12.5, lineHeight: 1.45, color: PAL.ink }}>
+                  <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700,
+                    background: active ? "var(--pal-primary)" : "var(--pal-pale)", color: active ? "#fff" : "var(--pal-primary-deep)" }}>{i + 1}</span>
+                  <span style={{ fontWeight: active ? 600 : 400 }}>{txt}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {loading ? (
           <div className="shimmer" style={{ height: 16, width: 160, borderRadius: 999 }} />
         ) : matrix.length === 0 ? (
@@ -363,11 +394,12 @@ function SkillsPanel({ employees }: { employees: Employee[] }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {matrix.map(m => {
               const emp = employees.find(e => e.id === m.employee_id);
+              const tip = levelText(skills.find(k => k.id === m.skill_id), m.level);
               return (
                 <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", borderRadius: 8, border: `1px solid ${PAL.line}`, fontSize: 12.5 }}>
                   <span style={{ flex: 1, fontWeight: 600, color: PAL.ink }}>{emp?.full_name ?? "—"}</span>
                   <span style={{ flex: 1, color: PAL.muted }}>{m.skill_name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--pal-pale)", color: "var(--pal-primary-deep)" }}>{LEVEL_LABEL[m.level] ?? m.level}</span>
+                  <span title={tip} style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--pal-pale)", color: "var(--pal-primary-deep)", cursor: tip ? "help" : "default" }}>{LEVEL_LABEL[m.level] ?? m.level}</span>
                   <button onClick={() => removeMatrixEntry(m)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }}><Trash2 size={12} strokeWidth={1.7} /></button>
                 </div>
               );

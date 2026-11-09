@@ -94,7 +94,7 @@ type Order = {
 };
 type PR = {
   id: string; request_number: string; company: string | null; service: string | null;
-  requester_name: string | null; project: string | null; activity: string | null; justification: string | null;
+  requester_name: string | null; project: string | null; imputation: string | null; activity: string | null; justification: string | null;
   request_type: string; asset_category: string; category_id: string | null; characteristics: string | null;
   cdc_attachment_name: string | null; cdc_attachment_path: string | null;
   conformity_note: string | null; conformity_criteria: string[] | null;
@@ -256,7 +256,7 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
   const ownerName = (user?.user_metadata?.full_name as string | undefined) ?? user?.email ?? "";
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
-    company: "", service: "", requester_name: ownerName, project: "", activity: "", justification: "",
+    company: "", service: "", requester_name: ownerName, project: "", imputation: "", activity: "", justification: "",
     request_type: "nouveau_besoin", category_id: "", conformity_note: "", duration: "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -327,7 +327,8 @@ function CreateModal({ categories, onClose, onSaved }: { categories: Category[];
             <label style={labelStyle}>Demandeur</label>
             <input className="u-input" style={{ ...fieldStyle, background: "var(--pal-pale)", cursor: "not-allowed" }} value={form.requester_name} readOnly title="Le demandeur est le titulaire du compte connecté" />
           </div>
-          <div><label style={labelStyle}>Imputation · Code analytique</label><input className="u-input" placeholder="ex. BUD-2026-FORM-01" style={fieldStyle} value={form.project} onChange={e => set("project", e.target.value)} /></div>
+          <div><label style={labelStyle}>Code analytique</label><input className="u-input" placeholder="ex. BUD-2026-FORM-01" style={fieldStyle} value={form.project} onChange={e => set("project", e.target.value)} /></div>
+          <div><label style={labelStyle}>Imputation</label><input className="u-input" placeholder="ex. Budget Formation 2026" style={fieldStyle} value={form.imputation} onChange={e => set("imputation", e.target.value)} /></div>
         </div>
         <label style={labelStyle}>Activité</label>
         <input className="u-input" style={fieldStyle} value={form.activity} onChange={e => set("activity", e.target.value)} />
@@ -618,7 +619,7 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
   function startEdit(p: PR) {
     setEditForm({
       company: p.company ?? "", service: p.service ?? "", requester_name: p.requester_name ?? "",
-      project: p.project ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
+      project: p.project ?? "", imputation: p.imputation ?? "", activity: p.activity ?? "", justification: p.justification ?? "",
       request_type: p.request_type, category_id: p.category_id ?? "",
       conformity_note: p.conformity_note ?? "", duration: p.duration ?? "",
     });
@@ -813,7 +814,8 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
                 </select>
               </div>
               <div><label style={labelStyle}>Demandeur</label><input className="u-input" style={fieldStyle} value={editForm.requester_name} onChange={e => setEditField("requester_name", e.target.value)} /></div>
-              <div><label style={labelStyle}>Imputation · Code analytique</label><input className="u-input" placeholder="ex. BUD-2026-FORM-01" style={fieldStyle} value={editForm.project} onChange={e => setEditField("project", e.target.value)} /></div>
+              <div><label style={labelStyle}>Code analytique</label><input className="u-input" placeholder="ex. BUD-2026-FORM-01" style={fieldStyle} value={editForm.project} onChange={e => setEditField("project", e.target.value)} /></div>
+              <div><label style={labelStyle}>Imputation</label><input className="u-input" placeholder="ex. Budget Formation 2026" style={fieldStyle} value={editForm.imputation} onChange={e => setEditField("imputation", e.target.value)} /></div>
             </div>
             <label style={labelStyle}>Activité</label>
             <input className="u-input" style={fieldStyle} value={editForm.activity} onChange={e => setEditField("activity", e.target.value)} />
@@ -863,7 +865,8 @@ function DetailModal({ prId, suppliers, categories, onClose, onChanged }: {
             {info("Type", REQ_TYPE[pr.request_type])}
             {info("Catégorie", categories.find(c => c.id === pr.category_id)?.name ?? "—")}
             {info("Société", pr.company)} {info("Service", pr.service)}
-            {info("Demandeur", pr.requester_name)} {info("Imputation · Code analytique", pr.project)}
+            {info("Demandeur", pr.requester_name)} {info("Code analytique", pr.project)}
+            {info("Imputation", pr.imputation)}
             {info("Activité", pr.activity)}
             {info("Budget estimé", fmtMAD(pr.budget_estimate))} {info("Durée", pr.duration)}
           </div>

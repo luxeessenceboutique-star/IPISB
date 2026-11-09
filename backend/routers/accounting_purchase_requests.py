@@ -192,6 +192,10 @@ async def create_request(
 
     items = body.items
     data = body.model_dump(exclude={"items"})
+    # `imputation` n'existe qu'après la migration l64 : on ne l'envoie que si elle est renseignée,
+    # pour que la création reste possible tant que la colonne n'a pas été ajoutée.
+    if not data.get("imputation"):
+        data.pop("imputation", None)
     data["created_by"] = user.id
     # Ne conserver que les critères de conformité connus.
     data["conformity_criteria"] = [c for c in (data.get("conformity_criteria") or []) if c in CONFORMITY_CRITERIA]
@@ -271,6 +275,8 @@ async def update_request(
     if pr["status"] not in ("brouillon", "retournee") and not user.is_admin():
         raise HTTPException(403, "Cette demande a déjà été validée — seul un administrateur peut la modifier.")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if updates.get("imputation") == "":
+        updates.pop("imputation")
     if not updates:
         raise HTTPException(400, "Aucun champ à modifier")
     if "request_type" in updates and updates["request_type"] not in REQUEST_TYPES:

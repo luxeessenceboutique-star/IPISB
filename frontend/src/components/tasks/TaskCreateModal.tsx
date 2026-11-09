@@ -14,6 +14,13 @@ const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const fieldStyle = { marginTop: 8, marginBottom: 16, width: "100%", padding: "11px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const };
 const labelStyle = { fontFamily: sans, fontSize: 11, fontWeight: 600, color: PAL.muted, letterSpacing: ".1em", textTransform: "uppercase" as const };
 
+const DOMAIN_OPTIONS: { value: TaskDomain; label: string; chip: string; adminOnly?: boolean }[] = [
+  { value: "rh", label: "RH", chip: "chip-c-blue" },
+  { value: "comptabilite", label: "Comptabilité", chip: "chip-c-green", adminOnly: true },
+  { value: "general", label: "Général", chip: "chip-c-amber" },
+  { value: "scolarite", label: "Scolarité", chip: "chip-c-red" },
+];
+
 const ALL_CHANNELS: TaskChannel[] = ["v2", "v1", "v0"];
 
 function assignableUrl(channels: TaskChannel[]): string {
@@ -29,7 +36,7 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
   const isAdmin = roles.includes("admin");
   const [form, setForm] = useState({
     title: "", description: "", priority: "medium",
-    domain: fixedDomain ?? "", due_date: "",
+    domain: (fixedDomain ?? "general") as string, due_date: "",
   });
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [channels, setChannels] = useState<TaskChannel[]>([]);
@@ -99,6 +106,26 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
           Nouvelle tâche
         </h2>
 
+        <label style={labelStyle}>Type de tâche *</label>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, marginBottom: 16 }}>
+          {DOMAIN_OPTIONS.filter(o => !o.adminOnly || isAdmin).map(o => {
+            const active = form.domain === o.value;
+            const locked = !!fixedDomain && fixedDomain !== o.value;
+            return (
+              <button
+                key={o.value}
+                type="button"
+                disabled={locked}
+                onClick={() => { if (active) return; setForm(f => ({ ...f, domain: o.value })); setAssigneeIds([]); setChannels([]); setLinkedEntity(null); }}
+                className={`chip-c ${active ? o.chip : ""}`}
+                style={{ cursor: locked ? "not-allowed" : "pointer", opacity: locked ? .4 : 1, fontSize: 12.5, padding: "6px 14px", border: `1px solid ${active ? "transparent" : PAL.line}` }}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+
         <label style={labelStyle}>Titre *</label>
         <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="u-input" style={fieldStyle} placeholder="Ex. Préparer le rapport mensuel" />
 
@@ -120,23 +147,6 @@ export function TaskCreateModal({ users, fixedDomain, onClose, onSaved }: {
             <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} className="u-input" style={fieldStyle} />
           </div>
         </div>
-
-        {!fixedDomain && (
-          <>
-            <label style={labelStyle}>Domaine</label>
-            <select
-              value={form.domain}
-              onChange={e => { setForm(f => ({ ...f, domain: e.target.value })); setAssigneeIds([]); setChannels([]); }}
-              className="u-input" style={fieldStyle}
-            >
-              <option value="">— Aucun —</option>
-              <option value="rh">RH</option>
-              {isAdmin && <option value="comptabilite">Comptabilité</option>}
-              <option value="scolarite">Scolarité</option>
-              <option value="general">Général</option>
-            </select>
-          </>
-        )}
 
         {isComptabilite && (
           <>

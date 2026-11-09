@@ -9,7 +9,7 @@ from utils.pdf_generators import compute_moroccan_payroll
 router = APIRouter(prefix="/rh/performance", tags=["rh"])
 
 VALID_GOAL_STATUSES = {"pending", "in_progress", "done"}
-REVIEW_TYPES = {"monthly", "semestrial", "annual"}
+REVIEW_TYPES = {"monthly", "semestrial", "annual", "custom"}
 
 
 def _require_admin(user: CurrentUser) -> None:
@@ -85,6 +85,14 @@ async def create_review(
     _require_admin(user)
     if body.review_type not in REVIEW_TYPES:
         raise HTTPException(400, "Invalid review_type")
+    if body.review_type == "custom":
+        from datetime import date as _date
+        try:
+            a, b = body.period.split("/")
+            if _date.fromisoformat(a) > _date.fromisoformat(b):
+                raise ValueError
+        except ValueError:
+            raise HTTPException(400, "period doit être 'AAAA-MM-JJ/AAAA-MM-JJ' (début ≤ fin) pour une évaluation personnalisée.")
     data = body.model_dump()
     data["reviewer_id"] = user.id
 

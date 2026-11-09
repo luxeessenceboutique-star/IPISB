@@ -14,19 +14,17 @@ const REVIEW_TYPES = [
   { key: "monthly", label: "Mensuelle" },
   { key: "semestrial", label: "Semestrielle" },
   { key: "annual", label: "Annuelle" },
+  { key: "custom", label: "Personnalisée" },
 ] as const;
 type ReviewType = (typeof REVIEW_TYPES)[number]["key"];
-export const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle" };
-const CURRENT_YEAR = new Date().getFullYear();
-// Plage d'années proposée pour la période d'une évaluation : large (plus de
-// limite à ±3 ans), et toujours élargie à l'année déjà choisie pour qu'une
-// évaluation ancienne ou lointaine s'affiche et se modifie correctement.
-const FIRST_YEAR = 2000;
-const LAST_YEAR = Math.max(2050, CURRENT_YEAR + 10);
-function yearOptions(selected: number): number[] {
-  const first = Math.min(FIRST_YEAR, selected), last = Math.max(LAST_YEAR, selected);
-  return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+export const REVIEW_TYPE_LABEL: Record<string, string> = { monthly: "Mensuelle", semestrial: "Semestrielle", annual: "Annuelle", custom: "Personnalisée" };
+
+/** "2026-10-01/2026-10-10" → "01/10/2026 → 10/10/2026" ; les autres périodes restent telles quelles. */
+export function fmtPeriod(p: string): string {
+  if (!p.includes("/")) return p;
+  return p.split("/").map(d => d.split("-").reverse().join("/")).join(" → ");
 }
+const CURRENT_YEAR = new Date().getFullYear();
 const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
 export type Review = {
@@ -59,45 +57,132 @@ function fmtMAD(v: number | null | undefined) {
  * semestrielle "YYYY-S1"/"YYYY-S2", annuelle "YYYY" — pour fiabiliser le
  * calcul de l'évolution (annuelle) et l'application de la prime (mensuelle)
  * côté backend, qui parsent ce format. */
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const isoDay = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const WEEK = ["L", "M", "M", "J", "V", "S", "D"];
+
+/** Calendrier de sélection de jours : 1er clic = début, 2e clic = fin (inversés
+ * si besoin) ; un 3e clic recommence. Période stockée "AAAA-MM-JJ/AAAA-MM-JJ". */
+function RangeCalendar({ period, setPeriod }: { period: string; setPeriod: (p: string) => void }) {
+  const [a0, b0] = period.includes("/") ? period.split("/") : [isoDay(new Date()), isoDay(new Date())];
+  const [start, setStart] = useState(a0);
+  const [end, setEnd] = useState<string | null>(b0);
+  const first = new Date(`${a0}T00:00:00`);
+  const [cur, setCur] = useState(new Date(first.getFullYear(), first.getMonth(), 1));
+  const todayIso = isoDay(new Date());
+
+  function pick(d: string) {
+    if (end !== null) { setStart(d); setEnd(null); return; }   // nouvelle sélection
+    const [s, e] = d < start ? [d, start] : [start, d];
+    setStart(s); setEnd(e); setPeriod(`${s}/${e}`);
+  }
+  const lead = (cur.getDay() + 6) % 7;
+  const count = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+  const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: count }, (_, i) => `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(i + 1)}`)];
+  const lo = start, hi = end ?? start;
+  const nDays = Math.round((Date.parse(`${hi}T00:00:00Z`) - Date.parse(`${lo}T00:00:00Z`)) / 86_400_000) + 1;
+  const arrow = { background: "none", border: 0, cursor: "pointer", color: PAL.ink, display: "flex", padding: 4 } as const;
+
+  return (
+    <div style={{ marginTop: 8, marginBottom: 16, border: `1px solid ${PAL.line}`, borderRadius: 12, padding: 12, background: PAL.paper }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <button type="button" aria-label="Mois précédent" style={arrow} onClick={() => setCur(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}><ChevronLeft size={18} /></button>
+        <span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: PAL.ink }}>{MONTHS[cur.getMonth()]} {cur.getFullYear()}</span>
+        <button type="button" aria-label="Mois suivant" style={arrow} onClick={() => setCur(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))}><ChevronRight size={18} /></button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", rowGap: 2 }}>
+        {WEEK.map((w, i) => <div key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: PAL.muted, padding: "4px 0" }}>{w}</div>)}
+        {cells.map((d, i) => {
+          if (!d) return <div key={i} />;
+          const inRange = d >= lo && d <= hi;
+          const edge = d === lo || d === hi;
+          return (
+            <button key={d} type="button" onClick={() => pick(d)} style={{
+              border: d === todayIso && !inRange ? "1px solid var(--pal-primary)" : 0, cursor: "pointer", fontFamily: sans, fontSize: 13, height: 34,
+              fontWeight: edge ? 700 : 500, background: edge ? "var(--pal-primary)" : inRange ? "var(--pal-pale)" : "transparent",
+              color: edge ? "#fff" : PAL.ink, borderRadius: edge ? 999 : inRange ? 0 : 999,
+            }}>{Number(d.slice(8))}</button>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 8, fontSize: 12, color: PAL.muted, fontFamily: sans }}>
+        {end === null ? "Choisissez le dernier jour…" : `${fmtPeriod(`${lo}/${hi}`)} · ${nDays} jour${nDays > 1 ? "s" : ""}`}
+      </div>
+    </div>
+  );
+}
+
 function periodPicker(type: ReviewType, period: string, setPeriod: (p: string) => void) {
+  if (type === "custom") return <RangeCalendar period={period} setPeriod={setPeriod} />;
+  return <PeriodCalendar type={type} period={period} setPeriod={setPeriod} />;
+}
+
+/** Sélecteur de période façon calendrier : navigation ‹ année › sans limite,
+ * grille des 12 mois (mensuelle), deux semestres, ou grille d'années (annuelle). */
+function PeriodCalendar({ type, period, setPeriod }: { type: ReviewType; period: string; setPeriod: (p: string) => void }) {
   const year = parseInt(period.split("-")[0], 10) || CURRENT_YEAR;
-  const years = yearOptions(year);
+  const [view, setView] = useState(year);              // année affichée (mensuelle / semestrielle)
+  const [pageStart, setPageStart] = useState(year - (year % 12)); // 1re année de la page (annuelle)
+  const month = parseInt(period.split("-")[1], 10) || 0;
+  const sem = period.split("-")[1] || "";
+
+  const cell = (active: boolean, current: boolean) => ({
+    padding: "10px 6px", borderRadius: 10, cursor: "pointer", fontFamily: sans, fontSize: 13, fontWeight: active ? 700 : 500,
+    border: `1px solid ${active ? "transparent" : current ? "var(--pal-primary)" : PAL.line}`,
+    background: active ? "var(--pal-primary)" : PAL.paper, color: active ? "#fff" : PAL.ink,
+  } as const);
+  const nav = (label: string, prev: () => void, next: () => void) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <button type="button" onClick={prev} aria-label="Précédent" style={{ background: "none", border: 0, cursor: "pointer", color: PAL.ink, display: "flex", padding: 4 }}><ChevronLeft size={18} /></button>
+      <span style={{ fontFamily: sans, fontSize: 15, fontWeight: 700, color: PAL.ink }}>{label}</span>
+      <button type="button" onClick={next} aria-label="Suivant" style={{ background: "none", border: 0, cursor: "pointer", color: PAL.ink, display: "flex", padding: 4 }}><ChevronRight size={18} /></button>
+    </div>
+  );
+  const box = { marginTop: 8, marginBottom: 16, border: `1px solid ${PAL.line}`, borderRadius: 12, padding: 12, background: PAL.paper } as const;
+
   if (type === "annual") {
     return (
-      <select value={year} onChange={e => setPeriod(e.target.value)} className="u-input" style={fieldStyle}>
-        {years.map(y => <option key={y} value={y}>{y}</option>)}
-      </select>
-    );
-  }
-  if (type === "semestrial") {
-    const sem = period.split("-")[1] || "S1";
-    return (
-      <div style={{ display: "flex", gap: 8 }}>
-        <select value={year} onChange={e => setPeriod(`${e.target.value}-${sem}`)} className="u-input" style={fieldStyle}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select value={sem} onChange={e => setPeriod(`${year}-${e.target.value}`)} className="u-input" style={fieldStyle}>
-          <option value="S1">Semestre 1</option>
-          <option value="S2">Semestre 2</option>
-        </select>
+      <div style={box}>
+        {nav(`${pageStart} – ${pageStart + 11}`, () => setPageStart(p => p - 12), () => setPageStart(p => p + 12))}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+          {Array.from({ length: 12 }, (_, i) => pageStart + i).map(y => (
+            <button key={y} type="button" onClick={() => setPeriod(String(y))} style={cell(y === year, y === CURRENT_YEAR)}>{y}</button>
+          ))}
+        </div>
       </div>
     );
   }
-  const month = parseInt(period.split("-")[1], 10) || new Date().getMonth() + 1;
+  if (type === "semestrial") {
+    return (
+      <div style={box}>
+        {nav(String(view), () => setView(v => v - 1), () => setView(v => v + 1))}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {([["S1", "Semestre 1", "Janv. – Juin"], ["S2", "Semestre 2", "Juil. – Déc."]] as const).map(([k, l, r]) => (
+            <button key={k} type="button" onClick={() => setPeriod(`${view}-${k}`)} style={cell(year === view && sem === k, false)}>
+              {l}<div style={{ fontSize: 11, fontWeight: 400, opacity: .8 }}>{r}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  const nowM = new Date().getMonth() + 1;
   return (
-    <div style={{ display: "flex", gap: 8 }}>
-      <select value={month} onChange={e => setPeriod(`${year}-${String(e.target.value).padStart(2, "0")}`)} className="u-input" style={fieldStyle}>
-        {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-      </select>
-      <select value={year} onChange={e => setPeriod(`${e.target.value}-${String(month).padStart(2, "0")}`)} className="u-input" style={fieldStyle}>
-        {years.map(y => <option key={y} value={y}>{y}</option>)}
-      </select>
+    <div style={box}>
+      {nav(String(view), () => setView(v => v - 1), () => setView(v => v + 1))}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+        {MONTHS.map((m, i) => (
+          <button key={m} type="button" onClick={() => setPeriod(`${view}-${String(i + 1).padStart(2, "0")}`)}
+            style={cell(year === view && month === i + 1, view === CURRENT_YEAR && nowM === i + 1)}>{m}</button>
+        ))}
+      </div>
     </div>
   );
 }
 
 function defaultPeriod(type: ReviewType): string {
   const m = new Date().getMonth() + 1;
+  if (type === "custom") { const t = isoDay(new Date()); return `${t}/${t}`; }
   if (type === "annual") return String(CURRENT_YEAR);
   if (type === "semestrial") return `${CURRENT_YEAR}-${m <= 6 ? "S1" : "S2"}`;
   return `${CURRENT_YEAR}-${String(m).padStart(2, "0")}`;
@@ -204,7 +289,7 @@ export function FormModal({ employees, fixedEmployeeId, editing, onClose, onSave
 
         <label style={labelStyle}>Période *</label>
         <div style={{ marginTop: 8, marginBottom: 16 }}>
-          {editing ? <div style={{ ...fieldStyle, marginTop: 0, marginBottom: 0, color: PAL.muted }}>{editing.period}</div>
+          {editing ? <div style={{ ...fieldStyle, marginTop: 0, marginBottom: 0, color: PAL.muted }}>{fmtPeriod(editing.period)}</div>
             : periodPicker(form.review_type, form.period, p => setForm(f => ({ ...f, period: p })))}
         </div>
 
@@ -365,7 +450,7 @@ export function RhPerformance() {
                   </span>
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{r.employee_name || "—"}</div>
-                    <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {r.period}</div>
+                    <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {fmtPeriod(r.period)}</div>
                   </div>
                   {r.score != null && (
                     <span className="chip-c" style={{ fontFamily: '"JetBrains Mono", ui-monospace, monospace' }}>{r.score}/20</span>

@@ -48,6 +48,13 @@ def _load_heading_tasks(db: Client, heading_ids: list[str]) -> dict[str, list[di
     return out
 
 
+def _norm_text(s: Optional[str]) -> str:
+    """Texte comparable : sans accents, casse ni espaces superflus."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    return " ".join(s.split())
+
+
 def _norm_name(s: str) -> str:
     """Nom comparable : sans accents, casse ni espaces multiples, et sans
     dépendre de l'ordre prénom/nom (« GHOULAM Houda » == « Houda Ghoulam »)."""
@@ -73,7 +80,7 @@ def _positions_of_users(db: Client, user_ids: list[str]) -> set[tuple[str, str]]
         if by_email or by_name:
             # Le département est souvent vide côté salarié (NULL) comme côté
             # fiche de poste ('') : les deux comptent comme « sans service ».
-            out.add((e.get("department") or "", e["position"]))
+            out.add((_norm_text(e.get("department")), _norm_text(e["position"])))
     return out
 
 
@@ -99,7 +106,21 @@ async def list_job_descriptions(
 
     if user_ids:
         wanted = _positions_of_users(db, user_ids)
-        rows = [r for r in rows if (r.get("department") or "", r["position"]) in wanted]
+        wanted_positions = {p for _, p in wanted}
+
+        def matches(r: dict) -> bool:
+            if (_norm_text(r.get("department")), _norm_text(r["position"])) in wanted:
+                return True
+            # Le département est saisi à la main des deux côtés et diffère
+            # souvent (« Administration » / vide…) : à défaut de correspondance
+            # exacte, le poste seul (« Assistante ») suffit.
+            rp = _norm_text(r["position"])
+            if rp in wanted_positions:
+                return True
+            # Intitulés proches (« Assistante » ⊂ « Assistante Administrative »).
+            return any(rp and p and (rp in p or p in rp) for p in wanted_positions)
+
+        rows = [r for r in rows if matches(r)]
 
     if not rows:
         return []

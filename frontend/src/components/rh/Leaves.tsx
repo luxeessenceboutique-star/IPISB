@@ -90,16 +90,31 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
     end_date: new Date().toISOString().slice(0, 10),
     days: "1", reason: "",
   });
+  // Durée : plusieurs jours (calcul auto d'après les dates) ou demi-journée
+  // (0,5 j, matin ou après-midi, sur un seul jour).
+  const [duration, setDuration] = useState<"full" | "am" | "pm">("full");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const docRequired = form.type !== "unjustified_absence";
 
   // Le nombre de jours suit les dates (le champ reste modifiable ensuite, p. ex.
   // 0,5 pour une demi-journée). Une fin avant le début est ramenée au début.
+  function pickDuration(d: "full" | "am" | "pm") {
+    setDuration(d);
+    setForm(f => {
+      if (d === "full") {
+        const n = daysBetweenInclusive(f.start_date, f.end_date);
+        return n === null ? f : { ...f, days: String(n) };
+      }
+      return { ...f, end_date: f.start_date, days: "0.5" };
+    });
+  }
+
   function setDate(key: "start_date" | "end_date", value: string) {
     setForm(f => {
       const next = { ...f, [key]: value };
-      if (key === "start_date" && value && next.end_date < value) next.end_date = value;
+      if (key === "start_date" && value && (next.end_date < value || duration !== "full")) next.end_date = value;
+      if (duration !== "full") return { ...next, days: "0.5" };
       const n = daysBetweenInclusive(next.start_date, next.end_date);
       return n === null ? next : { ...next, days: String(n) };
     });
@@ -117,7 +132,8 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
       const created = await api.post("/api/rh/leaves", {
         employee_id: form.employee_id, type: form.type,
         start_date: form.start_date, end_date: form.end_date,
-        days, reason: form.reason || null,
+        days,
+        reason: [duration === "am" ? "Demi-journée (matin)" : duration === "pm" ? "Demi-journée (après-midi)" : "", form.reason].filter(Boolean).join(" — ") || null,
       });
       if (docFile) {
         const fd = new FormData();
@@ -156,6 +172,14 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
           {TYPES.map(t => <option key={t.value} value={t.value}>{t.code} — {t.label}</option>)}
         </select>
 
+        <label style={labelStyle}>Durée</label>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, marginBottom: 16 }}>
+          {([["full", "Journée(s) complète(s)"], ["am", "½ journée · Matin"], ["pm", "½ journée · Après-midi"]] as const).map(([v, l]) => (
+            <button key={v} type="button" onClick={() => pickDuration(v)} className={`chip-c ${duration === v ? "chip-c-green" : ""}`}
+              style={{ cursor: "pointer", fontSize: 12.5, padding: "6px 14px", border: `1px solid ${duration === v ? "transparent" : PAL.line}` }}>{l}</button>
+          ))}
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <label style={labelStyle}>Du</label>
@@ -163,7 +187,7 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
           </div>
           <div>
             <label style={labelStyle}>Au</label>
-            <input type="date" value={form.end_date} min={form.start_date || undefined} onChange={e => setDate("end_date", e.target.value)} className="u-input" style={fieldStyle} />
+            <input type="date" value={form.end_date} min={form.start_date || undefined} disabled={duration !== "full"} onChange={e => setDate("end_date", e.target.value)} className="u-input" style={fieldStyle} />
           </div>
         </div>
 
@@ -171,7 +195,7 @@ function FormModal({ employees, onClose, onSaved }: { employees: Employee[]; onC
           Nombre de jours{" "}
           <span style={{ fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>— calculé d'après les dates, modifiable (ex. 0,5)</span>
         </label>
-        <input type="number" min="0.5" step="0.5" value={form.days} onChange={e => setForm(f => ({ ...f, days: e.target.value }))} className="u-input" style={fieldStyle} />
+        <input type="number" min="0.5" step="0.5" value={form.days} readOnly={duration !== "full"} onChange={e => setForm(f => ({ ...f, days: e.target.value }))} className="u-input" style={fieldStyle} />
 
         <label style={labelStyle}>Motif</label>
         <textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} rows={2} className="u-input" style={{ ...fieldStyle, resize: "vertical" as const }} />

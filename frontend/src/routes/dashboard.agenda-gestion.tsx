@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { UserCog, Wallet, ListChecks, RefreshCw, AlertTriangle, CalendarClock, Clock3 } from "lucide-react";
 import { PageHead, EmptyHint, SectionLabel } from "@/components/dashboard/ui";
+import { AgendaCalendar } from "@/components/agenda/AgendaCalendar";
 
 export const Route = createFileRoute("/dashboard/agenda-gestion")({
   beforeLoad: async () => {
@@ -36,10 +37,6 @@ const CATEGORY_ICON: Record<string, typeof ListChecks> = {
 };
 const CATEGORY_LABEL: Record<string, string> = {
   task: "Tâche", hr_leave: "Congé", hr_contract: "Contrat", hr_probation: "Période d'essai", accounting_approval: "Approbation",
-};
-// Pastille d'en-tête à laquelle appartient chaque nature d'échéance.
-const CATEGORY_GROUP: Record<string, "rh" | "comptabilite" | "tasks"> = {
-  task: "tasks", hr_leave: "rh", hr_contract: "rh", hr_probation: "rh", accounting_approval: "comptabilite",
 };
 const SEVERITY_META: Record<Severity, { label: string; chip: string; icon: typeof AlertTriangle }> = {
   overdue: { label: "En retard", chip: "chip-c-red", icon: AlertTriangle },
@@ -75,6 +72,7 @@ export function AgendaGestionPage() {
   const [items, setItems] = useState<AgendaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [tab, setTab] = useState<"calendar" | "todo">("calendar");
 
   async function load() {
     setLoading(true);
@@ -108,19 +106,6 @@ export function AgendaGestionPage() {
     return g;
   }, [items]);
 
-  // Les pastilles comptent par NATURE d'échéance (task / hr_* / accounting_approval,
-  // le même vocabulaire que les lignes ci-dessous), pas par `domain` : une
-  // tâche rattachée au domaine Comptabilité reste une tâche — la compter par
-  // domaine la faisait disparaître de « Tâches » et gonfler « Comptabilité ».
-  const counts = useMemo(() => {
-    const c = { rh: 0, comptabilite: 0, tasks: 0 };
-    for (const it of items) {
-      const group = CATEGORY_GROUP[it.category];
-      if (group) c[group]++;
-    }
-    return c;
-  }, [items]);
-
   return (
     <div style={{ fontFamily: sans }}>
       <PageHead
@@ -135,13 +120,19 @@ export function AgendaGestionPage() {
         }
       />
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
-        <span className="chip-c chip-c-blue" style={{ fontSize: 11.5 }}><UserCog size={12} strokeWidth={1.8} />RH · {counts.rh} échéance{counts.rh !== 1 ? "s" : ""}</span>
-        <span className="chip-c chip-c-green" style={{ fontSize: 11.5 }}><Wallet size={12} strokeWidth={1.8} />Comptabilité · {counts.comptabilite} échéance{counts.comptabilite !== 1 ? "s" : ""}</span>
-        <span className="chip-c" style={{ fontSize: 11.5 }}><ListChecks size={12} strokeWidth={1.8} />Tâches · {counts.tasks} échéance{counts.tasks !== 1 ? "s" : ""}</span>
+      <div style={{ display: "flex", gap: 6, marginBottom: 18, borderBottom: "1px solid oklch(88% 0.015 170)" }}>
+        {([["calendar", "Calendrier"], ["todo", `À traiter (${items.length})`]] as const).map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setTab(k)} style={{
+            background: "none", border: 0, cursor: "pointer", fontFamily: sans, fontSize: 13.5, padding: "8px 14px", marginBottom: -1,
+            fontWeight: tab === k ? 700 : 500, color: tab === k ? PAL.ink : PAL.muted,
+            borderBottom: tab === k ? "2px solid var(--pal-primary)" : "2px solid transparent",
+          }}>{label}</button>
+        ))}
       </div>
 
-      {loading ? (
+      {tab === "calendar" ? (
+        <AgendaCalendar onOpen={ev => navigate({ to: ev.link as "/dashboard" })} />
+      ) : loading ? (
         <div className="dash-card" style={{ padding: 22 }}><div className="shimmer" style={{ height: 16, width: 160, borderRadius: 999 }} /></div>
       ) : items.length === 0 ? (
         <div className="dash-card"><EmptyHint icon={<ListChecks size={26} strokeWidth={1.7} />} text="Rien n'attend d'action pour l'instant." /></div>

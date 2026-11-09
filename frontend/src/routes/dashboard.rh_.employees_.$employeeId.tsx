@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { DashAvatar, EmptyHint } from "@/components/dashboard/ui";
 import { FormModal, type Employee, type LookupItem } from "@/components/rh/Employees";
-import { FormModal as ReviewFormModal, REVIEW_TYPE_LABEL, type Review } from "@/components/rh/Performance";
+import { FormModal as ReviewFormModal, REVIEW_TYPE_LABEL, fmtPeriod, type Review } from "@/components/rh/Performance";
 import { fmtMAD } from "@/components/rh/Payroll";
 import { PreviewModal, urlIsPdf, type Preview } from "@/components/dashboard/preview";
 
@@ -980,7 +980,7 @@ function PerformanceTab({ employee }: { employee: Employee }) {
             return (
               <div key={r.id} className="row-c flex-wrap">
                 <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {r.period}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{REVIEW_TYPE_LABEL[r.review_type] ?? r.review_type} · {fmtPeriod(r.period)}</div>
                   {r.feedback && <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted }}>{r.feedback}</div>}
                 </div>
                 {r.review_type === "monthly" && r.task_count != null && (
