@@ -1044,3 +1044,4 @@ body.sb-resizing iframe { pointer-events: none; }
 .cp-call-hint { font-size: 12.5px; color: oklch(75% 0.03 170); }
 .cp-call-btn:disabled { opacity: .35; cursor: default; transform: none; }
 .cp-call-btn.is-off { background: oklch(58% 0.21 25 / .85); }
+.cp-call-lang.is-warn { background: oklch(58% 0.21 25 / .35); }

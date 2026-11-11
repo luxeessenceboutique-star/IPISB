@@ -32,8 +32,34 @@ export type VoiceOptions = {
   onInterim: (text: string) => void;                    // texte en cours de dictée
   onUtterance: (text: string) => void;                  // phrase terminée → à envoyer
   onBargeIn: () => void;                                // l'utilisateur coupe la parole
-  onError: (kind: "mic" | "stt", detail?: string) => void;
+  onError: (kind: "mic" | "stt" | "tts", detail?: string) => void;
+  onVoice?: (source: "serveur" | "navigateur" | "aucune") => void;
 };
+
+/** Voix du navigateur pour une langue : correspondance exacte (ar-MA), puis
+ *  même langue (ar-*), en préférant les voix « naturelles » / en ligne. */
+export async function browserVoice(lang: string): Promise<SpeechSynthesisVoice | null> {
+  const synth = window.speechSynthesis;
+  if (!synth) return null;
+  let voices = synth.getVoices();
+  if (!voices.length) {
+    await new Promise<void>(resolve => {
+      const done = () => resolve();
+      synth.addEventListener?.("voiceschanged", done, { once: true });
+      setTimeout(done, 1200);
+    });
+    voices = synth.getVoices();
+  }
+  const l = lang.toLowerCase(), base = l.slice(0, 2);
+  const score = (v: SpeechSynthesisVoice) => {
+    const vl = (v.lang || "").toLowerCase().replace("_", "-");
+    let sc = vl === l ? 100 : vl.startsWith(base) ? 50 : 0;
+    if (!sc) return 0;
+    if (/natural|neural|online|google|premium|enhanced/i.test(v.name)) sc += 10;
+    return sc;
+  };
+  return voices.map(v => [score(v), v] as const).filter(([sc]) => sc > 0).sort((a, b) => b[0] - a[0])[0]?.[1] ?? null;
+}
 
 function pickMime(): string {
   for (const t of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"])
@@ -80,6 +106,9 @@ export class RealtimeVoice {
   private prefetch: Promise<Blob | null> | null = null;
   private prefetchText = "";
   private onSpeechDone: (() => void) | null = null;
+  private voiceSource: "serveur" | "navigateur" | "aucune" | null = null;
+  private echoPeak = 0;
+  private audioStartedAt = 0;   // début réel de la phrase en cours (0 = rien n'est joué)
 
   constructor(opts: VoiceOptions) {
     this.o = opts;
@@ -170,6 +199,7 @@ export class RealtimeVoice {
     this.pump();
   }
   cancelSpeech() {
+    this.audioStartedAt = 0;
     this.queue = []; this.pending = ""; this.ended = false;
     this.prefetch = null; this.prefetchText = "";
     this.audio?.pause(); this.audio = null;
@@ -200,6 +230,15 @@ export class RealtimeVoice {
     return this.o.synthesize(text).catch(() => { this.serverTts = false; return null; });
   }
 
+  private markAudio(on: boolean) {
+    this.audioStartedAt = on ? performance.now() : 0;
+    if (on) this.echoPeak = 0;
+  }
+
+  private reportVoice(src: "serveur" | "navigateur" | "aucune") {
+    if (this.voiceSource !== src) { this.voiceSource = src; this.o.onVoice?.(src); }
+  }
+
   private async say(text: string): Promise<void> {
     if (this.serverTts) {
       const blob = this.prefetchText === text && this.prefetch ? await this.prefetch : await this.fetchTts(text);
@@ -207,26 +246,39 @@ export class RealtimeVoice {
       // Pré-charge la phrase suivante pendant la lecture de celle-ci.
       const following = this.queue[0];
       if (following && this.serverTts) { this.prefetchText = following; this.prefetch = this.fetchTts(following); }
-      if (blob) {
+      if (blob && blob.size > 200) {
+        this.reportVoice("serveur");
         const url = URL.createObjectURL(blob);
-        await new Promise<void>(resolve => {
+        const played = await new Promise<boolean>(resolve => {
           const a = new Audio(url);
           this.audio = a;
-          a.onended = a.onerror = a.onpause = () => { URL.revokeObjectURL(url); resolve(); };
-          a.play().catch(() => resolve());
+          a.onplaying = () => this.markAudio(true);
+          a.onended = a.onpause = () => { this.markAudio(false); URL.revokeObjectURL(url); resolve(true); };
+          a.onerror = () => { this.markAudio(false); URL.revokeObjectURL(url); resolve(false); };
+          a.play().catch(() => resolve(false));
         });
-        return;
+        if (played) return;
       }
     }
     const synth = window.speechSynthesis;
-    if (!synth) return;
+    const voice = await browserVoice(this.o.speechLang);
+    if (!synth || !voice) {
+      // Aucune voix pour cette langue sur l'appareil (fréquent pour l'arabe).
+      if (this.voiceSource !== "aucune") this.o.onError("tts", this.o.speechLang);
+      this.reportVoice("aucune");
+      return;
+    }
+    this.reportVoice("navigateur");
     await new Promise<void>(resolve => {
+      let settled = false;
+      const finish = () => { if (!settled) { settled = true; clearTimeout(watchdog); this.markAudio(false); resolve(); } };
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = this.o.speechLang;
-      const v = synth.getVoices().find(x => x.lang?.toLowerCase().startsWith(this.o.speechLang.slice(0, 2).toLowerCase()));
-      if (v) u.voice = v;
-      u.rate = 1.05;
-      u.onend = () => resolve(); u.onerror = () => resolve();
+      u.voice = voice; u.lang = voice.lang || this.o.speechLang; u.rate = 1.05;
+      u.onstart = () => this.markAudio(true);
+      u.onend = finish; u.onerror = finish;
+      // Certains navigateurs n'envoient jamais « onend » : garde-fou.
+      const watchdog = window.setTimeout(finish, 2500 + text.length * 95);
+      try { synth.resume(); } catch { /* ignore */ }
       synth.speak(u);
     });
   }
@@ -245,15 +297,26 @@ export class RealtimeVoice {
     else if (!this.inSpeech && this.phase !== "speaking") this.floor = this.floor * 0.995 + rms * 0.005;
 
     const speaking = this.phase === "speaking";
-    // Pendant que le Copilote parle, seuil plus haut (écho résiduel des haut-parleurs).
-    const threshold = Math.max(0.012, this.floor * (speaking ? 4.5 : 2.6) + 0.006);
+    // Pendant que le Copilote parle, le micro capte aussi sa voix (surtout sans
+    // casque) : on mesure ce niveau d'écho pendant les 0,5 s qui suivent le
+    // début réel de chaque phrase, puis il faut parler nettement plus fort que
+    // lui, assez longtemps, pour l'interrompre.
+    const base = Math.max(0.012, this.floor * 2.6 + 0.006);
+    const audioAge = speaking && this.audioStartedAt ? now - this.audioStartedAt : -1;
+    let threshold = base;
+    if (audioAge >= 0) {
+      if (audioAge < 500) this.echoPeak = Math.max(this.echoPeak, rms);
+      threshold = Math.max(base * 2, this.echoPeak * 1.6, 0.03);
+      if (audioAge >= 500 && rms < threshold) this.echoPeak = Math.max(this.echoPeak * 0.997, rms);
+    }
     this.o.onLevel(Math.min(1, rms / Math.max(0.05, threshold * 3)));
 
     if (!this.muted && rms > threshold) {
       this.silenceSince = 0;
       if (!this.speechSince) this.speechSince = now;
-      const need = speaking || this.phase === "thinking" ? 280 : 120;
-      if (!this.inSpeech && now - this.speechSince > need) {
+      const need = speaking ? 480 : this.phase === "thinking" ? 300 : 120;
+      const tooEarly = audioAge >= 0 && audioAge < 500; // le temps de mesurer l'écho
+      if (!this.inSpeech && !tooEarly && now - this.speechSince > need) {
         this.inSpeech = true;
         if (speaking || this.phase === "thinking") {
           // L'utilisateur coupe la parole : on se tait et on écoute.

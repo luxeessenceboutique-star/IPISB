@@ -4,7 +4,7 @@ import { useBreakpoint } from "@/lib/useBreakpoint";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
-import { RealtimeVoice, type CallPhase } from "@/lib/realtimeVoice";
+import { RealtimeVoice, browserVoice, type CallPhase } from "@/lib/realtimeVoice";
 import {
   X, Send, Check, Loader2, Mic, Square, Phone, PhoneOff, Brain, SquarePen, PanelLeft,
   Maximize2, Minimize2, Search, Pin, PinOff, Pencil, Trash2, Copy, Volume2, VolumeX, Sparkles,
@@ -181,11 +181,17 @@ async function speak(text: string, lang: Lang, onEnd?: () => void) {
     await audio.play();
   } catch {
     const synth = window.speechSynthesis;
-    if (!synth) { onEnd?.(); return; }
+    const speechLang = LANGS.find(l => l.code === lang)?.speech ?? "fr-FR";
+    const voice = await browserVoice(speechLang);
+    if (!synth || !voice) {
+      window.dispatchEvent(new CustomEvent("ipisb:copilot-novoice", { detail: speechLang }));
+      onEnd?.(); return;
+    }
     const u = new SpeechSynthesisUtterance(clean);
-    u.lang = LANGS.find(l => l.code === lang)?.speech ?? "fr-FR";
+    u.voice = voice; u.lang = voice.lang || speechLang;
     u.onend = () => onEnd?.();
     u.onerror = () => onEnd?.();
+    try { synth.resume(); } catch { /* ignore */ }
     synth.speak(u);
   }
 }
@@ -214,7 +220,7 @@ export function PlatformCopilot() {
   const [recording, setRecording] = useState<{ start: number; level: number } | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | number | null>(null);
-  const [call, setCall] = useState<null | { phase: CallPhase; level: number; interim: string; heard: string; muted: boolean }>(null);
+  const [call, setCall] = useState<null | { phase: CallPhase; level: number; interim: string; heard: string; muted: boolean; voice?: string }>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -552,8 +558,10 @@ export function PlatformCopilot() {
       onInterim: interim => setCall(c => c ? { ...c, interim } : c),
       onBargeIn: () => { turnRef.current?.abort(); turnRef.current = null; },
       onUtterance: text => { void runTurn(text); },
+      onVoice: voice => setCall(c => c ? { ...c, voice } : c),
       onError: (kind, detail) => {
         if (kind === "mic") { flash(t.micDenied); endCall(); }
+        else if (kind === "tts") flash(`Aucune voix disponible pour ${LANGS.find(l => l.code === lang)?.label ?? detail} : ni sur le serveur, ni dans ce navigateur. La réponse reste affichée en texte.`);
         else flash(`Transcription indisponible${detail ? ` (${detail})` : ""} — réessayez.`);
       },
     });
@@ -609,6 +617,12 @@ export function PlatformCopilot() {
     setSpeakingId(key);
     await speak(m.content, lang, () => setSpeakingId(s => s === key ? null : s));
   }
+
+  useEffect(() => {
+    const onNoVoice = () => flash(`Aucune voix disponible pour ${LANGS.find(l => l.code === lang)?.label} : ni sur le serveur, ni dans ce navigateur.`);
+    window.addEventListener("ipisb:copilot-novoice", onNoVoice);
+    return () => window.removeEventListener("ipisb:copilot-novoice", onNoVoice);
+  });
 
   // ── Ouverture / raccourcis ──
   useEffect(() => {
@@ -921,6 +935,7 @@ export function PlatformCopilot() {
               <div className="cp-call-top">
                 <span className="cp-call-lang">{LANGS.find(l => l.code === lang)?.flag} {LANGS.find(l => l.code === lang)?.label}</span>
                 <span className="cp-call-lang"><Sparkles size={11} /> Deep Agent</span>
+                {call.voice && <span className={call.voice === "aucune" ? "cp-call-lang is-warn" : "cp-call-lang"}><Volume2 size={11} /> {call.voice === "serveur" ? "Voix IA" : call.voice === "navigateur" ? "Voix du navigateur" : "Sans voix"}</span>}
               </div>
               <button type="button" className="cp-call-orb" onClick={interruptSpeaking} title="Toucher pour interrompre"
                 style={{ ["--lvl" as string]: call.phase === "hearing" || call.phase === "listening" ? call.level : call.phase === "speaking" ? 0.55 : 0.2 } as CSSProperties}>
@@ -933,7 +948,7 @@ export function PlatformCopilot() {
               <div className="cp-call-text">
                 {call.interim ? <span className="cp-call-interim">{call.interim}</span>
                   : caption ? <span className="cp-call-caption">{caption}</span>
-                  : call.heard ? <span>« {call.heard} »</span> : <span className="cp-call-hint">Parlez naturellement — vous pouvez couper la parole au Copilote à tout moment.</span>}
+                  : call.heard ? <span>« {call.heard} »</span> : <span className="cp-call-hint">Parlez naturellement — vous pouvez couper la parole au Copilote à tout moment (un casque évite que le micro capte sa voix).</span>}
               </div>
               <div className="cp-call-btns">
                 <button type="button" className={call.muted ? "cp-call-btn is-off" : "cp-call-btn"} onClick={toggleMute} aria-label={call.muted ? "Activer le micro" : "Couper le micro"} aria-pressed={call.muted}>

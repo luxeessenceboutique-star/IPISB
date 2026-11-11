@@ -358,21 +358,69 @@ TTS_STYLE = {
 }
 
 
+# Voix neuronales Microsoft (edge-tts) — repli gratuit, avec une vraie voix
+# marocaine pour la darija. Surchargeables par variables d'environnement.
+EDGE_VOICES = {
+    "darija": os.environ.get("COPILOT_EDGE_VOICE_DARIJA", "ar-MA-MounaNeural"),
+    "ar": os.environ.get("COPILOT_EDGE_VOICE_AR", "ar-SA-ZariyahNeural"),
+    "fr": os.environ.get("COPILOT_EDGE_VOICE_FR", "fr-FR-DeniseNeural"),
+    "en": os.environ.get("COPILOT_EDGE_VOICE_EN", "en-US-JennyNeural"),
+}
+TTS_PROVIDERS = [p.strip() for p in os.environ.get("COPILOT_TTS_PROVIDERS", "openai,edge").split(",") if p.strip()]
+
+
+async def _tts_openai(text: str, language: str) -> bytes:
+    kwargs = {"model": TTS_MODEL, "voice": TTS_VOICE, "input": text, "response_format": "mp3"}
+    if "tts-1" not in TTS_MODEL:
+        kwargs["instructions"] = TTS_STYLE.get(language, TTS_STYLE["fr"])
+    res = await _openai_client().audio.speech.create(**kwargs)
+    data = res.content if hasattr(res, "content") else await res.aread()
+    if not data:
+        raise RuntimeError("réponse audio vide")
+    return data
+
+
+async def _tts_edge(text: str, language: str) -> bytes:
+    import edge_tts  # import paresseux : dépendance optionnelle
+    comm = edge_tts.Communicate(text, EDGE_VOICES.get(language, EDGE_VOICES["fr"]),
+                                proxy=os.environ.get("COPILOT_TTS_PROXY") or None)
+    data = bytearray()
+    async for chunk in comm.stream():
+        if chunk.get("type") == "audio":
+            data.extend(chunk["data"])
+    if not data:
+        raise RuntimeError("réponse audio vide")
+    return bytes(data)
+
+
+_TTS_IMPL = {"openai": _tts_openai, "edge": _tts_edge}
+_tts_dead: set[str] = set()   # fournisseur en échec répété → ignoré jusqu'au redémarrage
+
+
 @router.post("/speech")
 async def speech(
     body: SpeechRequest,
     user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    text = body.text.replace("**", "").replace("#", "")[:1500]
-    try:
-        kwargs = {"model": TTS_MODEL, "voice": TTS_VOICE, "input": text, "response_format": "mp3"}
-        if "tts-1" not in TTS_MODEL:
-            kwargs["instructions"] = TTS_STYLE.get(body.language, TTS_STYLE["fr"])
-        res = await _openai_client().audio.speech.create(**kwargs)
-        return Response(content=res.content, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
-    except Exception as e:
-        log.warning("Copilot speech failed: %s", e)
-        raise HTTPException(503, "Synthèse vocale indisponible.")
+    """Voix du Copilote : OpenAI (passerelle) puis edge-tts en repli. 503 si
+    aucun fournisseur ne répond — le navigateur prend alors le relais."""
+    text = body.text.replace("**", "").replace("#", "").strip()[:1500]
+    errors = []
+    for name in TTS_PROVIDERS:
+        impl = _TTS_IMPL.get(name)
+        if not impl or name in _tts_dead:
+            continue
+        try:
+            audio = await impl(text, body.language)
+            return Response(content=audio, media_type="audio/mpeg",
+                            headers={"Cache-Control": "no-store", "X-TTS-Provider": name})
+        except Exception as e:
+            errors.append(f"{name}: {type(e).__name__}")
+            log.warning("Copilot TTS %s failed: %s", name, e)
+            # Une passerelle sans audio (404/400) ne répondra pas mieux la fois suivante.
+            if name == "openai" and getattr(e, "status_code", None) in (400, 404, 405, 501):
+                _tts_dead.add(name)
+    raise HTTPException(503, "Synthèse vocale indisponible (" + ", ".join(errors or ["aucun fournisseur"]) + ").")
 
 
 @router.post("/actions/{action_id}/confirm")
