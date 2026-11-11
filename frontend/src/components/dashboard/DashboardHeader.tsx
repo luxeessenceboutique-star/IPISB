@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import { ChevronLeft, Search, Bell } from "lucide-react";
 import { Breadcrumbs } from "@/components/dashboard/Breadcrumbs";
@@ -63,7 +63,23 @@ export function DashboardHeader({ unread }: { unread: number }) {
         >
           <Search size={15} strokeWidth={1.8} />
           <span className="hidden sm:inline">{t("dash.search")}</span>
-          <span style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 6px", borderRadius: 6, background: PAL.pale, color: PAL.primaryDeep }}>Ctrl K</span>
+          <span style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 6px", borderRadius: 6, background: PAL.pale, color: PAL.primaryDeep }}>⌘ K</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event("ipisb:open-copilot"))}
+          className="u-ghost hidden md:flex"
+          style={{
+            flexShrink: 0, alignItems: "center", gap: 9, height: 36, padding: "0 13px 0 5px", borderRadius: 11,
+            border: `1px solid ${PAL.line}`, background: PAL.paper, cursor: "pointer",
+            fontSize: 13, fontWeight: 700, color: PAL.ink, fontFamily: "inherit",
+          }}
+        >
+          <span aria-hidden className="pc-orb" style={{ ["--orb" as string]: "26px" } as CSSProperties}>
+            <i className="o-glow" /><i className="o-ring" /><i className="o-core" />
+          </span>
+          Copilote
         </button>
 
         <button

@@ -236,6 +236,27 @@ function DashboardLayout() {
               <Outlet />
             </div>
           </main>
+
+          {/* Barre d'onglets mobile « Pouls » — accès direct, le menu complet reste dans le tiroir */}
+          <nav className="pouls-tabbar" aria-label="Navigation mobile">
+            {([
+              { to: "/dashboard", label: t("dash.overview"), icon: Home, exact: true },
+              { to: "/dashboard/accounting-tasks", label: "Tâches", icon: Kanban, exact: false },
+              { to: "/dashboard/notifications", label: "Alertes", icon: Bell, exact: false, badge: unread },
+            ] as const).map(tb => {
+              const on = tb.exact ? pathname === tb.to || pathname === tb.to + "/" : pathname.startsWith(tb.to);
+              const Icon = tb.icon;
+              return (
+                <Link key={tb.to} to={tb.to} className={"pouls-ti" + (on ? " on" : "")}>
+                  <span className="pl"><Icon size={20} strokeWidth={1.8} />{"badge" in tb && tb.badge > 0 && <span className="bd">{tb.badge > 99 ? "99+" : tb.badge}</span>}</span>
+                  {tb.label}
+                </Link>
+              );
+            })}
+            <button type="button" className={"pouls-ti" + (drawerOpen ? " on" : "")} onClick={() => setDrawerOpen(true)}>
+              <span className="pl"><LayoutGrid size={20} strokeWidth={1.8} /></span>Menu
+            </button>
+          </nav>
           <PlatformCopilot />
         </div>
       </BreadcrumbLabelProvider>

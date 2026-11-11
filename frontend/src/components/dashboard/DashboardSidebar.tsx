@@ -109,6 +109,9 @@ export function DashboardSidebar({
           style={{ textDecoration: "none", justifyContent: collapsed ? "center" : "flex-start", ...entryStyle }}>
           <I size={19} strokeWidth={1.8} />
           {!collapsed && <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>}
+          {!collapsed && isActive && !(it.badge && unread > 0) && (
+            <svg className="beat-mark" viewBox="0 0 26 14" aria-hidden><path d="M0 8H7L9 8L11 2L14 13L16 8H26" /></svg>
+          )}
           {!collapsed && it.badge && unread > 0 && (
             <span style={{ marginInlineStart: "auto", fontSize: 10.5, fontWeight: 800, color: "var(--pal-paper)", background: "var(--pal-danger)", padding: "3px 8px", borderRadius: 999 }}>{unread}</span>
           )}

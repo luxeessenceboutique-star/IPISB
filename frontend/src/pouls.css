@@ -1,0 +1,144 @@
+/* ═══════════════════════════════════════════════════════════════════
+   IPISB Connect — langage « Pouls » (constantes vitales de l'institut)
+   Complète styles.css : mêmes variables --pal-*, mêmes polices.
+   Nouveau : papier ECG, tracé de pouls, compteurs à rouleaux, file de
+   validation animée, barre d'onglets mobile.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  --ease-pouls: cubic-bezier(.22, 1, .36, 1);
+  --spring-pouls: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/* Papier millimétré ECG */
+.paper-ecg {
+  background-color: var(--pal-paper);
+  background-image:
+    linear-gradient(oklch(62% .085 170 / .075) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(62% .085 170 / .075) 1px, transparent 1px),
+    linear-gradient(oklch(62% .085 170 / .035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(62% .085 170 / .035) 1px, transparent 1px);
+  background-size: 40px 40px, 40px 40px, 8px 8px, 8px 8px;
+}
+
+.mono-eyebrow {
+  font: 600 10.5px/1.25 "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--pal-muted);
+}
+
+/* ── Tracé de pouls ─────────────────────────────────────────────── */
+.pulse-wrap { position: relative; height: 150px; }
+.pulse-wrap > svg { position: absolute; left: 0; top: 42px; width: 100%; height: calc(100% - 60px); overflow: visible; }
+.pulse-base { fill: none; stroke: oklch(84% .04 165); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.pulse-past {
+  fill: none; stroke: var(--pal-primary); stroke-width: 2.2; vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1; stroke-dashoffset: 1; animation: pouls-draw 2.4s var(--ease-pouls) .35s forwards;
+}
+.pulse-glow {
+  fill: none; stroke: var(--pal-mid); stroke-width: 3.2; stroke-linecap: round; vector-effect: non-scaling-stroke;
+  stroke-dasharray: 60 940; animation: pouls-travel 5.6s linear infinite;
+  filter: drop-shadow(0 0 6px oklch(62% .085 170 / .9));
+}
+.pulse-pin {
+  position: absolute; top: 0; translate: -50% 0; display: flex; flex-direction: column; align-items: center;
+  border: 0; background: none; padding: 0; cursor: pointer; text-decoration: none;
+  animation: pouls-pop .6s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 120ms + 900ms);
+}
+.pulse-pin .lbl {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 10px;
+  background: var(--pal-paper); border: 1px solid var(--pal-line-soft); box-shadow: var(--shadow-card-2);
+  font: 600 11.5px/1.2 Manrope, system-ui, sans-serif; color: var(--pal-ink); white-space: nowrap;
+  transition: transform .3s var(--ease-pouls), box-shadow .3s;
+}
+.pulse-pin .lbl small { font: 600 10px/1 "JetBrains Mono", monospace; color: var(--pal-muted); letter-spacing: .06em; }
+.pulse-pin:hover .lbl { transform: translateY(-4px); box-shadow: var(--shadow-pop); }
+.pulse-pin .stem { width: 1.5px; height: 6px; background: var(--pal-soft); }
+.pulse-pin .dt { width: 11px; height: 11px; border-radius: 50%; background: var(--pal-paper); border: 2.5px solid var(--pal-primary); }
+.pulse-pin.past .dt { background: var(--pal-primary); }
+.pulse-now { position: absolute; top: 30px; bottom: 18px; width: 0; border-inline-start: 1.5px dashed var(--pal-accent); }
+.pulse-now span { position: absolute; bottom: 2px; inset-inline-start: 8px; font: 700 10px/1 "JetBrains Mono", monospace; letter-spacing: .1em; color: oklch(48% .1 60); white-space: nowrap; }
+.pulse-now::after { content: ""; position: absolute; bottom: -4px; left: -5.5px; width: 9px; height: 9px; border-radius: 50%; background: var(--pal-accent); animation: pouls-ping 2s ease-out infinite; }
+.pulse-axis { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; font: 600 10px/1 "JetBrains Mono", monospace; color: var(--pal-muted); letter-spacing: .06em; }
+@media (max-width: 767px) { .pulse-pin .lbl { display: none; } .pulse-wrap { height: 120px; } }
+
+/* ── Compteur à rouleaux ───────────────────────────────────────── */
+.odo { display: inline-flex; align-items: flex-start; --lh: 1.08em; font-variant-numeric: lining-nums tabular-nums; }
+.odo-d { display: inline-block; height: var(--lh); overflow: hidden; }
+.odo-s {
+  display: flex; flex-direction: column;
+  transform: translateY(calc(var(--d, 0) * -1 * var(--lh)));
+  transition: transform 1s var(--ease-pouls);
+  animation: pouls-odo 1.7s var(--ease-pouls) backwards; animation-delay: calc(var(--k, 0) * 90ms + 300ms);
+}
+.odo-s > span, .odo-c { display: block; height: var(--lh); line-height: var(--lh); text-align: center; }
+.odo-c { display: inline-block; }
+
+/* ── Constantes (KPI) ──────────────────────────────────────────── */
+.vital { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; overflow: hidden; }
+.vital .v { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 500; font-size: 44px; line-height: 1; color: var(--pal-ink); display: flex; align-items: baseline; }
+.vital .unit { font: 600 12px/1 "JetBrains Mono", monospace; color: var(--pal-muted); letter-spacing: .06em; margin-inline-start: 6px; }
+.vital-tile { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--pal-pale); color: var(--pal-primary-deep); }
+.ring-val { fill: none; stroke: var(--pal-primary); stroke-width: 9; stroke-linecap: round; stroke-dasharray: var(--v) 100; transform: rotate(-90deg); transform-origin: center; transform-box: fill-box; animation: pouls-ring 1.8s var(--ease-pouls) .35s backwards; }
+.ring-trk { fill: none; stroke: oklch(94% .012 170); stroke-width: 9; }
+.stackbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; }
+.stackbar i { display: block; height: 100%; transform-origin: left; animation: pouls-bar 1.2s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 120ms + 400ms); }
+.pouls-bar { height: 8px; border-radius: 999px; background: oklch(94% .012 170); overflow: hidden; }
+.pouls-bar > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--pal-primary), var(--pal-mid)); transform-origin: left; animation: pouls-bar 1.3s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 80ms + 250ms); }
+
+/* ── File de validation ────────────────────────────────────────── */
+.appr {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 16px; border: 1px solid var(--pal-line-soft); background: var(--pal-paper);
+  transition: background-color .4s, border-color .4s, box-shadow .4s, opacity .4s;
+  animation: rise .6s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 60ms + 250ms);
+}
+.appr:hover { border-color: var(--pal-soft); box-shadow: var(--shadow-card-2); }
+.appr.ok { background: oklch(97% .025 160); border-color: oklch(86% .06 160); }
+.appr.ok .appr-tile { background: var(--pal-primary); color: #fff; animation: pouls-beat 1s ease; }
+.appr.no { background: oklch(98.5% .01 25); border-color: oklch(91% .035 25); opacity: .72; }
+.appr-tile { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: oklch(95% .045 80); color: oklch(46% .1 65); }
+
+/* ── Frise ─────────────────────────────────────────────────────── */
+.tl { position: relative; display: flex; flex-direction: column; gap: 18px; padding-inline-start: 24px; }
+.tl::before { content: ""; position: absolute; inset-inline-start: 6px; top: 8px; bottom: 8px; width: 1.5px; background: linear-gradient(var(--pal-soft), var(--pal-line-soft)); }
+.tl-i { position: relative; animation: rise .6s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 70ms + 200ms); }
+.tl-i::before { content: ""; position: absolute; inset-inline-start: -23px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--pal-paper); border: 2.5px solid var(--pal-mid); }
+.tl-i.done::before { background: var(--pal-primary); border-color: var(--pal-primary); }
+.tl-i.cur::before { border-color: var(--pal-accent); animation: pouls-ping 2s ease-out infinite; }
+
+/* ── Rail : l'élément actif devient une pastille avec un battement ─ */
+.side-link.is-active::before { display: none; }
+.side-link .beat-mark { margin-inline-start: auto; width: 26px; height: 14px; flex-shrink: 0; fill: none; stroke: var(--pal-primary); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.side-link .beat-mark path { stroke-dasharray: 40; stroke-dashoffset: 40; animation: pouls-mark 2.6s ease-in-out infinite; }
+.side-link:hover svg.beat-mark { transform: none; }
+
+/* ── Barre d'onglets mobile ────────────────────────────────────── */
+.pouls-tabbar {
+  position: sticky; bottom: 0; z-index: 30; display: flex; justify-content: space-around; gap: 2px;
+  height: 74px; padding: 8px 8px 14px; background: oklch(99% .005 160 / .92);
+  backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border-top: 1px solid var(--pal-line-soft); box-shadow: 0 -8px 24px oklch(30% .03 175 / .06);
+}
+.pouls-ti { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 48px; border: 0; background: none; color: var(--pal-muted); font: 700 10.5px/1 Manrope, system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.pouls-ti .pl { position: relative; width: 54px; height: 30px; border-radius: 999px; display: grid; place-items: center; transition: background-color .3s; }
+.pouls-ti.on { color: var(--pal-primary-deep); }
+.pouls-ti.on .pl { background: var(--pal-pale); animation: pouls-tab .5s var(--spring-pouls); }
+.pouls-ti .bd { position: absolute; top: 1px; right: 9px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: oklch(50% .19 25); color: #fff; font: 800 9px/16px Manrope, sans-serif; text-align: center; }
+
+/* ── Mouvement ─────────────────────────────────────────────────── */
+@keyframes pouls-draw { to { stroke-dashoffset: 0; } }
+@keyframes pouls-travel { from { stroke-dashoffset: 60; } to { stroke-dashoffset: -940; } }
+@keyframes pouls-odo { from { transform: translateY(0); } }
+@keyframes pouls-ring { from { stroke-dasharray: 0 100; } }
+@keyframes pouls-bar { from { transform: scaleX(0); } }
+@keyframes pouls-pop { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+@keyframes pouls-ping { 0% { box-shadow: 0 0 0 0 oklch(72% .11 60 / .55); } 80%, 100% { box-shadow: 0 0 0 10px oklch(72% .11 60 / 0); } }
+@keyframes pouls-beat { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.09); } 28% { transform: scale(1); } 42% { transform: scale(1.05); } 70% { transform: scale(1); } }
+@keyframes pouls-mark { 0% { stroke-dashoffset: 40; } 45%, 60% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -40; } }
+@keyframes pouls-tab { from { transform: scale(.85); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-past, .pulse-glow, .pulse-pin, .odo-s, .ring-val, .stackbar i, .pouls-bar > i, .appr, .tl-i, .side-link .beat-mark path {
+    animation: none !important; stroke-dashoffset: 0;
+  }
+}
