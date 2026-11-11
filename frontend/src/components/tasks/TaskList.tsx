@@ -4,6 +4,7 @@ import {
   type Task, type AssignableUser, type TaskStatus, type TaskPriority,
   STATUS_COLUMNS, PRIORITY_META, DOMAIN_LABEL, CHANNEL_LABEL, CHANNEL_DESC, CHANNEL_STYLE, userLabel, assigneesLabel,
 } from "./types";
+import { STATUS_CHIP, isLate } from "./TaskBoard";
 
 const PAL = {
   ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)",
@@ -11,7 +12,7 @@ const PAL = {
 const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const selectStyle = {
   fontFamily: sans, fontSize: 12.5, color: PAL.ink, border: `1px solid ${PAL.line}`,
-  borderRadius: 8, padding: "6px 10px", background: "transparent", outline: "none",
+  borderRadius: 10, padding: "8px 12px", background: "var(--pal-paper)", outline: "none",
 };
 
 type SortKey = "due_date" | "priority" | "status" | "title";
@@ -40,15 +41,15 @@ export function TaskList({ tasks, users, onOpen }: {
   return (
     <div>
       <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as TaskStatus | "")} style={selectStyle}>
+        <select className="u-input" value={statusFilter} onChange={e => setStatusFilter(e.target.value as TaskStatus | "")} style={selectStyle}>
           <option value="">Tous les statuts</option>
           {STATUS_COLUMNS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
-        <select value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} style={selectStyle}>
+        <select className="u-input" value={assigneeFilter} onChange={e => setAssigneeFilter(e.target.value)} style={selectStyle}>
           <option value="">Tous les assignés</option>
           {users.map(u => <option key={u.id} value={u.id}>{userLabel(u)}</option>)}
         </select>
-        <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)} style={selectStyle}>
+        <select className="u-input" value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)} style={selectStyle}>
           <option value="due_date">Trier : échéance</option>
           <option value="priority">Trier : priorité</option>
           <option value="status">Trier : statut</option>
@@ -67,15 +68,15 @@ export function TaskList({ tasks, users, onOpen }: {
               </tr>
             </thead>
             <tbody>
-              {rows.map(t => (
+              {rows.map((t, ri) => (
                 <tr
                   key={t.id}
                   onClick={() => onOpen(t.id)}
-                  style={{ borderBottom: `1px solid ${PAL.line}`, cursor: "pointer" }}
-                  className="u-row-hover"
+                  style={{ borderBottom: `1px solid ${PAL.line}`, cursor: "pointer", ["--i" as string]: ri } as React.CSSProperties}
+                  className={"u-row-hover task-tr" + (isLate(t) ? " late" : "")}
                 >
                   <td style={{ padding: "10px 14px", fontSize: 13.5, color: PAL.ink, fontWeight: 600 }}>{t.title}</td>
-                  <td style={{ padding: "10px 14px", fontSize: 12.5, color: PAL.muted }}>{STATUS_COLUMNS.find(s => s.key === t.status)?.label}</td>
+                  <td style={{ padding: "10px 14px" }}><span className={STATUS_CHIP[t.status]}>{STATUS_COLUMNS.find(s => s.key === t.status)?.label}</span></td>
                   <td style={{ padding: "10px 14px" }}>
                     <span className={PRIORITY_META[t.priority].chip}>{PRIORITY_META[t.priority].label}</span>
                   </td>

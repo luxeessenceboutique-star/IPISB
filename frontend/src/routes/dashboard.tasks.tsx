@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { LayoutGrid, List, Plus } from "lucide-react";
 import { PageHead } from "@/components/dashboard/ui";
 import { usePermissions } from "@/lib/permissions";
-import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { TaskBoard, TaskStats } from "@/components/tasks/TaskBoard";
 import { TaskList } from "@/components/tasks/TaskList";
 import { TaskCreateModal } from "@/components/tasks/TaskCreateModal";
 import { TaskDetailModal } from "@/components/tasks/TaskDetailModal";
@@ -67,29 +67,11 @@ function TasksPage() {
         sub="Créez, assignez et suivez les tâches de l'équipe — vue Kanban ou liste."
         actions={
           <>
-            <div style={{ display: "flex", border: "1px solid var(--pal-line)", borderRadius: 8, overflow: "hidden" }}>
-              <button
-                type="button"
-                onClick={() => setView("board")}
-                title="Vue Kanban"
-                style={{
-                  display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", border: 0, cursor: "pointer",
-                  background: view === "board" ? "var(--pal-primary)" : "transparent",
-                  color: view === "board" ? "#fff" : "var(--pal-muted)", fontFamily: sans, fontSize: 12.5, fontWeight: 600,
-                }}
-              >
+            <div className="seg-rail" role="tablist" aria-label="Affichage" style={{ marginBottom: 0 }}>
+              <button type="button" role="tab" aria-selected={view === "board"} className={view === "board" ? "seg-tab on" : "seg-tab"} onClick={() => setView("board")}>
                 <LayoutGrid size={14} strokeWidth={1.8} /> Kanban
               </button>
-              <button
-                type="button"
-                onClick={() => setView("list")}
-                title="Vue liste"
-                style={{
-                  display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", border: 0, cursor: "pointer",
-                  background: view === "list" ? "var(--pal-primary)" : "transparent",
-                  color: view === "list" ? "#fff" : "var(--pal-muted)", fontFamily: sans, fontSize: 12.5, fontWeight: 600,
-                }}
-              >
+              <button type="button" role="tab" aria-selected={view === "list"} className={view === "list" ? "seg-tab on" : "seg-tab"} onClick={() => setView("list")}>
                 <List size={14} strokeWidth={1.8} /> Liste
               </button>
             </div>
@@ -101,6 +83,8 @@ function TasksPage() {
           </>
         }
       />
+
+      {!loading && <TaskStats tasks={tasks} />}
 
       {loading ? (
         <div className="shimmer" style={{ height: 320, borderRadius: 16 }} />
