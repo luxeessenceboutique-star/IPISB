@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Plus, Download, Ban, QrCode, RefreshCw, Upload, Trash2, Layers, Eye, X } from "lucide-react";
+import { FileText, Plus, Download, Ban, QrCode, RefreshCw, Upload, Trash2, Layers, Eye, X, ShieldCheck, Sparkles } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { urlIsPdf, type Preview } from "@/components/dashboard/preview";
 
@@ -415,53 +415,37 @@ function TemplatesSection({ students, employees, onPreview, onDocsChanged }: { s
           />
         </div>
       ) : (
-        <div className="dash-card overflow-hidden">
-          {templates.map(t => (
-            <div key={t.id} className="row-c flex-wrap">
-              <span className="flex shrink-0" style={{ color: PAL.primary }}>
-                <Layers size={20} strokeWidth={1.7} />
-              </span>
-              <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink, display: "flex", alignItems: "center", gap: 8 }}>
-                  {t.name}
+        <div className="doc-tpls">
+          {templates.map((t, i) => {
+            const labels = [...new Set(t.fields.map(f => f.label))];
+            return (
+              <div key={t.id} className="dash-card doc-tpl" style={{ ["--i" as string]: i } as React.CSSProperties}>
+                <div className="doc-tpl-top">
+                  <span className={`doc-kind doc-kind-${t.file_kind}`}>{t.file_kind.toUpperCase()}</span>
                   <span className="chip-c" style={{ fontSize: 10 }}>{t.target_type === "employee" ? "Employé" : "Stagiaire"}</span>
+                  <div style={{ flex: 1 }} />
+                  <button type="button" onClick={() => redetect(t)} disabled={redetecting === t.id} className="doc-ibtn"
+                    title="Re-détecter les champs (IA) — utile après une mise à jour de la plateforme" aria-label="Re-détecter les champs">
+                    <RefreshCw size={13} strokeWidth={1.8} className={redetecting === t.id ? "animate-spin" : undefined} />
+                  </button>
+                  <button type="button" onClick={() => remove(t)} className="doc-ibtn is-danger" aria-label="Supprimer" title="Supprimer">
+                    <Trash2 size={13} strokeWidth={1.8} />
+                  </button>
                 </div>
-                <div className="mt-1" style={{ fontSize: 12, color: PAL.muted, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 5 }}>
-                  <span style={{ marginRight: 3 }}>{KIND_LABEL[t.file_kind]}</span>
-                  {t.fields.length === 0 ? (
-                    <span>· aucun champ détecté</span>
-                  ) : (
-                    [...new Set(t.fields.map(f => f.label))].map(label => (
-                      <span key={label} style={{ fontSize: 10.5, fontWeight: 600, color: PAL.primary, border: `1px solid ${PAL.line}`, borderRadius: 999, padding: "2px 9px", background: "oklch(97% 0.01 170)" }}>
-                        {label}
-                      </span>
-                    ))
-                  )}
+                <div className="doc-tpl-name">{t.name}</div>
+                <div className="doc-tpl-sub">{KIND_LABEL[t.file_kind]} · {labels.length} champ{labels.length !== 1 ? "s" : ""} détecté{labels.length !== 1 ? "s" : ""}</div>
+                <div className="doc-fields">
+                  {labels.length === 0
+                    ? <span className="doc-field is-none">Aucun champ détecté</span>
+                    : labels.slice(0, 6).map(label => <span key={label} className="doc-field">{label}</span>)}
+                  {labels.length > 6 && <span className="doc-field is-none">+{labels.length - 6}</span>}
                 </div>
+                <button type="button" onClick={() => setGenTemplate(t)} className="btn-c btn-c-sm btn-c-primary doc-gen">
+                  <Sparkles size={13} strokeWidth={1.8} />Générer
+                </button>
               </div>
-              <button type="button" onClick={() => setGenTemplate(t)} className="btn-c btn-c-sm btn-c-primary">
-                Générer
-              </button>
-              <button
-                type="button"
-                onClick={() => redetect(t)}
-                disabled={redetecting === t.id}
-                className="btn-c btn-c-sm btn-c-ghost"
-                title="Re-détecter les champs (IA) — utile après une mise à jour de la plateforme"
-              >
-                <RefreshCw size={13} strokeWidth={1.7} className={redetecting === t.id ? "animate-spin" : undefined} />
-              </button>
-              <button
-                type="button"
-                onClick={() => remove(t)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive"
-                aria-label="Supprimer"
-                title="Supprimer"
-              >
-                <Trash2 size={14} strokeWidth={1.7} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -545,7 +529,12 @@ export function GeneratedDocumentsTab({ onPreview }: { onPreview: (p: Preview) =
         <GenerateModal students={students} employees={employees} onClose={() => setShowGenerate(false)} onGenerated={load} onPreview={onPreview} />
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+      <div className="doc-head">
+        <div className="doc-stats">
+          <div className="doc-stat"><span className="doc-stat-ico"><FileText size={15} strokeWidth={1.8} /></span><b>{loading ? "–" : docs.length}</b><small>générés</small></div>
+          <div className="doc-stat is-good"><span className="doc-stat-ico"><ShieldCheck size={15} strokeWidth={1.8} /></span><b>{loading ? "–" : docs.filter(d => d.statut === "valide").length}</b><small>valides (QR)</small></div>
+          <div className="doc-stat is-bad"><span className="doc-stat-ico"><Ban size={15} strokeWidth={1.8} /></span><b>{loading ? "–" : docs.filter(d => d.statut !== "valide").length}</b><small>révoqués</small></div>
+        </div>
         <button type="button" onClick={() => setShowGenerate(true)} className="btn-c btn-c-primary">
           <Plus size={15} strokeWidth={1.7} />Générer un document
         </button>
@@ -576,51 +565,34 @@ export function GeneratedDocumentsTab({ onPreview }: { onPreview: (p: Preview) =
         </div>
       ) : (
         <div className="dash-card overflow-hidden">
-          {docs.map(d => (
-            <div key={d.id} className="row-c flex-wrap">
-              <span className="flex shrink-0" style={{ color: d.statut === "valide" ? PAL.primary : PAL.muted }}>
-                <FileText size={20} strokeWidth={1.7} />
-              </span>
-              <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{d.label}</div>
-                <div className="mt-0.5" style={{ fontSize: 12, color: PAL.muted, display: "flex", alignItems: "center", gap: 6 }}>
-                  {d.employee_name || d.student_name}
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: '"JetBrains Mono", ui-monospace, monospace', fontSize: 10.5 }}>
-                    <QrCode size={11} strokeWidth={1.7} />{d.verification_code}
-                  </span>
+          {docs.map(d => {
+            const ok = d.statut === "valide";
+            return (
+              <div key={d.id} className={ok ? "row-c flex-wrap doc-row" : "row-c flex-wrap doc-row is-revoked"}>
+                <span className="doc-ico"><FileText size={17} strokeWidth={1.7} /><i><QrCode size={9} strokeWidth={2.2} /></i></span>
+                <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
+                  <div className="doc-title">{d.label}</div>
+                  <div className="doc-meta">
+                    <span>{d.employee_name || d.student_name || "—"}</span>
+                    <span className="doc-code"><QrCode size={11} strokeWidth={1.7} />{d.verification_code}</span>
+                    <span>{new Date(d.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  </div>
+                </div>
+                <span className={`chip-c ${ok ? "chip-c-green" : "chip-c-red"}`}>
+                  {ok ? <ShieldCheck size={11} strokeWidth={2} /> : <Ban size={11} strokeWidth={2} />}{ok ? "Valide" : "Révoqué"}
+                </span>
+                <div className="doc-actions">
+                  <button type="button" onClick={() => openPreview(d)} className="doc-ibtn" title="Aperçu" aria-label="Aperçu"><Eye size={14} strokeWidth={1.8} /></button>
+                  <button type="button" onClick={() => download(d)} className="doc-ibtn" title="Télécharger" aria-label="Télécharger"><Download size={14} strokeWidth={1.8} /></button>
+                  {ok && (
+                    <button type="button" onClick={() => revoke(d)} className="doc-ibtn is-danger" aria-label="Révoquer"
+                      title="Révoquer (garde une trace, le QR indique « non valide »)"><Ban size={14} strokeWidth={1.8} /></button>
+                  )}
+                  <button type="button" onClick={() => removeDoc(d)} className="doc-ibtn is-danger" aria-label="Supprimer" title="Supprimer définitivement"><Trash2 size={14} strokeWidth={1.8} /></button>
                 </div>
               </div>
-              <span className={`chip-c ${d.statut === "valide" ? "chip-c-green" : "chip-c-red"}`}>
-                {d.statut === "valide" ? "Valide" : "Révoqué"}
-              </span>
-              <button type="button" onClick={() => openPreview(d)} className="btn-c btn-c-sm btn-c-ghost" title="Aperçu">
-                <Eye size={13} strokeWidth={1.7} />
-              </button>
-              <button type="button" onClick={() => download(d)} className="btn-c btn-c-sm btn-c-ghost" title="Télécharger">
-                <Download size={13} strokeWidth={1.7} />
-              </button>
-              {d.statut === "valide" && (
-                <button
-                  type="button"
-                  onClick={() => revoke(d)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive"
-                  aria-label="Révoquer"
-                  title="Révoquer (garde une trace, le QR indique « non valide »)"
-                >
-                  <Ban size={14} strokeWidth={1.7} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => removeDoc(d)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive"
-                aria-label="Supprimer"
-                title="Supprimer définitivement"
-              >
-                <Trash2 size={14} strokeWidth={1.7} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

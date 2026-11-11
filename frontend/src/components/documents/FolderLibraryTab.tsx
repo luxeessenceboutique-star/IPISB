@@ -7,7 +7,7 @@ import Underline from "@tiptap/extension-underline";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, Heading1, Heading2, Heading3,
   List, ListOrdered, Folder, FolderOpen, FolderPlus, ChevronDown, Hash, FileText,
-  Upload, PenSquare, Pencil, Trash2, Move, X,
+  Upload, PenSquare, Pencil, Trash2, Move, X, Home, ChevronRight, Eye,
 } from "lucide-react";
 import { SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { urlIsPdf, type Preview } from "@/components/dashboard/preview";
@@ -213,8 +213,10 @@ function FileRow({ file, folders, onOpen, onEdit, onMove, onDelete }: {
 }) {
   const [moving, setMoving] = useState(false);
   return (
-    <div className="row-c flex-wrap">
-      <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}><FileText size={17} strokeWidth={1.7} /></span>
+    <div className="row-c flex-wrap lib-file">
+      <span className={file.source === "composed" ? "lib-file-ico is-composed" : "lib-file-ico"} title={file.source === "composed" ? "Composé" : "Importé"}>
+        {file.source === "composed" ? <PenSquare size={14} strokeWidth={1.8} /> : <FileText size={14} strokeWidth={1.8} />}
+      </span>
       <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
         <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{file.title}</div>
         <div className="mt-0.5" style={{ fontSize: 11.5, color: PAL.muted, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -232,13 +234,13 @@ function FileRow({ file, folders, onOpen, onEdit, onMove, onDelete }: {
           {folders.map(f => <option key={f.id} value={f.id}>{"— ".repeat(f.depth)}{f.name}</option>)}
         </select>
       ) : (
-        <button type="button" onClick={() => setMoving(true)} className="btn-c btn-c-sm btn-c-ghost" title="Déplacer"><Move size={13} strokeWidth={1.7} /></button>
+        <button type="button" onClick={() => setMoving(true)} className="doc-ibtn" title="Déplacer" aria-label="Déplacer"><Move size={13} strokeWidth={1.8} /></button>
       )}
-      <button type="button" onClick={() => onOpen(file)} className="btn-c btn-c-sm btn-c-ghost">Ouvrir</button>
       {file.source === "composed" && (
-        <button type="button" onClick={() => onEdit(file)} className="btn-c btn-c-sm btn-c-ghost" title="Modifier"><Pencil size={13} strokeWidth={1.7} /></button>
+        <button type="button" onClick={() => onEdit(file)} className="doc-ibtn" title="Modifier" aria-label="Modifier"><Pencil size={13} strokeWidth={1.8} /></button>
       )}
-      <button type="button" onClick={() => onDelete(file)} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
+      <button type="button" onClick={() => onDelete(file)} className="doc-ibtn is-danger" title="Supprimer" aria-label="Supprimer"><Trash2 size={13} strokeWidth={1.8} /></button>
+      <button type="button" onClick={() => onOpen(file)} className="btn-c btn-c-sm btn-c-soft"><Eye size={13} strokeWidth={1.8} />Ouvrir</button>
     </div>
   );
 }
@@ -250,23 +252,22 @@ function FolderRow({ folder, expanded, active, onToggle, onSelect, onRename, onA
 }) {
   return (
     <div
-      className="row-c flex-wrap"
-      style={{ cursor: "pointer", background: active ? "var(--pal-pale)" : undefined, borderRadius: 10 }}
+      className={["row-c flex-wrap lib-folder", active && "is-active", expanded && "is-open"].filter(Boolean).join(" ")}
       onClick={onToggle}
     >
-      <span className="flex shrink-0" style={{ color: PAL.primary }}>
-        {expanded ? <FolderOpen size={18} strokeWidth={1.7} /> : <Folder size={18} strokeWidth={1.7} />}
+      <span className="lib-folder-ico">
+        {expanded ? <FolderOpen size={17} strokeWidth={1.8} /> : <Folder size={17} strokeWidth={1.8} />}
       </span>
       <div className="min-w-0 flex-1" style={{ minWidth: 140 }} onClick={e => { e.stopPropagation(); onSelect(); }}>
         <div style={{ fontWeight: 700, fontSize: 13.5, color: PAL.ink }}>{folder.name}</div>
         <div className="mt-0.5">{refChip(folder.reference_code)}</div>
       </div>
       {onAddChild && (
-        <button type="button" onClick={e => { e.stopPropagation(); onAddChild(); }} className="btn-c btn-c-sm btn-c-ghost" title="Nouveau sous-dossier"><FolderPlus size={13} strokeWidth={1.7} /></button>
+        <button type="button" onClick={e => { e.stopPropagation(); onAddChild(); }} className="doc-ibtn" title="Nouveau sous-dossier" aria-label="Nouveau sous-dossier"><FolderPlus size={13} strokeWidth={1.8} /></button>
       )}
-      <button type="button" onClick={e => { e.stopPropagation(); onRename(); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Renommer"><Pencil size={13} strokeWidth={1.7} /></button>
-      <button type="button" onClick={e => { e.stopPropagation(); onDelete(); }} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
-      <ChevronDown size={15} strokeWidth={1.8} style={{ color: PAL.muted, transform: expanded ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+      <button type="button" onClick={e => { e.stopPropagation(); onRename(); }} className="doc-ibtn" title="Renommer" aria-label="Renommer"><Pencil size={13} strokeWidth={1.8} /></button>
+      <button type="button" onClick={e => { e.stopPropagation(); onDelete(); }} className="doc-ibtn is-danger" title="Supprimer" aria-label="Supprimer"><Trash2 size={13} strokeWidth={1.8} /></button>
+      <ChevronDown size={15} strokeWidth={1.8} className="lib-chev" />
     </div>
   );
 }
@@ -317,6 +318,9 @@ export function FolderLibraryTab({ onPreview }: { onPreview: (p: Preview) => voi
   const flatFolders = folders.slice().sort((a, b) => a.name.localeCompare(b.name));
   const activeFolder = activeFolderId ? folders.find(f => f.id === activeFolderId) ?? null : null;
   const activeLabel = activeFolder ? activeFolder.name : "Racine (non classé)";
+  // Fil d'Ariane du dossier actif (racine → … → dossier actif).
+  const trail: DocFolder[] = [];
+  for (let f = activeFolder; f; f = f.parent_id ? folders.find(x => x.id === f!.parent_id) ?? null : null) trail.unshift(f);
 
   async function createFolder(name: string) {
     await api.post("/api/document-library/folders", { name, parent_id: folderModal.parentId });
@@ -408,7 +412,7 @@ export function FolderLibraryTab({ onPreview }: { onPreview: (p: Preview) => voi
           onDelete={() => deleteFolder(folder)}
         />
         {isExpanded && (
-          <div style={{ marginLeft: INDENT, borderLeft: `1px solid ${PAL.line}`, paddingLeft: 10 }}>
+          <div className="lib-branch" style={{ marginLeft: INDENT }}>
             {filesIn(folder.id).map(f => (
               <FileRow key={f.id} file={f} folders={flatFolders} onOpen={openFile}
                 onEdit={ff => setComposeModal({ open: true, editing: ff })} onMove={moveFile} onDelete={deleteFile} />
@@ -437,15 +441,22 @@ export function FolderLibraryTab({ onPreview }: { onPreview: (p: Preview) => voi
           onClose={() => setComposeModal({ open: false, editing: null })} onSaved={saveCompose} />
       )}
 
-      <div className="dash-card" style={{ padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ fontSize: 13, color: PAL.muted }}>
-          Ajouter dans : <b style={{ color: PAL.ink }}>{activeLabel}</b>
-          {activeFolderId && (
-            <button type="button" onClick={() => setActiveFolderId(null)} style={{ marginLeft: 8, background: "none", border: "none", color: "var(--pal-primary-deep)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-              Revenir à la racine
-            </button>
-          )}
+      <div className="dash-card lib-bar">
+        <div className="lib-crumbs">
+          <span className="mono-eyebrow" style={{ marginRight: 4 }}>Ajouter dans</span>
+          <button type="button" className={activeFolderId ? "lib-crumb" : "lib-crumb is-here"} onClick={() => setActiveFolderId(null)}>
+            <Home size={12} strokeWidth={1.9} />Racine
+          </button>
+          {trail.map((f, i) => (
+            <span key={f.id} style={{ display: "contents" }}>
+              <ChevronRight size={12} strokeWidth={1.9} className="lib-sep" />
+              <button type="button" className={i === trail.length - 1 ? "lib-crumb is-here" : "lib-crumb"} onClick={() => setActiveFolderId(f.id)}>
+                <Folder size={12} strokeWidth={1.9} />{f.name}
+              </button>
+            </span>
+          ))}
         </div>
+        <div className="lib-count">{folders.length} dossier{folders.length !== 1 ? "s" : ""} · {files.length} document{files.length !== 1 ? "s" : ""}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" onClick={() => setFolderModal({ open: true, editing: null, parentId: activeFolderId })} disabled={!!activeFolder && activeFolder.depth >= MAX_DEPTH} className="btn-c btn-c-sm btn-c-ghost">
             <FolderPlus size={13} strokeWidth={1.7} />Nouveau dossier
@@ -464,7 +475,7 @@ export function FolderLibraryTab({ onPreview }: { onPreview: (p: Preview) => voi
       ) : rootFolders.length === 0 && unfiledFiles.length === 0 ? (
         <div className="dash-card"><EmptyHint icon={<Folder size={26} strokeWidth={1.7} />} text="Aucun dossier ni document pour l'instant." /></div>
       ) : (
-        <div className="dash-card overflow-hidden" style={{ padding: "6px 10px" }}>
+        <div className="dash-card overflow-hidden lib-tree">
           {rootFolders.map(f => renderFolder(f))}
           {unfiledFiles.length > 0 && (
             <>

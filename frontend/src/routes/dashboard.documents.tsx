@@ -55,7 +55,9 @@ function DocumentsPage() {
 
       <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} />
 
-      {tab === "templates" ? <GeneratedDocumentsTab onPreview={setPreview} /> : <FolderLibraryTab onPreview={setPreview} />}
+      <div className="pouls-pane" key={tab}>
+        {tab === "templates" ? <GeneratedDocumentsTab onPreview={setPreview} /> : <FolderLibraryTab onPreview={setPreview} />}
+      </div>
     </div>
   );
 }
