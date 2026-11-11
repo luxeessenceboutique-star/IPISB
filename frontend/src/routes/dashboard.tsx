@@ -24,6 +24,8 @@ const PAL = {
   cream:   "oklch(97% 0.012 90)",
 };
 
+const SB_DEFAULT = 248, SB_MIN = 200, SB_MAX = 420, SB_COLLAPSE_AT = 150;
+
 export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
@@ -54,6 +56,59 @@ function DashboardLayout() {
   const [railCollapsed, setRailCollapsed] = useState(() => {
     try { return localStorage.getItem("sidebar-collapsed") === "1"; } catch { return false; }
   });
+  // Largeur de la barre latérale, réglable en faisant glisser sa poignée
+  // (mémorisée dans ce navigateur). Double-clic : largeur par défaut.
+  const [sbWidth, setSbWidth] = useState(() => {
+    try { const v = Number(localStorage.getItem("sidebar-width")); return v >= SB_MIN && v <= SB_MAX ? v : SB_DEFAULT; } catch { return SB_DEFAULT; }
+  });
+  const [resizing, setResizing] = useState(false);
+  function saveWidth(w: number) {
+    try { localStorage.setItem("sidebar-width", String(w)); } catch { /* ignore */ }
+  }
+  function startResize(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = railCollapsed ? 84 : sbWidth;
+    let last = railCollapsed ? sbWidth : startW;
+    let collapsed = railCollapsed;
+    setResizing(true);
+    document.body.classList.add("sb-resizing");
+    const move = (ev: PointerEvent) => {
+      const w = startW + (ev.clientX - startX);
+      if (w < SB_COLLAPSE_AT) {
+        // Tirer très à gauche replie la barre en rail d'icônes.
+        if (!collapsed) { collapsed = true; setRail(true); }
+        return;
+      }
+      if (collapsed) { collapsed = false; setRail(false); }
+      last = Math.max(SB_MIN, Math.min(SB_MAX, w));
+      setSbWidth(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      document.body.classList.remove("sb-resizing");
+      setResizing(false);
+      saveWidth(last);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+  function resizeKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    if (railCollapsed) { if (e.key === "ArrowRight") setRail(false); return; }
+    const w = Math.max(SB_MIN, Math.min(SB_MAX, sbWidth + (e.key === "ArrowRight" ? 16 : -16)));
+    setSbWidth(w); saveWidth(w);
+  }
+  function setRail(v: boolean) {
+    setRailCollapsed(v);
+    try { localStorage.setItem("sidebar-collapsed", v ? "1" : "0"); } catch { /* ignore */ }
+  }
+
   function toggleRail() {
     setRailCollapsed(prev => {
       const next = !prev;
@@ -282,9 +337,25 @@ function DashboardLayout() {
   // ── Desktop layout ────────────────────────────────────────────────
   return (
     <BreadcrumbLabelProvider>
-      <div style={{ width: "100%", height: "100vh", overflow: "hidden", display: "grid", gridTemplateColumns: `${railCollapsed ? 84 : 248}px 1fr`, transition: "grid-template-columns .5s cubic-bezier(.2,.8,.2,1)", background: PAL.cream }}>
-        {sidebarNode()}
-        <div style={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ width: "100%", height: "100vh", overflow: "hidden", display: "grid", gridTemplateColumns: `${railCollapsed ? 84 : sbWidth}px minmax(0, 1fr)`, transition: resizing ? "none" : "grid-template-columns .5s cubic-bezier(.2,.8,.2,1)", background: PAL.cream }}>
+        <div style={{ position: "relative", minHeight: 0, display: "grid" }}>
+          {sidebarNode()}
+          <div
+            className={resizing ? "sb-handle is-active" : "sb-handle"}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Redimensionner la barre latérale"
+            aria-valuemin={SB_MIN} aria-valuemax={SB_MAX} aria-valuenow={railCollapsed ? 84 : sbWidth}
+            tabIndex={0}
+            title="Glisser pour redimensionner · double-clic : taille par défaut"
+            onPointerDown={startResize}
+            onKeyDown={resizeKey}
+            onDoubleClick={() => { setRail(false); setSbWidth(SB_DEFAULT); saveWidth(SB_DEFAULT); }}
+          >
+            <span className="sb-handle-grip" />
+          </div>
+        </div>
+        <div style={{ minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}>
           <DashboardHeader unread={unread} />
           <main className="scroll-y" style={{ minHeight: 0, flex: 1, padding: "30px 36px" }}>
             <div key={pathname} className="page-enter dash-glow" style={{ maxWidth: 1180, margin: "0 auto" }}>
