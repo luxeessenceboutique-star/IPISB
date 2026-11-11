@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, X, Inbox, UserCog, Wallet, ListChecks } from "lucide-react";
+import { ChevronLeft, ChevronRight, X, Inbox, UserCog, Wallet, ListChecks, Users } from "lucide-react";
 
 const sans = '"Plus Jakarta Sans", system-ui, sans-serif';
 const PAL = { ink: "oklch(22% 0.025 175)", muted: "oklch(48% 0.02 180)", line: "oklch(88% 0.015 170)", paper: "oklch(99% 0.005 160)" };
@@ -56,15 +56,11 @@ function Pill({ ev, onOpen, compact }: { ev: CalEvent; onOpen: (e: CalEvent) => 
       type="button"
       onClick={e => { e.stopPropagation(); onOpen(ev); }}
       title={ev.title}
-      style={{
-        display: "flex", alignItems: "center", gap: 5, width: "100%", textAlign: "left", border: 0, cursor: "pointer",
-        background: c.bg, color: c.fg, borderRadius: 6, padding: compact ? "2px 6px" : "5px 8px",
-        fontFamily: sans, fontSize: compact ? 11 : 12.5, fontWeight: 600, lineHeight: 1.35,
-        textDecoration: finished ? "line-through" : "none",
-      }}
+      className={["ag-pill", compact && "is-compact", finished && "is-done"].filter(Boolean).join(" ")}
+      style={{ ["--bg" as string]: c.bg, ["--fg" as string]: c.fg, ["--dot" as string]: c.dot } as CSSProperties}
     >
-      <span style={{ width: 6, height: 6, borderRadius: 999, background: c.dot, flexShrink: 0 }} />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{ev.title}</span>
+      <i />
+      <span>{ev.title}</span>
     </button>
   );
 }
@@ -72,7 +68,7 @@ function Pill({ ev, onOpen, compact }: { ev: CalEvent; onOpen: (e: CalEvent) => 
 function EventDetail({ ev, onOpen }: { ev: CalEvent; onOpen: (e: CalEvent) => void }) {
   const c = colorOf(ev);
   return (
-    <div onClick={() => onOpen(ev)} style={{ cursor: "pointer", borderLeft: `4px solid ${c.dot}`, background: c.bg, borderRadius: 8, padding: "9px 12px" }}>
+    <div onClick={() => onOpen(ev)} className="ag-detail" style={{ borderLeft: `4px solid ${c.dot}`, background: c.bg }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: c.fg, textDecoration: ev.status === "done" ? "line-through" : "none" }}>{ev.title}</div>
       <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: 3 }}>
         {KIND_LABEL[ev.kind]}
@@ -80,7 +76,7 @@ function EventDetail({ ev, onOpen }: { ev: CalEvent; onOpen: (e: CalEvent) => vo
         {ev.priority && ev.kind === "task" && ` · Priorité ${PRIORITY_LABEL[ev.priority] ?? ev.priority}`}
         {ev.start !== ev.end && ` · ${parse(ev.start).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} → ${parse(ev.end).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`}
       </div>
-      {ev.people && ev.people.length > 0 && <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: 2 }}>👤 {ev.people.join(", ")}</div>}
+      {ev.people && ev.people.length > 0 && <div style={{ fontSize: 11.5, color: PAL.muted, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><Users size={11} strokeWidth={1.9} />{ev.people.join(", ")}</div>}
     </div>
   );
 }
@@ -152,17 +148,20 @@ export function AgendaCalendar({ onOpen }: { onOpen: (ev: CalEvent) => void }) {
 
   return (
     <div style={{ fontFamily: sans }}>
-      {/* Barre d'outils façon Google Agenda */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        <button type="button" style={{ ...btn, padding: "8px 16px" }} onClick={() => { setCursor(new Date()); setSelected(todayIso); }}>Aujourd'hui</button>
-        <div style={{ display: "flex", gap: 2 }}>
-          <button type="button" aria-label="Précédent" style={{ ...btn, border: 0, background: "transparent", padding: 6, display: "flex" }} onClick={() => shift(-1)}><ChevronLeft size={20} /></button>
-          <button type="button" aria-label="Suivant" style={{ ...btn, border: 0, background: "transparent", padding: 6, display: "flex" }} onClick={() => shift(1)}><ChevronRight size={20} /></button>
+      {/* Barre d'outils */}
+      <div className="ag-toolbar">
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div className="mono-eyebrow">{view === "week" ? "Vue semaine" : "Vue mois"} · RH, Compta, Tâches</div>
+          <div className="lv-month">{title}</div>
         </div>
-        <h2 className="h-serif" style={{ fontSize: 24, fontWeight: 700, color: PAL.ink, margin: 0, textTransform: "capitalize", flex: 1, minWidth: 160 }}>{title}</h2>
-        <div style={{ display: "flex", border: `1px solid ${PAL.line}`, borderRadius: 8, overflow: "hidden" }}>
+        <div className="lv-nav">
+          <button type="button" aria-label="Précédent" className="btn-c btn-c-sm btn-c-ghost" onClick={() => shift(-1)}><ChevronLeft size={14} strokeWidth={1.8} /></button>
+          <button type="button" className="btn-c btn-c-sm btn-c-soft" onClick={() => { setCursor(new Date()); setSelected(todayIso); }}>Aujourd'hui</button>
+          <button type="button" aria-label="Suivant" className="btn-c btn-c-sm btn-c-ghost" onClick={() => shift(1)}><ChevronRight size={14} strokeWidth={1.8} /></button>
+        </div>
+        <div className="seg-rail seg-rail-sm" role="tablist" aria-label="Vue">
           {(["month", "week"] as const).map(v => (
-            <button key={v} type="button" onClick={() => setView(v)} style={{ ...btn, border: 0, borderRadius: 0, padding: "8px 14px", background: view === v ? "var(--pal-pale)" : PAL.paper, color: view === v ? "var(--pal-primary-deep)" : PAL.ink }}>
+            <button key={v} type="button" role="tab" aria-selected={view === v} className={view === v ? "seg-tab on" : "seg-tab"} onClick={() => setView(v)}>
               {v === "month" ? "Mois" : "Semaine"}
             </button>
           ))}
@@ -177,8 +176,7 @@ export function AgendaCalendar({ onOpen }: { onOpen: (ev: CalEvent) => void }) {
           return (
             <button
               key={g.key} type="button" onClick={() => toggleGroup(g.key)} aria-pressed={!off}
-              className={`chip-c ${off ? "" : g.chip}`}
-              style={{ fontSize: 11.5, cursor: "pointer", opacity: off ? .55 : 1, border: off ? `1px dashed ${PAL.line}` : "1px solid transparent", textDecoration: off ? "line-through" : "none" }}
+              className={`chip-c ag-filter ${off ? "is-off" : g.chip}`}
             >
               <Icon size={12} strokeWidth={1.8} />{g.label} · {counts[g.key]} échéance{counts[g.key] !== 1 ? "s" : ""}
             </button>
@@ -187,42 +185,27 @@ export function AgendaCalendar({ onOpen }: { onOpen: (ev: CalEvent) => void }) {
       </div>
 
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div className="dash-card" style={{ flex: "1 1 560px", minWidth: 0, overflow: "hidden", opacity: loading ? .6 : 1, transition: "opacity .15s" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", borderBottom: `1px solid ${PAL.line}` }}>
-            {DAYS_SHORT.map(d => (
-              <div key={d} style={{ padding: "8px 4px", textAlign: "center", fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: PAL.muted }}>{d}</div>
-            ))}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}>
+        <div className="dash-card ag-cal" style={{ opacity: loading ? .6 : 1 }}>
+          <div className="lv-grid" key={`${startIso}-${view}`}>
+            {DAYS_SHORT.map(d => <div key={d} className="lv-wd">{d}</div>)}
             {days.map((d, i) => {
               const k = iso(d);
               const evs = byDay[k] ?? [];
               const inMonth = view === "week" || d.getMonth() === cursor.getMonth();
-              const isToday = k === todayIso;
-              const isSel = k === selected;
+              const isWeekend = d.getDay() === 0 || d.getDay() === 6;
               const max = view === "week" ? 12 : 3;
+              const cls = ["lv-day", "ag-day", k === todayIso && "is-today", k === selected && "is-sel", !inMonth && "is-dim", isWeekend && "is-weekend", view === "week" && "is-tall"].filter(Boolean).join(" ");
               return (
-                <div
-                  key={k}
-                  onClick={() => setSelected(k)}
-                  style={{
-                    minHeight: view === "week" ? 320 : 108, padding: 4, cursor: "pointer",
-                    borderRight: i % 7 !== 6 ? `1px solid ${PAL.line}` : "none",
-                    borderBottom: i < days.length - 7 ? `1px solid ${PAL.line}` : "none",
-                    background: isSel ? "oklch(97% 0.015 170)" : "transparent", minWidth: 0,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 3 }}>
-                    <span style={{
-                      width: 24, height: 24, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 12, fontWeight: isToday ? 700 : 500,
-                      background: isToday ? "var(--pal-primary)" : "transparent",
-                      color: isToday ? "#fff" : inMonth ? PAL.ink : "oklch(70% 0.01 180)",
-                    }}>{d.getDate()}</span>
+                <div key={k} className={cls} style={{ ["--i" as string]: i } as CSSProperties}
+                  role="button" tabIndex={0} aria-pressed={k === selected}
+                  onClick={() => setSelected(k)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(k); } }}>
+                  <div className="lv-num">
+                    <span>{d.getDate()}</span>
+                    {evs.length > 0 && <i className="ag-count">{evs.length}</i>}
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                     {evs.slice(0, max).map(ev => <Pill key={ev.id} ev={ev} onOpen={onOpen} compact={view === "month"} />)}
-                    {evs.length > max && <span style={{ fontSize: 11, fontWeight: 600, color: PAL.muted, padding: "0 6px" }}>+{evs.length - max} autre{evs.length - max > 1 ? "s" : ""}</span>}
+                    {evs.length > max && <span className="lv-more">+{evs.length - max} autre{evs.length - max > 1 ? "s" : ""}</span>}
                   </div>
                 </div>
               );
@@ -232,9 +215,10 @@ export function AgendaCalendar({ onOpen }: { onOpen: (ev: CalEvent) => void }) {
 
         {/* Panneau latéral : jour sélectionné + tâches sans échéance */}
         <div style={{ flex: "1 1 260px", maxWidth: 360, minWidth: 240, display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="dash-card" style={{ padding: 16 }}>
+          <div className="dash-card ag-side" style={{ padding: 16 }} key={selected ?? "none"}>
+            <div className="mono-eyebrow" style={{ marginBottom: 4 }}>Jour sélectionné · {selEvents.length} échéance{selEvents.length !== 1 ? "s" : ""}</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: PAL.ink, textTransform: "capitalize" }}>
+              <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-.01em", color: PAL.ink, textTransform: "capitalize" }}>
                 {selected ? parse(selected).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }) : "Aucun jour"}
               </div>
               {selected && <button type="button" onClick={() => setSelected(null)} aria-label="Fermer" style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, display: "flex" }}><X size={15} /></button>}
@@ -255,7 +239,7 @@ export function AgendaCalendar({ onOpen }: { onOpen: (ev: CalEvent) => void }) {
             {undated.length === 0 ? (
               <p style={{ margin: 0, fontSize: 12.5, color: PAL.muted }}>Toutes les tâches ouvertes ont une échéance.</p>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 260, overflowY: "auto", paddingRight: 2 }}>
                 {undated.map(ev => <Pill key={ev.id} ev={ev} onOpen={onOpen} />)}
               </div>
             )}

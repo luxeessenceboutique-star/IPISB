@@ -276,7 +276,7 @@ function InstanceRow({ instance, onChanged }: { instance: Instance; onChanged: (
         </div>
         <span style={{ fontFamily: mono, fontSize: 12, color: PAL.muted }}>{fmtKDH(instance.budget_kdh)}</span>
         {lastMeeting?.taux_realisation != null && (
-          <span className="chip-c chip-c-green" style={{ fontSize: 11 }}>{fmtPct(lastMeeting.taux_realisation)}</span>
+          <span className="gv-meter" title="Taux de réalisation (dernière réunion)" style={{ ["--p" as string]: `${Math.round(Math.min(1, Math.max(0, lastMeeting.taux_realisation ?? 0)) * 100)}%` } as React.CSSProperties}><i /><b>{fmtPct(lastMeeting.taux_realisation)}</b></span>
         )}
         <button type="button" onClick={e => { e.stopPropagation(); setEditingInstance(true); }} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted }} title="Modifier"><Pencil size={14} strokeWidth={1.7} /></button>
         <button type="button" onClick={removeInstance} style={{ background: "none", border: 0, cursor: "pointer", color: "var(--pal-danger)" }} title="Supprimer"><Trash2 size={14} strokeWidth={1.7} /></button>
@@ -284,8 +284,8 @@ function InstanceRow({ instance, onChanged }: { instance: Instance; onChanged: (
       </div>
 
       {open && (
-        <div style={{ padding: "10px 16px 16px 40px", background: PAL.pale, borderRadius: 10, marginBottom: 8 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, fontSize: 12, marginBottom: 12 }}>
+        <div className="gv-detail">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, fontSize: 12, marginBottom: 12 }}>
             <div><span style={{ color: PAL.muted }}>Demandeur : </span>{instance.demandeur || "—"}</div>
             <div><span style={{ color: PAL.muted }}>Site : </span>{instance.site || "—"}</div>
             <div><span style={{ color: PAL.muted }}>Délai : </span>{fmtDate(instance.delai)}</div>
@@ -359,8 +359,28 @@ export function GovernanceInstances({ niveau }: { niveau: 1 | 2 }) {
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [niveau]);
 
+  const stats = (() => {
+    const list = instances ?? [];
+    const budget = list.reduce((a, i) => a + (i.budget_kdh ?? 0), 0);
+    const rates = list.map(i => i.meetings[i.meetings.length - 1]?.taux_realisation).filter((v): v is number => v != null);
+    const avg = rates.length ? rates.reduce((a, v) => a + v, 0) / rates.length : null;
+    const today = new Date().toISOString().slice(0, 10);
+    const next = list.map(i => i.prochain_controle).filter((d): d is string => !!d && d >= today).sort()[0] ?? null;
+    const meetings = list.reduce((a, i) => a + i.meetings.length, 0);
+    return { count: list.length, budget, avg, next, meetings };
+  })();
+
   return (
     <div>
+      {!loading && instances && instances.length > 0 && (
+        <div className="gv-stats">
+          <div className="dash-card stat-tile"><div className="mono-eyebrow">Instances suivies</div><div className="stat-tile-v">{stats.count}</div><small>{stats.meetings} réunion{stats.meetings !== 1 ? "s" : ""} au total</small></div>
+          <div className="dash-card stat-tile"><div className="mono-eyebrow">Budget engagé</div><div className="stat-tile-v">{stats.budget.toLocaleString("fr-FR")}<span> KDH</span></div><small>somme des recommandations</small></div>
+          <div className="dash-card stat-tile"><div className="mono-eyebrow">Réalisation moyenne</div><div className="stat-tile-v">{stats.avg == null ? "—" : `${Math.round(stats.avg * 100)} %`}</div>
+            <span className="gv-meter gv-meter-lg" style={{ ["--p" as string]: `${Math.round((stats.avg ?? 0) * 100)}%` } as React.CSSProperties}><i /></span></div>
+          <div className="dash-card stat-tile"><div className="mono-eyebrow">Prochain contrôle</div><div className="stat-tile-v" style={{ fontSize: 20 }}>{stats.next ? new Date(stats.next).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—"}</div><small>échéance la plus proche</small></div>
+        </div>
+      )}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
         <button type="button" onClick={() => setCreating(true)} className="btn-c btn-c-primary btn-c-sm">
           <Plus size={14} strokeWidth={1.8} />Nouvelle instance

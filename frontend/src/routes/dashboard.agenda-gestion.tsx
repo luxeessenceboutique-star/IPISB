@@ -1,10 +1,10 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { UserCog, Wallet, ListChecks, RefreshCw, AlertTriangle, CalendarClock, Clock3 } from "lucide-react";
-import { PageHead, EmptyHint, SectionLabel } from "@/components/dashboard/ui";
+import { UserCog, Wallet, ListChecks, RefreshCw, AlertTriangle, CalendarClock, Clock3, CalendarDays, ChevronRight } from "lucide-react";
+import { PageHead, EmptyHint, SectionLabel, SegTabs } from "@/components/dashboard/ui";
 import { AgendaCalendar } from "@/components/agenda/AgendaCalendar";
 
 export const Route = createFileRoute("/dashboard/agenda-gestion")({
@@ -38,32 +38,40 @@ const CATEGORY_ICON: Record<string, typeof ListChecks> = {
 const CATEGORY_LABEL: Record<string, string> = {
   task: "Tâche", hr_leave: "Congé", hr_contract: "Contrat", hr_probation: "Période d'essai", accounting_approval: "Approbation",
 };
-const SEVERITY_META: Record<Severity, { label: string; chip: string; icon: typeof AlertTriangle }> = {
-  overdue: { label: "En retard", chip: "chip-c-red", icon: AlertTriangle },
-  today: { label: "Aujourd'hui", chip: "chip-c-amber", icon: CalendarClock },
-  soon: { label: "À venir", chip: "chip-c-blue", icon: Clock3 },
+const SEVERITY_META: Record<Severity, { label: string; chip: string; icon: typeof AlertTriangle; hint: string }> = {
+  overdue: { label: "En retard", chip: "chip-c-red", icon: AlertTriangle, hint: "échéance dépassée" },
+  today: { label: "Aujourd'hui", chip: "chip-c-amber", icon: CalendarClock, hint: "à traiter dans la journée" },
+  soon: { label: "À venir", chip: "chip-c-blue", icon: Clock3, hint: "dans les prochains jours" },
 };
+
+// « J-3 », « Retard 2 j », « Auj. » — calcul en dates locales.
+function dueLabel(due: string | null): string | null {
+  if (!due) return null;
+  const [y, m, d] = due.slice(0, 10).split("-").map(Number);
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const diff = Math.round((new Date(y, m - 1, d).getTime() - t.getTime()) / 86400000);
+  if (diff === 0) return "Auj.";
+  return diff < 0 ? `Retard ${-diff} j` : `J-${diff}`;
+}
 const SEVERITY_ORDER: Severity[] = ["overdue", "today", "soon"];
 
 function ItemRow({ item, onOpen }: { item: AgendaItem; onOpen: () => void }) {
   const Icon = CATEGORY_ICON[item.category] ?? ListChecks;
+  const due = dueLabel(item.due_date);
   return (
-    <div className="row-c" style={{ cursor: "pointer" }} onClick={onOpen}>
-      <span
-        className="flex shrink-0 items-center justify-center rounded-full"
-        style={{ width: 34, height: 34, background: "var(--pal-cream)", color: "var(--pal-primary-deep)" }}
-      >
-        <Icon size={15} strokeWidth={1.8} />
-      </span>
+    <button type="button" className={`row-c agd-row agd-${item.severity}`} onClick={onOpen}>
+      <span className="agd-ico"><Icon size={15} strokeWidth={1.8} /></span>
       <div className="min-w-0 flex-1">
-        <div style={{ fontFamily: sans, fontSize: 13.5, fontWeight: 700, color: PAL.ink }}>{item.title}</div>
-        <div style={{ fontFamily: sans, fontSize: 11.5, color: PAL.muted, marginTop: 2 }}>
+        <div className="agd-title">{item.title}</div>
+        <div className="agd-meta">
           {CATEGORY_LABEL[item.category] ?? item.category}
           {item.due_date && ` · ${new Date(item.due_date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}`}
+          {` · ${item.responsible.length} responsable${item.responsible.length > 1 ? "s" : ""}`}
         </div>
       </div>
-      <span className="chip-c" style={{ fontSize: 10.5 }}>{item.responsible.length} responsable{item.responsible.length > 1 ? "s" : ""}</span>
-    </div>
+      {due && <span className="agd-due">{due}</span>}
+      <ChevronRight size={15} strokeWidth={1.8} className="agd-go" />
+    </button>
   );
 }
 
@@ -120,16 +128,32 @@ export function AgendaGestionPage() {
         }
       />
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 18, borderBottom: "1px solid oklch(88% 0.015 170)" }}>
-        {([["calendar", "Calendrier"], ["todo", `À traiter (${items.length})`]] as const).map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setTab(k)} style={{
-            background: "none", border: 0, cursor: "pointer", fontFamily: sans, fontSize: 13.5, padding: "8px 14px", marginBottom: -1,
-            fontWeight: tab === k ? 700 : 500, color: tab === k ? PAL.ink : PAL.muted,
-            borderBottom: tab === k ? "2px solid var(--pal-primary)" : "2px solid transparent",
-          }}>{label}</button>
-        ))}
+      <div className="agd-sev-row">
+        {SEVERITY_ORDER.map((sev, i) => {
+          const meta = SEVERITY_META[sev];
+          const Icon = meta.icon;
+          return (
+            <button key={sev} type="button" className={`dash-card agd-sev agd-${sev}`} style={{ ["--i" as string]: i } as CSSProperties}
+              onClick={() => setTab("todo")}>
+              <span className="agd-sev-ico"><Icon size={16} strokeWidth={1.9} /></span>
+              <span className="agd-sev-v">{loading ? "–" : grouped[sev].length}</span>
+              <span className="agd-sev-l"><b>{meta.label}</b>{meta.hint}</span>
+            </button>
+          );
+        })}
       </div>
 
+      <SegTabs
+        label="Affichage de l'agenda"
+        value={tab}
+        onChange={k => setTab(k)}
+        items={[
+          { key: "calendar", label: "Calendrier", icon: CalendarDays },
+          { key: "todo", label: `À traiter (${items.length})`, icon: ListChecks },
+        ]}
+      />
+
+      <div className="pouls-pane" key={tab}>
       {tab === "calendar" ? (
         <AgendaCalendar onOpen={ev => navigate({ to: ev.link as "/dashboard" })} />
       ) : loading ? (
@@ -158,6 +182,7 @@ export function AgendaGestionPage() {
           );
         })
       )}
+      </div>
     </div>
   );
 }

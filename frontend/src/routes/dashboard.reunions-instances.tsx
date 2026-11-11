@@ -1,7 +1,8 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { PageHead } from "@/components/dashboard/ui";
+import { PageHead, SegTabs } from "@/components/dashboard/ui";
+import { Landmark, GraduationCap } from "lucide-react";
 import { GovernanceInstances } from "@/components/governance/GovernanceInstances";
 
 export const Route = createFileRoute("/dashboard/reunions-instances")({
@@ -31,29 +32,19 @@ function ReunionsInstancesPage() {
         sub="Conseils, comités et instances de gouvernance de l'institut."
       />
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: "1px solid var(--pal-line)" }}>
-        {([1, 2] as const).map(n => {
-          const active = niveau === n;
-          return (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setNiveau(n)}
-              style={{
-                padding: "10px 16px", marginBottom: -1,
-                border: "none", borderBottom: active ? "2px solid var(--pal-primary)" : "2px solid transparent",
-                background: "transparent", cursor: "pointer",
-                fontFamily: sans, fontSize: 13.5, fontWeight: active ? 700 : 600,
-                color: active ? "var(--pal-ink)" : "var(--pal-muted)",
-              }}
-            >
-              Niveau {n === 1 ? "①" : "②"}
-            </button>
-          );
-        })}
-      </div>
+      <SegTabs
+        label="Niveau d'instance"
+        value={String(niveau) as "1" | "2"}
+        onChange={k => setNiveau(k === "1" ? 1 : 2)}
+        items={[
+          { key: "1", label: "Niveau ① · Direction", icon: Landmark },
+          { key: "2", label: "Niveau ② · Pédagogie", icon: GraduationCap },
+        ]}
+      />
 
-      <GovernanceInstances niveau={niveau} />
+      <div className="pouls-pane" key={niveau}>
+        <GovernanceInstances niveau={niveau} />
+      </div>
     </div>
   );
 }
