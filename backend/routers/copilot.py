@@ -32,6 +32,7 @@ class CopilotRequest(BaseModel):
     language: str = Field("fr", max_length=8)
     deep: bool = False                      # « Analyse approfondie » → Deep Agent
     voice: bool = False                     # message dicté à la voix (affichage)
+    call: bool = False                      # appel vocal temps réel : réponses courtes, à l'oral
 
     @field_validator("messages")
     @classmethod
@@ -112,7 +113,7 @@ async def copilot_stream(
         if not req.messages:
             raise HTTPException(422, "message requis")
         state = {"history": req.messages, "roles": roles, "language": req.language,
-                 "memory": "", "summary": "", "force_agent": "analyste" if req.deep else None}
+                 "memory": "", "summary": "", "force_agent": "analyste" if req.deep else None, "voice_mode": req.call}
 
         async def legacy():
             async for ev in _run_team(state, user, db):
@@ -148,6 +149,7 @@ async def copilot_stream(
         "history": history, "roles": roles, "language": req.language,
         "memory": render_memories(memories), "summary": conversation.get("summary") or "",
         "force_agent": "analyste" if req.deep else None,
+        "voice_mode": req.call,
     }
 
     async def generate():

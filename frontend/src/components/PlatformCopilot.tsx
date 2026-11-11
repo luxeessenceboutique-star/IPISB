@@ -4,10 +4,11 @@ import { useBreakpoint } from "@/lib/useBreakpoint";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
+import { RealtimeVoice, type CallPhase } from "@/lib/realtimeVoice";
 import {
   X, Send, Check, Loader2, Mic, Square, Phone, PhoneOff, Brain, SquarePen, PanelLeft,
   Maximize2, Minimize2, Search, Pin, PinOff, Pencil, Trash2, Copy, Volume2, VolumeX, Sparkles,
-  Compass, UserCog, Wallet, Zap, ChevronDown, ListChecks, CircleCheck, Circle, Plus, AudioLines,
+  Compass, UserCog, Wallet, Zap, ChevronDown, ListChecks, CircleCheck, Circle, Plus, AudioLines, MicOff,
 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
@@ -213,13 +214,14 @@ export function PlatformCopilot() {
   const [recording, setRecording] = useState<{ start: number; level: number } | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | number | null>(null);
-  const [call, setCall] = useState<null | { phase: "listening" | "thinking" | "speaking"; level: number; heard: string }>(null);
+  const [call, setCall] = useState<null | { phase: CallPhase; level: number; interim: string; heard: string; muted: boolean }>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<{ stop: (send: boolean) => void } | null>(null);
-  const callRef = useRef<{ active: boolean; stop?: () => void }>({ active: false });
+  const voiceRef = useRef<RealtimeVoice | null>(null);
+  const turnRef = useRef<AbortController | null>(null);
   const sttFallback = useRef(false);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
@@ -280,12 +282,15 @@ export function PlatformCopilot() {
   }
 
   // ── Envoi + flux SSE ──
-  const send = useCallback(async (override?: string, opts: { voice?: boolean } = {}): Promise<string> => {
+  const send = useCallback(async (
+    override?: string,
+    opts: { voice?: boolean; call?: boolean; signal?: AbortSignal; onText?: (delta: string) => void; onDone?: () => void } = {},
+  ): Promise<string> => {
     const text = (override ?? input).trim();
-    if (!text || streaming) return "";
+    if (!text || (streaming && !opts.call)) return "";
     setInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
-    stopSpeaking();
+    if (!opts.call) stopSpeaking();
     setMessages(prev => [...prev, { role: "user", content: text, meta: opts.voice ? { voice: true } : {} },
       { role: "assistant", content: "", meta: { steps: [] }, streaming: true }]);
     setStreaming(true);
@@ -298,7 +303,12 @@ export function PlatformCopilot() {
     try {
       const res = await fetch(`${API}/api/copilot/stream`, {
         method: "POST", headers: await authHeaders(),
-        body: JSON.stringify({ message: text, conversation_id: activeIdRef.current, language: lang, deep, voice: !!opts.voice }),
+        body: JSON.stringify({
+          message: text, conversation_id: activeIdRef.current, language: lang,
+          // En appel : Deep Agent et réponses courtes à dire à voix haute.
+          deep: opts.call ? true : deep, voice: !!opts.voice, call: !!opts.call,
+        }),
+        signal: opts.signal,
       });
       if (!res.ok || !res.body) {
         let detail = "";
@@ -334,9 +344,11 @@ export function PlatformCopilot() {
             full = ""; patchLast(m => ({ ...m, content: "" }));
           } else if (typeof ev.text === "string") {
             full += ev.text; const snap = full; patchLast(m => ({ ...m, content: snap }));
+            opts.onText?.(ev.text);
           } else if (ev.action_proposal) {
             patchLast(m => ({ ...m, meta: { ...m.meta, action: { ...ev.action_proposal, status: "pending" } } }));
           } else if (ev.done) {
+            opts.onDone?.();
             patchLast(m => ({ ...m, id: ev.done.message_id, streaming: false }));
             setStreaming(false);
           } else if (ev.title) {
@@ -351,6 +363,12 @@ export function PlatformCopilot() {
         }
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Interrompu par l'utilisateur (appel vocal) : on garde ce qui a été dit.
+        const snap = full ? full + " …" : "…";
+        patchLast(m => ({ ...m, content: snap }));
+        return full;
+      }
       console.error("Copilot error:", err);
       const reason = err instanceof TypeError
         ? "Serveur injoignable (backend arrêté ou adresse VITE_API_URL incorrecte)."
@@ -440,13 +458,17 @@ export function PlatformCopilot() {
         rec.start();
       });
     }
+    // AudioContext créé tout de suite, dans le clic : créé après l'attente du
+    // micro, le navigateur le laisserait suspendu (niveau toujours à 0).
+    const ctx = new AudioContext();
+    ctx.resume().catch(() => {});
     return new Promise((resolve, reject) => {
       navigator.mediaDevices?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(stream => {
+        ctx.resume().catch(() => {});
         const mime = pickMime();
         const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
         const chunks: Blob[] = [];
         let keep = true, raf = 0, heard = false, silentSince = 0;
-        const ctx = new AudioContext();
         const an = ctx.createAnalyser(); an.fftSize = 512;
         ctx.createMediaStreamSource(stream).connect(an);
         const buf = new Uint8Array(an.fftSize);
@@ -458,7 +480,7 @@ export function PlatformCopilot() {
           opts.onLevel?.(level);
           if (opts.auto) {
             const now = performance.now();
-            if (level > 0.12) { heard = true; silentSince = 0; }
+            if (level > 0.08) { heard = true; silentSince = 0; }
             else if (heard) { silentSince ||= now; if (now - silentSince > 1300) { finish(true); return; } }
             if (!heard && now - started > 15000) { finish(false); return; }
             if (now - started > 60000) { finish(true); return; }
@@ -486,7 +508,7 @@ export function PlatformCopilot() {
         recRef.current = { stop: finish };
         mr.start(250);
         loop();
-      }).catch(() => reject(new Error("mic")));
+      }).catch(() => { ctx.close().catch(() => {}); reject(new Error("mic")); });
     });
   }, [lang]);
 
@@ -510,42 +532,76 @@ export function PlatformCopilot() {
     setTimeout(() => setTranscribing(false), 400);
   }
 
-  // ── Appel vocal : écoute → réponse multi-agents → lecture → écoute… ──
-  async function startCall() {
-    if (call || streaming) return;
+  // ── Appel vocal temps réel (Deep Agent) ──
+  // Écoute continue, texte en direct, réponse lue phrase par phrase pendant
+  // qu'elle s'écrit, et on peut couper la parole au Copilote à tout moment.
+  function startCall() {
+    if (call) return;
     stopSpeaking();
-    callRef.current = { active: true };
-    setCall({ phase: "listening", level: 0, heard: "" });
-    while (callRef.current.active) {
-      setCall(c => c ? { ...c, phase: "listening", level: 0 } : c);
-      let heard = "";
-      try {
-        heard = await listen({ auto: true, onLevel: level => setCall(c => c ? { ...c, level } : c) });
-      } catch (e) {
-        if (e instanceof Error && e.message === "mic") { flash(t.micDenied); break; }
-        if (!sttFallback.current) break;
-        continue;
-      }
-      if (!callRef.current.active) break;
-      if (!heard) continue;
-      setCall(c => c ? { ...c, phase: "thinking", heard } : c);
-      const answer = await send(heard, { voice: true });
-      if (!callRef.current.active || !answer) continue;
-      setCall(c => c ? { ...c, phase: "speaking" } : c);
-      await new Promise<void>(resolve => { callRef.current.stop = resolve; speak(answer, lang, resolve); });
-    }
-    endCall();
+    const speech = LANGS.find(l => l.code === lang)?.speech ?? "fr-FR";
+    const engine = new RealtimeVoice({
+      speechLang: speech,
+      transcribe: blob => transcribe(blob, lang),
+      synthesize: async text => {
+        const res = await fetch(`${API}/api/copilot/speech`, { method: "POST", headers: await authHeaders(), body: JSON.stringify({ text, language: lang }) });
+        if (!res.ok) throw new Error("tts");
+        return res.blob();
+      },
+      onPhase: phase => setCall(c => c ? { ...c, phase } : c),
+      onLevel: level => setCall(c => (c && Math.abs(c.level - level) > 0.03) ? { ...c, level } : c),
+      onInterim: interim => setCall(c => c ? { ...c, interim } : c),
+      onBargeIn: () => { turnRef.current?.abort(); turnRef.current = null; },
+      onUtterance: text => { void runTurn(text); },
+      onError: (kind, detail) => {
+        if (kind === "mic") { flash(t.micDenied); endCall(); }
+        else flash(`Transcription indisponible${detail ? ` (${detail})` : ""} — réessayez.`);
+      },
+    });
+    voiceRef.current = engine;
+    setCall({ phase: "connecting", level: 0, interim: "", heard: "", muted: false });
+    void engine.start();
   }
+
+  async function runTurn(text: string) {
+    const engine = voiceRef.current;
+    if (!engine) return;
+    turnRef.current?.abort();
+    const ctrl = new AbortController();
+    turnRef.current = ctrl;
+    setCall(c => c ? { ...c, heard: text, interim: "" } : c);
+    engine.thinking();
+    engine.beginSpeech(() => { if (turnRef.current === ctrl) { turnRef.current = null; engine.listen(); } });
+    let finished = false;
+    const answer = await send(text, {
+      voice: true, call: true, signal: ctrl.signal,
+      onText: d => { if (turnRef.current === ctrl) engine.pushText(d); },
+      // Fin de la réponse : on lit la dernière phrase sans attendre titre et mémoire.
+      onDone: () => { if (turnRef.current === ctrl) { finished = true; engine.endText(); } },
+    });
+    if (turnRef.current !== ctrl) return; // interrompu entre-temps
+    if (!answer) { turnRef.current = null; engine.cancelSpeech(); engine.listen(); return; }
+    if (!finished) engine.endText();
+  }
+
   function endCall() {
-    callRef.current.active = false;
-    callRef.current.stop?.();
-    recRef.current?.stop(false);
+    turnRef.current?.abort(); turnRef.current = null;
+    voiceRef.current?.stop(); voiceRef.current = null;
     stopSpeaking();
     setCall(null);
   }
   function interruptSpeaking() {
-    stopSpeaking();
-    callRef.current.stop?.();
+    const engine = voiceRef.current;
+    if (!engine) return;
+    turnRef.current?.abort(); turnRef.current = null;
+    engine.cancelSpeech();
+    engine.listen();
+  }
+  function toggleMute() {
+    setCall(c => {
+      if (!c) return c;
+      voiceRef.current?.setMuted(!c.muted);
+      return { ...c, muted: !c.muted };
+    });
   }
 
   async function toggleListen(m: Msg, key: string | number) {
@@ -569,7 +625,7 @@ export function PlatformCopilot() {
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
   });
-  useEffect(() => () => { callRef.current.active = false; stopSpeaking(); }, []);
+  useEffect(() => () => { turnRef.current?.abort(); voiceRef.current?.stop(); stopSpeaking(); }, []);
 
   function handleKey(e: RKeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -851,26 +907,44 @@ export function PlatformCopilot() {
           </div>
         )}
 
-        {/* Appel vocal */}
-        {call && (
-          <div className={`cp-call is-${call.phase}`}>
-            <div className="cp-call-lang">{LANGS.find(l => l.code === lang)?.flag} {LANGS.find(l => l.code === lang)?.label}</div>
-            <div className="cp-call-orb" style={{ ["--lvl" as string]: call.phase === "listening" ? call.level : call.phase === "speaking" ? 0.6 : 0.25 } as CSSProperties}>
-              <span className="cp-call-ring r1" /><span className="cp-call-ring r2" /><span className="cp-call-ring r3" />
-              <span aria-hidden className="pc-orb busy" style={{ ["--orb" as string]: "120px" } as CSSProperties}>
-                <i className="o-glow" /><i className="o-ring" /><i className="o-core" />
-              </span>
+        {/* Appel vocal temps réel */}
+        {call && (() => {
+          const last = [...messages].reverse().find(m => m.role === "assistant");
+          const step = last?.streaming ? (last.meta?.todos?.find(x => x.status === "in_progress")?.content ?? last.meta?.steps?.[last.meta.steps.length - 1]?.label) : undefined;
+          const caption = call.phase === "speaking" && last?.content ? last.content.replace(/[*#`]/g, "").slice(-180) : "";
+          const status = call.phase === "connecting" ? "Connexion du micro…"
+            : call.phase === "hearing" ? t.listening
+            : call.phase === "thinking" ? (step ?? t.thinking)
+            : call.phase === "speaking" ? t.speaking : t.listening;
+          return (
+            <div className={`cp-call is-${call.phase}`}>
+              <div className="cp-call-top">
+                <span className="cp-call-lang">{LANGS.find(l => l.code === lang)?.flag} {LANGS.find(l => l.code === lang)?.label}</span>
+                <span className="cp-call-lang"><Sparkles size={11} /> Deep Agent</span>
+              </div>
+              <button type="button" className="cp-call-orb" onClick={interruptSpeaking} title="Toucher pour interrompre"
+                style={{ ["--lvl" as string]: call.phase === "hearing" || call.phase === "listening" ? call.level : call.phase === "speaking" ? 0.55 : 0.2 } as CSSProperties}>
+                <span className="cp-call-ring r1" /><span className="cp-call-ring r2" /><span className="cp-call-ring r3" />
+                <span aria-hidden className="pc-orb busy" style={{ ["--orb" as string]: "120px" } as CSSProperties}>
+                  <i className="o-glow" /><i className="o-ring" /><i className="o-core" />
+                </span>
+              </button>
+              <div className="cp-call-status" aria-live="polite">{call.muted ? "Micro coupé" : status}</div>
+              <div className="cp-call-text">
+                {call.interim ? <span className="cp-call-interim">{call.interim}</span>
+                  : caption ? <span className="cp-call-caption">{caption}</span>
+                  : call.heard ? <span>« {call.heard} »</span> : <span className="cp-call-hint">Parlez naturellement — vous pouvez couper la parole au Copilote à tout moment.</span>}
+              </div>
+              <div className="cp-call-btns">
+                <button type="button" className={call.muted ? "cp-call-btn is-off" : "cp-call-btn"} onClick={toggleMute} aria-label={call.muted ? "Activer le micro" : "Couper le micro"} aria-pressed={call.muted}>
+                  {call.muted ? <MicOff size={20} /> : <Mic size={20} />}
+                </button>
+                <button type="button" className="cp-call-btn is-end" onClick={endCall} aria-label={t.endCall}><PhoneOff size={22} /></button>
+                <button type="button" className="cp-call-btn" onClick={interruptSpeaking} aria-label="Interrompre" disabled={call.phase !== "speaking" && call.phase !== "thinking"}><Square size={18} /></button>
+              </div>
             </div>
-            <div className="cp-call-status">{call.phase === "listening" ? t.listening : call.phase === "thinking" ? t.thinking : t.speaking}</div>
-            {call.heard && <div className="cp-call-heard">« {call.heard} »</div>}
-            <div className="cp-call-btns">
-              {call.phase === "speaking" && (
-                <button type="button" className="cp-call-btn" onClick={interruptSpeaking} aria-label="Interrompre"><Square size={18} /></button>
-              )}
-              <button type="button" className="cp-call-btn is-end" onClick={endCall} aria-label={t.endCall}><PhoneOff size={22} /></button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {toast && <div className="cp-toast">{toast}</div>}
       </section>

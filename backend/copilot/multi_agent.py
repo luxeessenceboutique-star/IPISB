@@ -73,6 +73,7 @@ class CopilotState(TypedDict, total=False):
     memory: str                  # mémoire à long terme rendue
     summary: str                 # résumé glissant de cette conversation
     force_agent: Optional[str]   # ex. « analyste » quand l'utilisateur active l'analyse approfondie
+    voice_mode: bool             # appel vocal : réponse courte, à dire à voix haute
     agent: str
     answer: str
     meta: dict
@@ -95,6 +96,13 @@ def _context_block(state: CopilotState) -> str:
         parts.append(state["memory"])
     if state.get("summary"):
         parts.append("RÉSUMÉ DES ÉCHANGES PRÉCÉDENTS DE CETTE CONVERSATION :\n" + state["summary"])
+    if state.get("voice_mode"):
+        parts.append(
+            "MODE APPEL VOCAL : ta réponse est lue à voix haute pendant qu'elle s'écrit. Réponds comme à "
+            "l'oral : 1 à 4 phrases courtes, la plus importante d'abord, sans markdown, sans liste, sans "
+            "tableau ni emoji. Les nombres en clair. Si l'utilisateur t'interrompt, reprends simplement "
+            "sur sa nouvelle demande."
+        )
     return "\n\n".join(parts)
 
 
@@ -119,6 +127,10 @@ async def supervisor_node(state: CopilotState) -> dict:
     writer = get_stream_writer()
     allowed = allowed_agents(state.get("roles") or [])
     forced = state.get("force_agent")
+    if forced == "analyste" and state.get("voice_mode"):
+        # Appel vocal : le Deep Agent répond pour tout le monde (ses sous-agents
+        # restent limités aux domaines autorisés pour le rôle).
+        allowed = allowed + ["analyste"] if "analyste" not in allowed else allowed
     if forced in allowed:
         choice = forced
     else:
@@ -295,9 +307,13 @@ async def analyste_node(state: CopilotState, config) -> dict:
             _context_block(state) + "\n\n"
             "Tu es l'Analyste du Copilote IPISB, un agent d'analyse approfondie. Pour une demande "
             "complexe : 1) établis un plan court avec write_todos, 2) délègue la collecte aux "
-            "sous-agents spécialisés (outil task), 3) rédige une synthèse finale structurée : "
-            "constats chiffrés, points d'attention, recommandations concrètes. Lecture seule : tu ne "
-            "modifies aucune donnée. N'invente aucun chiffre."
+            "sous-agents spécialisés (outil task), 3) rédige une synthèse finale : constats chiffrés, "
+            "points d'attention, recommandations concrètes. Pour une question simple (salutation, "
+            "« comment faire… », « où trouver… »), réponds DIRECTEMENT sans plan ni délégation, à "
+            "partir de la liste des modules ci-dessous. Lecture seule : tu ne modifies aucune donnée. "
+            "N'invente aucun chiffre. Si un sous-agent n'existe pas pour un domaine, c'est que "
+            "l'utilisateur n'y a pas accès : dis-le.\n\nMODULES ACCESSIBLES À CET UTILISATEUR :\n\n"
+            + _knowledge(state)
         ),
     )
     answer = await _run_agent(agent, _lc_history(state), writer, deep=True)
