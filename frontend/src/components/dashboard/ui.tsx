@@ -5,7 +5,7 @@
  * eyebrow labels, pale-track progress bars, initials avatars.
  */
 import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent, type ReactNode } from "react";
-import { ArrowLeftRight, Check, GripVertical, RotateCcw } from "lucide-react";
+import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, GripVertical, RotateCcw } from "lucide-react";
 
 /** En-tête de page — langage « Pouls » : carte sur papier ECG, sur-titre mono,
  * titre fort, sous-titre et actions, avec un tracé de pouls animé en pied.
@@ -94,7 +94,71 @@ export function SegTabs<K extends string>({
   const [editing, setEditing] = useState(false);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const ordered = applyOrder(items, order);
+  // Barre de défilement « Pouls » sous le rail quand les onglets débordent :
+  // poignée à glisser, clic sur la piste, flèches ‹ › et molette verticale.
+  const [scroll, setScroll] = useState({ overflow: false, ratio: 1, pos: 0, atStart: true, atEnd: true });
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const measure = () => {
+      const max = rail.scrollWidth - rail.clientWidth;
+      setScroll({
+        overflow: max > 2,
+        ratio: rail.scrollWidth ? rail.clientWidth / rail.scrollWidth : 1,
+        pos: max > 0 ? rail.scrollLeft / max : 0,
+        atStart: rail.scrollLeft <= 2,
+        atEnd: rail.scrollLeft >= max - 2,
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(rail);
+    rail.addEventListener("scroll", measure, { passive: true });
+    const wheel = (e: WheelEvent) => {
+      if (rail.scrollWidth <= rail.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      rail.scrollLeft += e.deltaY;
+    };
+    rail.addEventListener("wheel", wheel, { passive: false });
+    return () => { ro.disconnect(); rail.removeEventListener("scroll", measure); rail.removeEventListener("wheel", wheel); };
+  }, [items.length, editing]);
+
+  // L'onglet actif reste visible (ex. arrivée par un lien vers un onglet lointain).
+  useEffect(() => {
+    railRef.current?.querySelector<HTMLElement>(`[data-tab="${value}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [value]);
+
+  function scrollBy(dir: number) {
+    const rail = railRef.current;
+    if (rail) rail.scrollBy({ left: dir * rail.clientWidth * 0.7, behavior: "smooth" });
+  }
+  function thumbDown(e: RPointerEvent<HTMLDivElement>) {
+    const rail = railRef.current, track = trackRef.current;
+    if (!rail || !track || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("is-active");
+    const startX = e.clientX, startLeft = rail.scrollLeft;
+    const thumbW = track.clientWidth * scroll.ratio;
+    const k = (rail.scrollWidth - rail.clientWidth) / Math.max(1, track.clientWidth - thumbW);
+    const move = (ev: PointerEvent) => { rail.scrollLeft = startLeft + (ev.clientX - startX) * k; };
+    const up = () => { el.classList.remove("is-active"); el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up); };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  }
+  function trackDown(e: RPointerEvent<HTMLDivElement>) {
+    const rail = railRef.current, track = trackRef.current;
+    if (!rail || !track) return;
+    const r = track.getBoundingClientRect();
+    const f = (e.clientX - r.left) / r.width;
+    rail.scrollTo({ left: f * rail.scrollWidth - rail.clientWidth / 2, behavior: "smooth" });
+  }
 
   useEffect(() => { if (storageKey) setOrder(readOrder(storageKey)); }, [storageKey]);
 
@@ -142,6 +206,7 @@ export function SegTabs<K extends string>({
   }
 
   return (
+    <div className="seg-wrap">
     <div ref={railRef} className={editing ? "seg-rail is-editing" : "seg-rail"} role="tablist" aria-label={label}>
       {ordered.map((t, i) => {
         const active = value === t.key;
@@ -177,6 +242,23 @@ export function SegTabs<K extends string>({
           </button>
         </span>
       )}
+    </div>
+    {scroll.overflow && (
+      <div className="seg-scroll">
+        <button type="button" className="seg-arrow" aria-label="Onglets précédents" disabled={scroll.atStart} onClick={() => scrollBy(-1)}>
+          <ChevronLeft size={14} strokeWidth={2} />
+        </button>
+        <div ref={trackRef} className="seg-track" onPointerDown={trackDown}>
+          <div className="seg-thumb" onPointerDown={thumbDown}
+            style={{ width: `${scroll.ratio * 100}%`, left: `${scroll.pos * (1 - scroll.ratio) * 100}%` }}>
+            <i />
+          </div>
+        </div>
+        <button type="button" className="seg-arrow" aria-label="Onglets suivants" disabled={scroll.atEnd} onClick={() => scrollBy(1)}>
+          <ChevronRight size={14} strokeWidth={2} />
+        </button>
+      </div>
+    )}
     </div>
   );
 }
