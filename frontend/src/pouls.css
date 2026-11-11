@@ -47,7 +47,7 @@
 .pulse-pin .lbl {
   display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 10px;
   background: var(--pal-paper); border: 1px solid var(--pal-line-soft); box-shadow: var(--shadow-card-2);
-  font: 600 11.5px/1.2 Manrope, system-ui, sans-serif; color: var(--pal-ink); white-space: nowrap;
+  font: 600 11.5px/1.2 "Plus Jakarta Sans", system-ui, sans-serif; color: var(--pal-ink); white-space: nowrap;
   transition: transform .3s var(--ease-pouls), box-shadow .3s;
 }
 .pulse-pin .lbl small { font: 600 10px/1 "JetBrains Mono", monospace; color: var(--pal-muted); letter-spacing: .06em; }
@@ -75,7 +75,7 @@
 
 /* ── Constantes (KPI) ──────────────────────────────────────────── */
 .vital { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; overflow: hidden; }
-.vital .v { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 500; font-size: 44px; line-height: 1; color: var(--pal-ink); display: flex; align-items: baseline; }
+.vital .v { font-family: "Plus Jakarta Sans", system-ui, sans-serif; font-weight: 800; letter-spacing: -.02em; font-size: 44px; line-height: 1; color: var(--pal-ink); display: flex; align-items: baseline; }
 .vital .unit { font: 600 12px/1 "JetBrains Mono", monospace; color: var(--pal-muted); letter-spacing: .06em; margin-inline-start: 6px; }
 .vital-tile { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--pal-pale); color: var(--pal-primary-deep); }
 .ring-val { fill: none; stroke: var(--pal-primary); stroke-width: 9; stroke-linecap: round; stroke-dasharray: var(--v) 100; transform: rotate(-90deg); transform-origin: center; transform-box: fill-box; animation: pouls-ring 1.8s var(--ease-pouls) .35s backwards; }
@@ -119,11 +119,11 @@
   backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3);
   border-top: 1px solid var(--pal-line-soft); box-shadow: 0 -8px 24px oklch(30% .03 175 / .06);
 }
-.pouls-ti { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 48px; border: 0; background: none; color: var(--pal-muted); font: 700 10.5px/1 Manrope, system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.pouls-ti { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 48px; border: 0; background: none; color: var(--pal-muted); font: 700 10.5px/1 "Plus Jakarta Sans", system-ui, sans-serif; text-decoration: none; cursor: pointer; }
 .pouls-ti .pl { position: relative; width: 54px; height: 30px; border-radius: 999px; display: grid; place-items: center; transition: background-color .3s; }
 .pouls-ti.on { color: var(--pal-primary-deep); }
 .pouls-ti.on .pl { background: var(--pal-pale); animation: pouls-tab .5s var(--spring-pouls); }
-.pouls-ti .bd { position: absolute; top: 1px; right: 9px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: oklch(50% .19 25); color: #fff; font: 800 9px/16px Manrope, sans-serif; text-align: center; }
+.pouls-ti .bd { position: absolute; top: 1px; right: 9px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: oklch(50% .19 25); color: #fff; font: 800 9px/16px "Plus Jakarta Sans", sans-serif; text-align: center; }
 
 /* ── Mouvement ─────────────────────────────────────────────────── */
 @keyframes pouls-draw { to { stroke-dashoffset: 0; } }
