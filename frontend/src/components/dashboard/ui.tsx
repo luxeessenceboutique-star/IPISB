@@ -4,11 +4,11 @@
  * Visual spec: design_handoff_ipisb_dashboard README — serif page titles,
  * eyebrow labels, pale-track progress bars, initials avatars.
  */
-import type { CSSProperties, ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
 
-/** Eyebrow + 34px serif title + optional sub + right-aligned actions.
- * `size="lg"` is the redesigned scale (42px title, teal eyebrow) used by the
- * pages already migrated to the new mockup. */
+/** En-tête de page — langage « Pouls » : carte sur papier ECG, sur-titre mono,
+ * titre fort, sous-titre et actions, avec un tracé de pouls animé en pied.
+ * `size="lg"` agrandit le titre (pages déjà migrées). */
 export function PageHead({
   eyebrow,
   title,
@@ -24,32 +24,56 @@ export function PageHead({
 }) {
   const lg = size === "lg";
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "space-between",
-        gap: 16,
-        marginBottom: lg ? 30 : 26,
-        flexWrap: "wrap",
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {eyebrow ? (
-          <span className="eyebrow" style={lg ? { color: "var(--pal-primary-deep)" } : undefined}>
-            {eyebrow}
-          </span>
-        ) : null}
-        <h1 className="h-serif page-title" style={{ fontSize: lg ? 40 : 34, fontWeight: 800, lineHeight: 1.08, letterSpacing: "-.03em" }}>
-          {title}
-        </h1>
-        {sub ? (
-          <p className="page-sub" style={{ color: "var(--pal-muted)", fontSize: lg ? 15 : 14, marginTop: 2 }}>{sub}</p>
+    <section className="dash-card paper-ecg pouls-head" style={{ marginBottom: lg ? 26 : 22 }}>
+      <div className="pouls-head-row">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: "1 1 360px" }}>
+          {eyebrow ? <span className="mono-eyebrow">{eyebrow}</span> : null}
+          <h1 className="h-serif page-title" style={{ fontSize: lg ? "clamp(32px, 3.6vw, 44px)" : "clamp(28px, 3vw, 36px)", fontWeight: 800, lineHeight: 1.06, letterSpacing: "-.03em" }}>
+            {title}
+          </h1>
+          {sub ? (
+            <p className="page-sub" style={{ color: "var(--pal-muted)", fontSize: lg ? 15 : 14, maxWidth: 640 }}>{sub}</p>
+          ) : null}
+        </div>
+        {actions ? (
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{actions}</div>
         ) : null}
       </div>
-      {actions ? (
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{actions}</div>
-      ) : null}
+      <svg className="pouls-head-trace" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden>
+        <path className="pulse-base" d="M0 24 H520 L534 24 L540 18 L546 24 L566 24 L572 30 L580 4 L588 36 L596 24 L616 24 L624 20 L632 24 H1200" />
+        <path className="pulse-glow" pathLength={1000} d="M0 24 H520 L534 24 L540 18 L546 24 L566 24 L572 30 L580 4 L588 36 L596 24 L616 24 L624 20 L632 24 H1200" />
+      </svg>
+    </section>
+  );
+}
+
+/** Onglets segmentés « Pouls » — pastilles sur un rail clair, défilement
+ * horizontal sur petit écran. Même rendu que les onglets de l'Aperçu. */
+export function SegTabs<K extends string>({
+  items,
+  value,
+  onChange,
+  label = "Onglets",
+}: {
+  items: { key: K; label: ReactNode; icon?: ComponentType<{ size?: number; strokeWidth?: number }> }[];
+  value: K;
+  onChange: (key: K) => void;
+  label?: string;
+}) {
+  return (
+    <div className="seg-rail" role="tablist" aria-label={label}>
+      {items.map((t, i) => {
+        const active = value === t.key;
+        const Icon = t.icon;
+        return (
+          <button key={t.key} type="button" role="tab" aria-selected={active}
+            className={active ? "seg-tab on" : "seg-tab"} style={{ ["--i" as string]: i } as CSSProperties}
+            onClick={() => onChange(t.key)}>
+            {Icon ? <Icon size={15} strokeWidth={1.8} /> : null}
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

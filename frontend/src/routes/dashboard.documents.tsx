@@ -2,7 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Layers, FolderTree } from "lucide-react";
-import { PageHead } from "@/components/dashboard/ui";
+import { PageHead, SegTabs } from "@/components/dashboard/ui";
 import { PreviewModal, type Preview } from "@/components/dashboard/preview";
 import { GeneratedDocumentsTab } from "@/components/documents/GeneratedDocumentsTab";
 import { FolderLibraryTab } from "@/components/documents/FolderLibraryTab";
@@ -53,29 +53,7 @@ function DocumentsPage() {
         sub="Modèles, documents générés avec vérification QR, et bibliothèque de dossiers classés."
       />
 
-      <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${PAL.line}`, marginBottom: 24 }}>
-        {TABS.map(t => {
-          const active = tab === t.key;
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              style={{
-                display: "flex", alignItems: "center", gap: 7,
-                padding: "10px 16px", marginBottom: -1,
-                border: "none", borderBottom: active ? `2px solid ${PAL.ink}` : "2px solid transparent",
-                background: "transparent", cursor: "pointer",
-                fontFamily: sans, fontSize: 13.5, fontWeight: 600,
-                color: active ? PAL.ink : PAL.muted,
-              }}
-            >
-              <Icon size={15} strokeWidth={1.8} />{t.label}
-            </button>
-          );
-        })}
-      </div>
+      <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} />
 
       {tab === "templates" ? <GeneratedDocumentsTab onPreview={setPreview} /> : <FolderLibraryTab onPreview={setPreview} />}
     </div>

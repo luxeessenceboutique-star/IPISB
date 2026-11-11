@@ -2,7 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LayoutGrid, Truck, Building2, Tags, TrendingUp, FileText, PiggyBank, ClipboardList, History, CreditCard, Package, Wallet, ShieldCheck, Inbox, NotebookPen, Plane, Landmark, ScrollText, DoorClosed, Eye } from "lucide-react";
-import { PageHead } from "@/components/dashboard/ui";
+import { PageHead, SegTabs } from "@/components/dashboard/ui";
 import { useAuth } from "@/lib/auth";
 import { AccountingValidations, MySubmissions } from "@/components/accounting/Approvals";
 import { AccountingOverview } from "@/components/accounting/Overview";
@@ -145,30 +145,7 @@ function AccountingPage() {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 24, borderBottom: "1px solid var(--pal-line)", flexWrap: "wrap" }}>
-        {visibleTabs.map(t => {
-          const active = tab === t.key;
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              style={{
-                display: "flex", alignItems: "center", gap: 7,
-                padding: "10px 16px", marginBottom: -1,
-                border: "none", borderBottom: active ? "2px solid var(--pal-primary)" : "2px solid transparent",
-                background: "transparent", cursor: "pointer",
-                fontFamily: sans, fontSize: 13.5, fontWeight: active ? 700 : 600,
-                color: active ? "var(--pal-ink)" : "var(--pal-muted)",
-              }}
-            >
-              <Icon size={15} strokeWidth={1.7} />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} />
 
       {tab === "validations"       && <AccountingValidations onNavigate={t => setTab(t as Tab)} />}
       {tab === "mine"              && <MySubmissions />}

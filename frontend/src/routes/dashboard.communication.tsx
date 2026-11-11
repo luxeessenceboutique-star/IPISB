@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Trash2, Megaphone, X, Users, Send, MessageSquare } from "lucide-react";
-import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
+import { PageHead, SectionLabel, EmptyHint, SegTabs } from "@/components/dashboard/ui";
 import { useDeepLinkModal } from "@/lib/deep-link";
 
 export const Route = createFileRoute("/dashboard/communication")({
@@ -410,30 +410,7 @@ function CommunicationPage() {
         sub="Diffusion interne et discussion d'équipe — annonces ciblées par rôle, et groupes liés aux tâches partagées."
       />
 
-      <div style={{ display: "flex", gap: 6, marginBottom: 20, borderBottom: `1px solid ${PAL.line}` }}>
-        {TABS.map(t => {
-          const active = tab === t.key;
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              style={{
-                display: "flex", alignItems: "center", gap: 7,
-                padding: "10px 16px", marginBottom: -1,
-                border: "none", borderBottom: active ? `2px solid ${PAL.primary}` : "2px solid transparent",
-                background: "transparent", cursor: "pointer",
-                fontFamily: sans, fontSize: 13.5, fontWeight: active ? 700 : 600,
-                color: active ? PAL.ink : PAL.muted,
-              }}
-            >
-              <Icon size={15} strokeWidth={1.7} />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} />
 
       {tab === "announcements" ? <AnnouncementsPanel isAdmin={isAdmin} /> : <GroupsPanel />}
     </div>
