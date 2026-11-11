@@ -53,7 +53,7 @@ function DocumentsPage() {
         sub="Modèles, documents générés avec vérification QR, et bibliothèque de dossiers classés."
       />
 
-      <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} />
+      <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} storageKey="documents" />
 
       <div className="pouls-pane" key={tab}>
         {tab === "templates" ? <GeneratedDocumentsTab onPreview={setPreview} /> : <FolderLibraryTab onPreview={setPreview} />}

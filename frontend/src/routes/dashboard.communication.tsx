@@ -471,7 +471,7 @@ function CommunicationPage() {
         sub="Diffusion interne et discussion d'équipe — annonces ciblées par rôle, et groupes liés aux tâches partagées."
       />
 
-      <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} />
+      <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} storageKey="communication" />
 
       <div className="pouls-pane" key={tab}>
         {tab === "announcements" ? <AnnouncementsPanel isAdmin={isAdmin} /> : <GroupsPanel />}

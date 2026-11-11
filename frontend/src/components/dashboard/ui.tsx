@@ -4,7 +4,8 @@
  * Visual spec: design_handoff_ipisb_dashboard README — serif page titles,
  * eyebrow labels, pale-track progress bars, initials avatars.
  */
-import type { ComponentType, CSSProperties, ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type KeyboardEvent, type PointerEvent as RPointerEvent, type ReactNode } from "react";
+import { ArrowLeftRight, Check, GripVertical, RotateCcw } from "lucide-react";
 
 /** En-tête de page — langage « Pouls » : carte sur papier ECG, sur-titre mono,
  * titre fort, sous-titre et actions, avec un tracé de pouls animé en pied.
@@ -47,33 +48,135 @@ export function PageHead({
   );
 }
 
+/** Ordre des onglets mémorisé dans ce navigateur (préférence personnelle).
+ * Les onglets ajoutés plus tard (ou devenus visibles) se placent à la fin,
+ * ceux qui n'existent plus sont ignorés. */
+function readOrder(storageKey: string): string[] | null {
+  try {
+    const raw = localStorage.getItem(`ipisb:tab-order:${storageKey}`);
+    const v = raw ? JSON.parse(raw) : null;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch { return null; }
+}
+function writeOrder(storageKey: string, order: string[] | null) {
+  try {
+    if (order) localStorage.setItem(`ipisb:tab-order:${storageKey}`, JSON.stringify(order));
+    else localStorage.removeItem(`ipisb:tab-order:${storageKey}`);
+  } catch { /* stockage indisponible : l'ordre ne sera simplement pas mémorisé */ }
+}
+function applyOrder<T extends { key: string }>(items: T[], order: string[] | null): T[] {
+  if (!order) return items;
+  const byKey = new Map(items.map(i => [i.key, i]));
+  const out: T[] = [];
+  for (const k of order) { const it = byKey.get(k); if (it) { out.push(it); byKey.delete(k); } }
+  return [...out, ...items.filter(i => byKey.has(i.key))];
+}
+
 /** Onglets segmentés « Pouls » — pastilles sur un rail clair, défilement
- * horizontal sur petit écran. Même rendu que les onglets de l'Aperçu. */
+ * horizontal sur petit écran. Même rendu que les onglets de l'Aperçu.
+ * Avec `storageKey`, un bouton « Réorganiser » permet de déplacer les onglets
+ * par glisser-déposer (souris ou doigt) ou au clavier (← →), et l'ordre est
+ * mémorisé pour cette page. */
 export function SegTabs<K extends string>({
   items,
   value,
   onChange,
   label = "Onglets",
+  storageKey,
 }: {
   items: { key: K; label: ReactNode; icon?: ComponentType<{ size?: number; strokeWidth?: number }> }[];
   value: K;
   onChange: (key: K) => void;
   label?: string;
+  storageKey?: string;
 }) {
+  const [order, setOrder] = useState<string[] | null>(() => (storageKey ? readOrder(storageKey) : null));
+  const [editing, setEditing] = useState(false);
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const railRef = useRef<HTMLDivElement>(null);
+  const ordered = applyOrder(items, order);
+
+  useEffect(() => { if (storageKey) setOrder(readOrder(storageKey)); }, [storageKey]);
+
+  function commit(next: string[] | null) {
+    setOrder(next);
+    if (storageKey) writeOrder(storageKey, next);
+  }
+  function move(key: string, to: number) {
+    const keys = ordered.map(i => i.key as string).filter(k => k !== key);
+    keys.splice(Math.max(0, Math.min(to, keys.length)), 0, key);
+    setOrder(keys);
+    return keys;
+  }
+
+  function onPointerDown(e: RPointerEvent<HTMLButtonElement>, key: string) {
+    if (!editing || e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragKey(key);
+  }
+  function onPointerMove(e: RPointerEvent<HTMLButtonElement>) {
+    if (!dragKey || !railRef.current) return;
+    const tabs = [...railRef.current.querySelectorAll<HTMLElement>("[data-tab]")].filter(el => el.dataset.tab !== dragKey);
+    let to = tabs.length;
+    for (let i = 0; i < tabs.length; i++) {
+      const r = tabs[i].getBoundingClientRect();
+      if (e.clientX < r.left + r.width / 2) { to = i; break; }
+    }
+    if (ordered.findIndex(i => i.key === dragKey) !== to) move(dragKey, to);
+    // Défilement automatique du rail près des bords (petits écrans).
+    const rr = railRef.current.getBoundingClientRect();
+    if (e.clientX < rr.left + 30) railRef.current.scrollLeft -= 12;
+    else if (e.clientX > rr.right - 30) railRef.current.scrollLeft += 12;
+  }
+  function onPointerUp() {
+    if (!dragKey) return;
+    setDragKey(null);
+    commit(ordered.map(i => i.key as string));
+  }
+  function onKeyDown(e: KeyboardEvent<HTMLButtonElement>, key: string, index: number) {
+    if (!editing || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    commit(move(key, index + (e.key === "ArrowLeft" ? -1 : 1)));
+    requestAnimationFrame(() => railRef.current?.querySelector<HTMLElement>(`[data-tab="${key}"]`)?.focus());
+  }
+
   return (
-    <div className="seg-rail" role="tablist" aria-label={label}>
-      {items.map((t, i) => {
+    <div ref={railRef} className={editing ? "seg-rail is-editing" : "seg-rail"} role="tablist" aria-label={label}>
+      {ordered.map((t, i) => {
         const active = value === t.key;
         const Icon = t.icon;
         return (
-          <button key={t.key} type="button" role="tab" aria-selected={active}
-            className={active ? "seg-tab on" : "seg-tab"} style={{ ["--i" as string]: i } as CSSProperties}
-            onClick={() => onChange(t.key)}>
-            {Icon ? <Icon size={15} strokeWidth={1.8} /> : null}
+          <button key={t.key} type="button" role="tab" aria-selected={active} data-tab={t.key}
+            className={["seg-tab", active && "on", dragKey === t.key && "is-dragging"].filter(Boolean).join(" ")}
+            style={{ ["--i" as string]: i } as CSSProperties}
+            title={editing ? "Glisser pour déplacer · ← → au clavier" : undefined}
+            onClick={() => { if (!editing) onChange(t.key); }}
+            onPointerDown={e => onPointerDown(e, t.key)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onKeyDown={e => onKeyDown(e, t.key, i)}>
+            {editing ? <GripVertical size={14} strokeWidth={1.8} className="seg-grip" /> : Icon ? <Icon size={15} strokeWidth={1.8} /> : null}
             {t.label}
           </button>
         );
       })}
+      {storageKey && items.length > 2 && (
+        <span className="seg-tools">
+          {editing && order && (
+            <button type="button" className="seg-tool" title="Revenir à l'ordre par défaut" aria-label="Revenir à l'ordre par défaut"
+              onClick={() => commit(null)}>
+              <RotateCcw size={14} strokeWidth={1.9} />
+            </button>
+          )}
+          <button type="button" className={editing ? "seg-tool is-on" : "seg-tool"} aria-pressed={editing}
+            title={editing ? "Terminer" : "Réorganiser les onglets"} aria-label={editing ? "Terminer" : "Réorganiser les onglets"}
+            onClick={() => setEditing(v => !v)}>
+            {editing ? <><Check size={14} strokeWidth={2} /><span>Terminé</span></> : <ArrowLeftRight size={14} strokeWidth={1.9} />}
+          </button>
+        </span>
+      )}
     </div>
   );
 }

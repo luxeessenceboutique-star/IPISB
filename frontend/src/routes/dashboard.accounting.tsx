@@ -145,7 +145,7 @@ function AccountingPage() {
         </div>
       )}
 
-      <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} />
+      <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} storageKey="comptabilite" />
 
       <div className="compta-pane" key={tab}>
         {tab === "validations"       && <AccountingValidations onNavigate={t => setTab(t as Tab)} />}

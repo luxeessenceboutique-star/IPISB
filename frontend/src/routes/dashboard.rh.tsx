@@ -66,7 +66,7 @@ function RhPage() {
         sub="Employés, congés, paie et évaluations — centralisés."
       />
 
-      <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} />
+      <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} storageKey="rh" />
 
       <div className="rh-pane" key={tab}>
       {tab === "employees"   && <RhEmployees />}
