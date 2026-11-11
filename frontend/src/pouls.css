@@ -169,3 +169,14 @@
 }
 .seg-tab.on svg { color: var(--pal-primary); }
 @media (prefers-reduced-motion: reduce) { .seg-tab { animation: none; } }
+
+/* Mini-tracé des indicateurs (Comptabilité › Vue d'ensemble) */
+.kpi-trace { stroke-dasharray: 1; stroke-dashoffset: 1; animation: pouls-draw 1.6s var(--ease-pouls) .45s forwards; }
+@media (prefers-reduced-motion: reduce) { .kpi-trace { animation: none; stroke-dashoffset: 0; } }
+
+/* File de validation (Comptabilité › Validations) */
+.appr-row { position: relative; padding: 16px 20px 16px 68px; animation-delay: calc(var(--i, 0) * 60ms + 150ms); }
+.appr-row:hover .appr-abs { animation: pouls-beat 1s ease; }
+.appr-abs { position: absolute; inset-inline-start: 18px; top: 16px; }
+[dir="rtl"] .appr-row { padding: 16px 68px 16px 20px; }
+@media (max-width: 520px) { .appr-row { padding: 56px 16px 16px; } .appr-abs { top: 14px; inset-inline-start: 16px; } }

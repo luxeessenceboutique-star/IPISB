@@ -10,7 +10,7 @@ import {
   Wallet, TrendingUp, TrendingDown, FileWarning, CalendarClock,
   Building2, Truck, Receipt, CreditCard, ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
-import { CountUp } from "@/components/CountUp";
+import { Odometer } from "@/components/pouls/Odometer";
 
 type CatSlice = { name: string; value: number };
 type BudgetRow = { category: string; budget: number; actual: number };
@@ -82,9 +82,9 @@ function FadeUp({ delay=0, children }: { delay?:number; children:React.ReactNode
 
 function SH({ children, sub }: { children:React.ReactNode; sub?:string }) {
   return (
-    <div style={{ marginBottom:14 }}>
-      <div style={{ fontSize:11, fontWeight:700, letterSpacing:".12em", textTransform:"uppercase", color:C.muted, fontFamily:sans }}>{children}</div>
-      {sub && <div style={{ fontSize:11.5, color:C.muted, marginTop:3 }}>{sub}</div>}
+    <div style={{ marginBottom:14, display:"flex", flexDirection:"column", gap:5 }}>
+      {sub && <span className="mono-eyebrow" style={{ letterSpacing:".1em" }}>{sub}</span>}
+      <h3 className="h-serif" style={{ fontSize:18, fontWeight:800, letterSpacing:"-.02em", color:C.ink, margin:0 }}>{children}</h3>
     </div>
   );
 }
@@ -123,13 +123,15 @@ function Gauge({ value, label, color }: { value:number; label:string; color:stri
 }
 
 function SparkBar({ data, color }: { data:number[]; color:string }) {
+  // Mini-tracé « pouls » : la série se dessine de gauche à droite.
   const max = Math.max(...data, 1);
+  const n = Math.max(data.length - 1, 1);
+  const pts = data.map((v, i) => `${(i / n) * 100},${26 - (v / max) * 22}`).join(" ");
   return (
-    <div style={{ display:"flex", alignItems:"flex-end", gap:2, height:28 }}>
-      {data.map((v, i) => (
-        <div key={i} style={{ flex:1, borderRadius:2, background:color, opacity:0.25+0.75*(i/(data.length-1)), height:`${Math.max(4,(v/max)*100)}%`, transition:`height .6s ease ${i*50}ms` }} />
-      ))}
-    </div>
+    <svg viewBox="0 0 100 28" preserveAspectRatio="none" style={{ width:"100%", height:28, overflow:"visible" }} aria-hidden>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke" pathLength={1} className="kpi-trace" />
+    </svg>
   );
 }
 
@@ -141,24 +143,16 @@ function KpiCard({ label, value, money, icon:Icon, tone, spark, delay }: {
   const fg = { success:C.good, danger:C.danger, primary:C.primary, warn:C.warn };
   return (
     <FadeUp delay={delay??0}>
-      <div className="dash-card" style={{ padding:"18px 20px", height:"100%", boxSizing:"border-box", cursor:"default", transition:"transform .2s,box-shadow .2s", animation:"ov-pulse 4s ease-in-out infinite" }}
-        onMouseEnter={e => { const el=e.currentTarget; el.style.transform="translateY(-3px)"; el.style.boxShadow="0 14px 40px oklch(30% .03 175/.15)"; }}
-        onMouseLeave={e => { const el=e.currentTarget; el.style.transform=""; el.style.boxShadow=""; }}
-      >
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <div style={{ width:34, height:34, borderRadius:10, background:bg[tone], display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <Icon size={16} strokeWidth={1.8} style={{ color:fg[tone] }} />
-          </div>
-          <span style={{ fontSize:10.5, fontWeight:700, letterSpacing:".06em", textTransform:"uppercase", color:C.muted, fontFamily:sans }}>{label}</span>
+      <div className="dash-card vital" style={{ height:"100%", boxSizing:"border-box" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8 }}>
+          <span className="mono-eyebrow">{label}</span>
+          <span className="vital-tile" style={{ background:bg[tone], color:fg[tone] }}><Icon size={16} strokeWidth={1.8} /></span>
         </div>
-        <div style={{ fontFamily:mono, fontSize:22, fontWeight:800, color:C.ink, letterSpacing:"-.02em" }}>
-          {money ? (
-            <><CountUp value={Math.round(value)} duration={800} /><span style={{ fontSize:13, marginLeft:4, fontWeight:600, color:C.muted }}>MAD</span></>
-          ) : (
-            <CountUp value={value} duration={700} />
-          )}
+        <div className="v" style={{ fontSize:34 }}>
+          <Odometer value={Math.round(value)} label={money ? fmtMAD(value) : String(value)} />
+          {money && <span className="unit">MAD</span>}
         </div>
-        {spark && <div style={{ marginTop:10 }}><SparkBar data={spark} color={fg[tone]} /></div>}
+        {spark && spark.length > 1 && <SparkBar data={spark} color={fg[tone]} />}
       </div>
     </FadeUp>
   );
@@ -204,7 +198,7 @@ function CountBadges({ counts, delay }: { counts:Summary["counts"]; delay?:numbe
   ];
   return (
     <FadeUp delay={delay??0}>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:10 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(150px, 100%), 1fr))", gap:10 }}>
         {items.map(it => (
           <div key={it.label} className="dash-card" style={{ padding:"14px 16px", textAlign:"center" }}>
             <div style={{ display:"flex", justifyContent:"center", marginBottom:6 }}>
@@ -212,7 +206,7 @@ function CountBadges({ counts, delay }: { counts:Summary["counts"]; delay?:numbe
                 <it.icon size={14} strokeWidth={1.8} style={{ color:it.color }} />
               </div>
             </div>
-            <div style={{ fontFamily:mono, fontSize:20, fontWeight:800, color:C.ink }}><CountUp value={it.value} duration={600} /></div>
+            <div style={{ fontSize:24, fontWeight:800, color:C.ink, letterSpacing:"-.02em" }}><Odometer value={it.value} /></div>
             <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:".08em", color:C.muted, marginTop:2 }}>{it.label}</div>
           </div>
         ))}
@@ -258,7 +252,7 @@ export function AccountingOverview() {
     <div style={{ display:"flex", flexDirection:"column", gap:22, fontFamily:sans }}>
 
       {/* KPI cards */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:12 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap:14 }}>
         {kpis.map((c,i) => <KpiCard key={c.label} {...c} delay={i*65} />)}
       </div>
 
@@ -267,8 +261,8 @@ export function AccountingOverview() {
 
       {/* Treasury area + gauge */}
       <FadeUp delay={460}>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 210px", gap:12, alignItems:"stretch" }}>
-          <div className="dash-card" style={{ padding:"20px 22px" }}>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:12, alignItems:"stretch" }}>
+          <div className="dash-card paper-ecg" style={{ padding:"20px 22px", flex:"999 1 520px", minWidth:0 }}>
             <SH sub="Recettes vs Sorties — 6 derniers mois">Tresorerie mensuelle</SH>
             {allZero
               ? <div style={{ height:280, display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontSize:13 }}>Aucune donnee.</div>
@@ -299,7 +293,7 @@ export function AccountingOverview() {
                 </div>
             }
           </div>
-          <div className="dash-card" style={{ padding:"20px 22px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10 }}>
+          <div className="dash-card" style={{ padding:"20px 22px", flex:"1 1 210px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10 }}>
             <SH>Taux recouvrement</SH>
             <Gauge value={s.revenue_rate} label="encaisse" color={s.revenue_rate>70?C.good:s.revenue_rate>40?C.warn:C.danger} />
             <div style={{ textAlign:"center", fontSize:11, color:C.muted, lineHeight:1.6 }}>
@@ -310,7 +304,7 @@ export function AccountingOverview() {
       </FadeUp>
 
       {/* Donut: composition + statut achats */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap:12 }}>
         <ChartCard title="Composition des sorties" sub="Achats vs Depenses" delay={520} height={240}>
           <ResponsiveContainer>
             <PieChart>
@@ -337,7 +331,7 @@ export function AccountingOverview() {
       </div>
 
       {/* Ranked bars + Budget vs Actual */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap:12 }}>
         <RankedBars data={s.expenses_by_category} title="Sorties par categorie" delay={640} />
 
         <ChartCard title="Budget vs Reel" sub={`Exercice ${new Date().getFullYear()}`} delay={700} height={260} glass>

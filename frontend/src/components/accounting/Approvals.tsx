@@ -181,10 +181,11 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
   return (
     <div style={{ fontFamily: sans }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <ShieldCheck size={18} strokeWidth={1.8} color="var(--pal-primary)" />
-          <span style={{ fontSize: 15.5, fontWeight: 800, color: "var(--pal-ink)" }}>
-            Validations en attente {items.length > 0 && <span className="chip-c chip-c-amber" style={{ marginInlineStart: 8 }}>{items.length}</span>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span className="mono-eyebrow">File de validation · canal V2</span>
+          <span className="h-serif" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.02em", color: "var(--pal-ink)", display: "flex", alignItems: "center", gap: 10 }}>
+            Validations en attente
+            <span className={items.length > 0 ? "chip-c chip-c-amber" : "chip-c chip-c-green"}>{items.length > 0 ? items.length : "à jour"}</span>
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -249,11 +250,11 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
           {groups.map(group => (
             <div key={group.name}>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".09em", textTransform: "uppercase", color: "var(--pal-muted)", margin: "0 0 10px 2px" }}>
+              <div className="mono-eyebrow" style={{ margin: "0 0 10px 2px" }}>
                 {group.name} <span style={{ fontWeight: 600 }}>({group.rows.length})</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {group.rows.map(it => {
+                {group.rows.map((it, ri) => {
                   const k = key(it);
                   const blockedCreator = !!me && it.created_by === me && it.four_eyes;
                   const blockedFirstApprover = !!me && it.first_approved_by === me;
@@ -261,7 +262,8 @@ export function AccountingValidations({ onNavigate }: { onNavigate?: (tab: strin
                   const awaitingSecond = it.four_eyes && !!it.first_approved_by && !blockedFirstApprover;
                   const hit = it.id === focusId;
                   return (
-                    <div key={k} ref={hit ? attachFocus : undefined} className="dash-card" style={{ padding: "16px 20px" }}>
+                    <div key={k} ref={hit ? attachFocus : undefined} className="dash-card appr-row" style={{ ["--i" as string]: ri } as React.CSSProperties}>
+                      <span className="appr-tile appr-abs" aria-hidden><ShieldCheck size={16} strokeWidth={1.8} /></span>
                       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
                           <span style={{ fontSize: 14, fontWeight: 700, color: "var(--pal-ink)" }}>{it.label}</span>
