@@ -5,7 +5,7 @@ import {
   Users, FileText, Wallet,
   UserCog, LayoutGrid, History, ScrollText,
   RefreshCw, Briefcase, Landmark, MessageCircle,
-  Kanban,
+  Kanban, Video,
 } from "lucide-react";
 import { Wordmark } from "@/components/Wordmark";
 import { DashAvatar } from "@/components/dashboard/ui";
@@ -103,6 +103,7 @@ function DashboardLayout() {
   const showRh = isAdmin || hasHrRole;
   const showAccounting = isAdmin || hasFinanceRole;
   const showDocuments = isAdmin;
+  const isStaff = isAdmin || isProf || hasFinanceRole || hasHrRole;
   const showUsers = isAdmin || isProf;
   // Canal V0/V1/V2 (questionnaire des canaux Comptabilité) — cashier n'en
   // fait pas partie (jamais mentionné dans le questionnaire).
@@ -151,6 +152,8 @@ function DashboardLayout() {
         // groupe de discussion lié à une tâche multi-assignés peut concerner
         // n'importe quel rôle, pas seulement les administrateurs.
         leaf({ key: "dash.communication", to: "/dashboard/communication", icon: MessageCircle }),
+        // Salle de conférence (Jitsi) : tout le personnel.
+        ...(isStaff ? [leaf({ key: "dash.salleConference", to: "/dashboard/salle-conference", icon: Video })] : []),
         ...(isAdmin ? [
           leaf({ key: "dash.reunionsInstances", to: "/dashboard/reunions-instances", icon: Landmark }),
         ] : []),

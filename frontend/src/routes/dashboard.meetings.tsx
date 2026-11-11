@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -85,8 +86,10 @@ function fmtDate(d: string) {
 function JitsiRoom({ meeting, userName, appId, token, onLeave }: { meeting: Meeting; userName: string; appId: string; token: string; onLeave: () => void }) {
   const src = `https://8x8.vc/${appId}/${meeting.room_id}?jwt=${token}#userInfo.displayName="${encodeURIComponent(userName)}"&config.prejoinPageEnabled=false&config.disableDeepLinking=true&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_POWERED_BY=false`;
 
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", flexDirection: "column", background: "#0a0a0a" }}>
+  // Portail sur <body> : le conteneur animé de la page (page-enter) enfermerait
+  // sinon ce plein écran sous l'en-tête du tableau de bord.
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", flexDirection: "column", background: "#0a0a0a" }}>
       {/* top bar */}
       <div style={{ height: 52, background: "#111", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -109,7 +112,8 @@ function JitsiRoom({ meeting, userName, appId, token, onLeave }: { meeting: Meet
         style={{ flex: 1, border: 0, width: "100%", background: "#0a0a0a" }}
         title={meeting.title}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }
 

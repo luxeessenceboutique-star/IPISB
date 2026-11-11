@@ -38,6 +38,7 @@ from routers import tasks
 from routers import communication_groups
 from routers import agenda_gestion
 from routers import governance_instances
+from routers import conference_rooms
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +99,7 @@ async def security_headers(request: Request, call_next):
 
 
 app.include_router(meetings.router, prefix="/api")
+app.include_router(conference_rooms.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")

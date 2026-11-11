@@ -22,6 +22,7 @@ export const routeMeta: Record<string, RouteMetaEntry> = {
   "/dashboard/accounting-tasks": { labelKey: "dash.accountingTasks" },
   "/dashboard/accounting": { labelKey: "dash.accounting" },
   "/dashboard/communication": { labelKey: "dash.communication" },
+  "/dashboard/salle-conference": { labelKey: "dash.salleConference" },
   "/dashboard/reunions-instances": { labelKey: "dash.reunionsInstances" },
   "/dashboard/documents": { labelKey: "dash.documents" },
   "/dashboard/users": { labelKey: "dash.users" },

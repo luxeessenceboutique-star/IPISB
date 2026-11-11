@@ -715,3 +715,89 @@
   .nt-groups, .nt-item, .nt-dot, .mt-hero-cam::after, .pf-av, .apv-card, .apv-ring, .apv-medal svg { animation: none !important; }
   .pf-trace, .apv-ecg path { animation: none !important; stroke-dashoffset: 0; }
 }
+
+/* ── Salle de conférence (Jitsi) ───────────────────────────────────── */
+.cf-lobby { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 16px; margin-bottom: 22px; align-items: start; }
+.cf-card { padding: 18px; }
+.cf-side { display: flex; flex-direction: column; gap: 16px; }
+.cf-preview { display: flex; flex-direction: column; gap: 12px; }
+.cf-video { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: radial-gradient(120% 90% at 50% 10%, oklch(32% 0.04 175), oklch(18% 0.02 175)); box-shadow: inset 0 0 0 1px oklch(100% 0 0 / .06); }
+.cf-video video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; animation: fade-in-soft .4s ease both; }
+.cf-video-off { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: oklch(80% 0.02 170); text-align: center; padding: 16px; }
+.cf-video-off small { font-size: 12px; opacity: .8; }
+.cf-avatar { width: 78px; height: 78px; border-radius: 999px; display: grid; place-items: center; font-size: 26px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--pal-primary), var(--pal-primary-deep)); box-shadow: 0 0 0 6px oklch(100% 0 0 / .06), 0 0 0 14px oklch(100% 0 0 / .03); animation: orb-breathe 4s ease-in-out infinite; }
+.cf-name-tag { position: absolute; left: 12px; bottom: 12px; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #fff; background: oklch(15% 0.02 175 / .55); backdrop-filter: blur(6px); }
+.cf-meter { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 3px; height: 22px; padding: 0 8px; border-radius: 8px; background: oklch(15% 0.02 175 / .55); backdrop-filter: blur(6px); }
+.cf-meter i { width: 3px; height: 14px; border-radius: 2px; background: oklch(80% 0.15 155); transform-origin: center; transition: transform .08s linear; }
+.cf-preview-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cf-preview-hint { font-size: 12px; color: var(--pal-muted); }
+
+.cf-ctl { width: 44px; height: 44px; border-radius: 999px; border: 1px solid var(--pal-line); background: var(--pal-paper); color: var(--pal-ink); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color .2s, color .2s, transform .15s, border-color .2s; }
+.cf-ctl:hover { transform: translateY(-2px); border-color: var(--pal-soft); }
+.cf-ctl.is-off { background: var(--pal-danger); border-color: transparent; color: #fff; }
+.cf-ctl.is-on { background: var(--pal-primary); border-color: transparent; color: #fff; }
+.cf-ctl.is-end { background: oklch(55% 0.2 25); border-color: transparent; color: #fff; width: 56px; }
+
+.cf-instant { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid var(--pal-line-soft); }
+.cf-instant-ico { width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(135deg, var(--pal-primary), var(--pal-primary-deep)); box-shadow: 0 10px 22px -12px var(--pal-primary-deep); }
+.cf-instant-title { font-size: 16px; font-weight: 800; letter-spacing: -.01em; color: var(--pal-ink); }
+.cf-instant-sub { margin: 0 0 6px; font-size: 12.5px; line-height: 1.5; color: var(--pal-muted); }
+.cf-code-box { width: 100%; display: flex; flex-direction: column; gap: 10px; animation: rise .4s var(--ease-pouls) both; }
+.cf-code { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border-radius: 12px; font: 800 18px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .06em; color: var(--pal-primary-deep); background: var(--pal-pale); border: 1px dashed var(--pal-soft); }
+.cf-code-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cf-join { display: flex; flex-direction: column; gap: 10px; }
+.cf-join-row { display: flex; gap: 8px; }
+.cf-join-input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--pal-line); border-radius: 10px; font: 600 13px "JetBrains Mono", ui-monospace, monospace; background: var(--pal-paper); color: var(--pal-ink); }
+
+.cf-rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.cf-room-card { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--pal-line-soft); animation: rise .5s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 60ms); transition: border-color .2s, box-shadow .2s, transform .2s var(--ease-pouls); }
+.cf-room-card:hover { transform: translateY(-2px); border-color: var(--pal-line); box-shadow: 0 16px 30px -22px oklch(30% 0.05 175 / .6); }
+.cf-room-card.is-target { border-color: var(--pal-primary); box-shadow: 0 0 0 3px oklch(48% 0.085 175 / .16); }
+.cf-room-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cf-room-top .chip-c { display: inline-flex; align-items: center; gap: 4px; }
+.cf-room-ico { width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--pal-primary-deep); background: var(--pal-pale); }
+.cf-room-name { margin-top: 6px; font-size: 15px; font-weight: 800; color: var(--pal-ink); }
+.cf-room-desc { margin: 0; flex: 1; font-size: 12.5px; line-height: 1.5; color: var(--pal-muted); }
+.cf-room-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.cf-open { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--pal-primary-deep); }
+.cf-open i { width: 7px; height: 7px; border-radius: 999px; background: oklch(65% 0.15 155); --sev: oklch(65% 0.15 155); animation: agd-beat 2.4s ease-in-out infinite; }
+
+/* Salle ouverte : plein écran */
+.cf-room { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: oklch(14% 0.015 175); color: #fff; animation: fade-in-soft .25s ease both; }
+.cf-bar { height: 60px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: oklch(18% 0.02 175); border-bottom: 1px solid oklch(100% 0 0 / .06); }
+.cf-bar-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.cf-live { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 999px; font: 800 10px/1 "JetBrains Mono", ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; color: oklch(80% 0.12 25); background: oklch(55% 0.2 25 / .18); flex-shrink: 0; }
+.cf-live i { width: 7px; height: 7px; border-radius: 999px; background: oklch(65% 0.22 25); --sev: oklch(65% 0.22 25); animation: agd-beat 1.6s ease-in-out infinite; }
+.cf-bar-title { font-size: 14.5px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-bar-meta { display: flex; gap: 12px; margin-top: 2px; font: 600 11px/1 "JetBrains Mono", ui-monospace, monospace; color: oklch(72% 0.02 170); }
+.cf-bar-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.cf-bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.cf-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 1px solid oklch(100% 0 0 / .12); background: oklch(100% 0 0 / .06); color: #fff; font: 700 12.5px "Plus Jakarta Sans", system-ui, sans-serif; cursor: pointer; transition: background-color .2s; }
+.cf-btn:hover { background: oklch(100% 0 0 / .12); }
+.cf-btn.is-end { background: oklch(55% 0.2 25); border-color: transparent; }
+.cf-btn.is-end:hover { background: oklch(50% 0.2 25); }
+.cf-stage { position: relative; flex: 1; min-height: 0; }
+.cf-host, .cf-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.cf-connecting { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; font-size: 13.5px; color: oklch(80% 0.02 170); pointer-events: none; }
+.cf-orb { width: 90px; height: 90px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, var(--pal-mid, var(--pal-primary)), var(--pal-primary-deep)); box-shadow: 0 0 60px -10px var(--pal-primary); animation: orb-breathe 2.4s ease-in-out infinite; }
+.cf-dock { flex-shrink: 0; display: flex; justify-content: center; gap: 10px; padding: 12px; background: oklch(18% 0.02 175); border-top: 1px solid oklch(100% 0 0 / .06); }
+.cf-dock .cf-ctl { width: 48px; height: 48px; background: oklch(100% 0 0 / .08); border-color: oklch(100% 0 0 / .1); color: #fff; }
+.cf-dock .cf-ctl:hover { background: oklch(100% 0 0 / .16); }
+.cf-dock .cf-ctl.is-off { background: oklch(55% 0.2 25); }
+.cf-dock .cf-ctl.is-on { background: var(--pal-primary); }
+.cf-dock .cf-ctl.is-end { background: oklch(55% 0.2 25); width: 64px; }
+
+@media (max-width: 860px) {
+  .cf-lobby { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .cf-btn span { display: none; }
+  .cf-dock { gap: 6px; padding: 10px 8px; }
+  .cf-dock .cf-ctl { width: 42px; height: 42px; }
+  .cf-dock .cf-ctl.is-end { width: 52px; }
+  .cf-join-row { flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-avatar, .cf-orb, .cf-open i, .cf-live i, .cf-room-card, .cf-code-box, .cf-room { animation: none !important; }
+  .cf-ctl:hover, .cf-room-card:hover { transform: none; }
+}
