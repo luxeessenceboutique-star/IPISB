@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, CalendarClock, Trash2, ChevronLeft, ChevronRight, Check, X, CalendarDays, List, FileText, Paperclip, Ban } from "lucide-react";
@@ -249,84 +249,114 @@ function LeaveCalendar({ leaves }: { leaves: Leave[] }) {
     });
   }
 
+  // Synthèse du mois : nombre de jours-personne par code (hors week-end).
+  const summary = new Map<string, number>();
+  let absentDays = 0;
+  let pendingCount = 0;
+  for (const day of cells) {
+    if (!day || day.getDay() === 0 || day.getDay() === 6) continue;
+    for (const l of leavesOnDay(day)) {
+      const code = displayInfo(l).code;
+      summary.set(code, (summary.get(code) ?? 0) + 1);
+      if (l.status !== "cancelled") absentDays++;
+    }
+  }
+  const monthStart = firstOfMonth.getTime();
+  const monthEnd = new Date(year, month, daysInMonth).getTime();
+  for (const l of leaves) {
+    const s = new Date(l.start_date + "T00:00:00").getTime();
+    const e = new Date(l.end_date + "T00:00:00").getTime();
+    if (l.status === "pending" && s <= monthEnd && e >= monthStart) pendingCount++;
+  }
+
   const todayStr = new Date().toDateString();
+  const isCurrentMonth = new Date().getMonth() === month && new Date().getFullYear() === year;
   const weekdayLabels = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const allMarkers = [WORK_MARKER, ...TYPES, CANCELLED_MARKER];
 
   return (
-    <div className="dash-card" style={{ padding: "22px 24px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button type="button" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))} className="btn-c btn-c-sm btn-c-ghost">
-            <ChevronLeft size={14} strokeWidth={1.7} />
-          </button>
-          <div style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 22, fontWeight: 700, color: PAL.ink, textTransform: "capitalize" as const, minWidth: 170, textAlign: "center" as const }}>
-            {monthLabel}
-          </div>
-          <button type="button" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))} className="btn-c btn-c-sm btn-c-ghost">
-            <ChevronRight size={14} strokeWidth={1.7} />
-          </button>
+    <div className="dash-card lv-cal">
+      <div className="lv-head">
+        <div>
+          <div className="mono-eyebrow">Calendrier d'équipe</div>
+          <div className="lv-month">{monthLabel}</div>
         </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", maxWidth: 460 }}>
-          {[WORK_MARKER, ...TYPES, CANCELLED_MARKER].map(t => (
-            <div key={t.code} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: PAL.muted, fontFamily: sans }}>
-              <span style={{
-                width: 16, height: 16, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center",
-                background: t.color, color: t.text, fontSize: 8.5, fontWeight: 800,
-                border: t.border ? `1px solid ${PAL.line}` : "none",
-              }}>{t.code}</span>
-              {t.label}
-            </div>
-          ))}
+        <div className="lv-nav">
+          <button type="button" aria-label="Mois précédent" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))} className="btn-c btn-c-sm btn-c-ghost">
+            <ChevronLeft size={14} strokeWidth={1.8} />
+          </button>
+          <button type="button" disabled={isCurrentMonth} onClick={() => { const d = new Date(); d.setDate(1); setCursor(d); }} className="btn-c btn-c-sm btn-c-soft">
+            Aujourd'hui
+          </button>
+          <button type="button" aria-label="Mois suivant" onClick={() => setCursor(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))} className="btn-c btn-c-sm btn-c-ghost">
+            <ChevronRight size={14} strokeWidth={1.8} />
+          </button>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, background: PAL.line, border: `1px solid ${PAL.line}`, borderRadius: 12, overflow: "hidden" }}>
-        {weekdayLabels.map(w => (
-          <div key={w} style={{ background: "var(--pal-cream)", padding: "8px 6px", fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" as const, color: PAL.muted, textAlign: "center" as const, fontFamily: sans }}>
-            {w}
-          </div>
-        ))}
+      <div className="lv-sum">
+        <div className="lv-sum-main">
+          <span className="lv-sum-v">{absentDays}</span>
+          <span className="lv-sum-l">jours d'absence<br />ce mois-ci</span>
+        </div>
+        <div className="lv-sum-main">
+          <span className="lv-sum-v" style={{ color: "var(--pal-accent)" }}>{pendingCount}</span>
+          <span className="lv-sum-l">demandes<br />en attente</span>
+        </div>
+        <div className="lv-sum-codes">
+          {allMarkers.filter(m => m.code !== "T").map(t => {
+            const n = summary.get(t.code) ?? 0;
+            return (
+              <span key={t.code} className={n ? "lv-sum-code" : "lv-sum-code is-zero"} title={t.label}>
+                <i className="lv-code" style={{ background: t.color, color: t.text, boxShadow: t.border ? `inset 0 0 0 1px ${PAL.line}` : undefined }}>{t.code}</i>
+                {n}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="lv-grid" key={`${year}-${month}`}>
+        {weekdayLabels.map(w => <div key={w} className="lv-wd">{w}</div>)}
         {cells.map((day, i) => {
-          if (!day) return <div key={i} style={{ background: PAL.paper, minHeight: 92 }} />;
+          if (!day) return <div key={i} className="lv-day is-out" />;
           const dayLeaves = leavesOnDay(day);
           const isToday = day.toDateString() === todayStr;
           const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+          const cls = ["lv-day", isToday && "is-today", isWeekend && "is-weekend"].filter(Boolean).join(" ");
           return (
-            <div key={i} style={{ background: PAL.paper, minHeight: 92, padding: "6px 6px 8px", display: "flex", flexDirection: "column", gap: 3 }}>
-              <span style={{
-                fontSize: 12, fontWeight: isToday ? 800 : 600, color: isToday ? "var(--pal-primary-deep)" : PAL.ink,
-                width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
-                borderRadius: "50%", background: isToday ? "var(--pal-pale)" : "transparent",
-              }}>
-                {day.getDate()}
-              </span>
-              {dayLeaves.length === 0 && !isWeekend ? (
-                <div title="Travail" style={{
-                  fontSize: 10, fontWeight: 700, color: WORK_MARKER.text, background: WORK_MARKER.color,
-                  borderRadius: 5, padding: "2px 6px", width: "fit-content", opacity: 0.75,
-                }}>
-                  {WORK_MARKER.code}
-                </div>
-              ) : dayLeaves.slice(0, 3).map(l => {
+            <div key={i} className={cls} style={{ ["--i" as string]: i } as CSSProperties}>
+              <div className="lv-num">
+                <span>{day.getDate()}</span>
+                {dayLeaves.length === 0 && !isWeekend && (
+                  <i className="lv-work" title="Travail">{WORK_MARKER.code}</i>
+                )}
+              </div>
+              {dayLeaves.slice(0, 3).map(l => {
                 const info = displayInfo(l);
+                const cl = ["lv-chip", l.status === "pending" && "is-pending", l.status === "cancelled" && "is-cancelled"].filter(Boolean).join(" ");
                 return (
-                  <div key={l.id} title={`${l.employee_name ?? ""} — ${info.code} ${typeInfo(l.type).label}${l.status === "pending" ? " (en attente)" : l.status === "cancelled" ? " (annulé)" : ""}`} style={{
-                    fontSize: 10.5, fontWeight: 600, color: info.text, background: info.color,
-                    borderRadius: 5, padding: "2px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                    opacity: l.status === "pending" ? 0.6 : 1,
-                    border: info.border ? `1px solid ${PAL.line}` : "none",
-                    textDecoration: l.status === "cancelled" ? "line-through" : "none",
-                  }}>
-                    <b>{info.code}</b> {l.employee_name ?? "—"}
+                  <div key={l.id} className={cl}
+                    title={`${l.employee_name ?? ""} — ${info.code} ${typeInfo(l.type).label}${l.status === "pending" ? " (en attente)" : l.status === "cancelled" ? " (annulé)" : ""}`}
+                    style={{ ["--c" as string]: info.color, ["--t" as string]: info.text, boxShadow: info.border ? `inset 0 0 0 1px ${PAL.line}` : undefined } as CSSProperties}>
+                    <b>{info.code}</b><span>{l.employee_name ?? "—"}</span>
                   </div>
                 );
               })}
-              {dayLeaves.length > 3 && (
-                <div style={{ fontSize: 10, color: PAL.muted, fontWeight: 600 }}>+{dayLeaves.length - 3}</div>
-              )}
+              {dayLeaves.length > 3 && <div className="lv-more">+{dayLeaves.length - 3}</div>}
             </div>
           );
         })}
+      </div>
+
+      <div className="lv-legend">
+        {allMarkers.map(t => (
+          <span key={t.code}>
+            <i className="lv-code" style={{ background: t.color, color: t.text, boxShadow: t.border ? `inset 0 0 0 1px ${PAL.line}` : undefined }}>{t.code}</i>
+            {t.label}
+          </span>
+        ))}
+        <span><i className="lv-code lv-code-pending">P</i>Hachuré = en attente</span>
       </div>
     </div>
   );
@@ -457,21 +487,13 @@ export function RhLeaves() {
       {modalOpen && <FormModal employees={employees} onClose={() => setModalOpen(false)} onSaved={load} />}
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ display: "flex", gap: 4, background: "var(--pal-cream)", padding: 3, borderRadius: 10 }}>
-          <button type="button" onClick={() => setView("list")} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 7, border: 0, cursor: "pointer",
-            fontFamily: sans, fontSize: 12.5, fontWeight: 600,
-            background: view === "list" ? PAL.paper : "transparent",
-            color: view === "list" ? "var(--pal-primary-deep)" : PAL.muted,
-            boxShadow: view === "list" ? "0 1px 2px rgba(0,0,0,.06)" : "none",
-          }}><List size={13} strokeWidth={1.8} />Liste</button>
-          <button type="button" onClick={() => setView("calendar")} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 7, border: 0, cursor: "pointer",
-            fontFamily: sans, fontSize: 12.5, fontWeight: 600,
-            background: view === "calendar" ? PAL.paper : "transparent",
-            color: view === "calendar" ? "var(--pal-primary-deep)" : PAL.muted,
-            boxShadow: view === "calendar" ? "0 1px 2px rgba(0,0,0,.06)" : "none",
-          }}><CalendarDays size={13} strokeWidth={1.8} />Calendrier</button>
+        <div className="seg-rail seg-rail-sm" role="tablist" aria-label="Affichage">
+          <button type="button" role="tab" aria-selected={view === "list"} className={view === "list" ? "seg-tab on" : "seg-tab"} onClick={() => setView("list")}>
+            <List size={14} strokeWidth={1.8} />Liste
+          </button>
+          <button type="button" role="tab" aria-selected={view === "calendar"} className={view === "calendar" ? "seg-tab on" : "seg-tab"} onClick={() => setView("calendar")}>
+            <CalendarDays size={14} strokeWidth={1.8} />Calendrier
+          </button>
         </div>
         {view === "list" && (
           <select value={status} onChange={e => { setPage(1); setStatus(e.target.value); }} className="u-input" style={{ padding: "10px 12px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 13, background: PAL.paper }}>

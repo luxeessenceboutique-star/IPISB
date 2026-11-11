@@ -68,6 +68,7 @@ function RhPage() {
 
       <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} />
 
+      <div className="rh-pane" key={tab}>
       {tab === "employees"   && <RhEmployees />}
       {tab === "leaves"      && <RhLeaves />}
       {tab === "payroll"     && <RhPayroll />}
@@ -79,6 +80,7 @@ function RhPage() {
       {tab === "orgchart"    && <RhOrgChart />}
       {tab === "assets"      && <RhAssets />}
       {tab === "settings"    && <RhSettings />}
+      </div>
     </div>
   );
 }
