@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   Home, ClipboardList, GraduationCap, Bell,
   Users, FileText, Wallet,
@@ -27,6 +28,16 @@ export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
     if (!data.session) throw redirect({ to: "/auth" });
+    // Plateforme administrative réservée au personnel : un compte qui n'a que
+    // le rôle stagiaire relève de la plateforme pédagogique.
+    const { data: rows } = await supabase
+      .from("user_roles").select("role").eq("user_id", data.session.user.id);
+    const userRoles = (rows ?? []).map(r => r.role as string);
+    if (userRoles.includes("student") && !userRoles.some(r => r !== "student")) {
+      await supabase.auth.signOut();
+      toast.error("Les comptes stagiaires utilisent la plateforme pédagogique.");
+      throw redirect({ to: "/auth" });
+    }
   },
   component: DashboardLayout,
 });
@@ -104,7 +115,9 @@ function DashboardLayout() {
   const showAccounting = isAdmin || hasFinanceRole;
   const showDocuments = isAdmin;
   const isStaff = isAdmin || isProf || hasFinanceRole || hasHrRole;
-  const showUsers = isAdmin || isProf;
+  // Utilisateurs : personnel uniquement, géré par l'administrateur (les
+  // stagiaires sont gérés dans la plateforme pédagogique).
+  const showUsers = isAdmin;
   // Canal V0/V1/V2 (questionnaire des canaux Comptabilité) — cashier n'en
   // fait pas partie (jamais mentionné dans le questionnaire).
   const showAccountingTasks = isAdmin || isComptabilite || isAccountant || isProf || isAssistantRh;

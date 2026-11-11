@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, X, Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, ShieldCheck, Users, KeyRound } from "lucide-react";
+import { Plus, X, Loader2, UserPlus, Trash2, Search, UserCog, BookOpen, ShieldCheck, Users, KeyRound } from "lucide-react";
 import { Odometer } from "@/components/pouls/Odometer";
 import { PageHead, DashAvatar } from "@/components/dashboard/ui";
 
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/dashboard/users")({
       .from("user_roles")
       .select("role")
       .eq("user_id", sess.session.user.id)
-      .in("role", ["admin", "professor"]);
+      .eq("role", "admin");
     if (!data?.length) throw redirect({ to: "/dashboard" });
   },
   component: UsersPage,
@@ -275,18 +275,15 @@ function UsersPage() {
   const [roleFilter, setRoleFilter] = useState<AppRole | "all">("all");
 
   const isAdmin = roles.includes("admin");
-  const isProf  = roles.includes("professor");
 
-  const creatableRoles: AppRole[] = isAdmin
-    ? ["professor", "rh", "assistant_rh", "comptabilite"]
-    : isProf
-    ? ["student"]
-    : [];
+  // Plateforme administrative : personnel uniquement. Les comptes stagiaires
+  // se créent et se gèrent dans la plateforme pédagogique.
+  const creatableRoles: AppRole[] = isAdmin ? ["professor", "rh", "assistant_rh", "comptabilite"] : [];
 
   async function load() {
     setLoading(true);
     try {
-      const data: Row[] = await api.get("/api/users");
+      const data: Row[] = await api.get("/api/users?scope=staff");
       setRows(data);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur de chargement");
@@ -341,7 +338,7 @@ function UsersPage() {
 
   const needle = q.trim().toLowerCase();
   const filtered = rows.filter(r =>
-    (roleFilter === "all" || r.roles.includes(roleFilter)) &&
+    (roleFilter === "all" || r.roles.includes(roleFilter) || (roleFilter === "rh" && r.roles.includes("assistant_rh"))) &&
     (!needle ||
       (r.full_name ?? "").toLowerCase().includes(needle) ||
       (r.email ?? "").toLowerCase().includes(needle)));
@@ -353,18 +350,13 @@ function UsersPage() {
       ? "bg-primary/15 text-primary"
       : "bg-muted text-foreground/70";
 
-  const pageTitle = isAdmin
-    ? t("users.title")
-    : "Mes Étudiants";
-  const pageSubtitle = isAdmin
-    ? t("users.subtitle")
-    : "Les étudiants que vous avez créés";
+  const pageTitle = t("users.title");
+  const pageSubtitle = lang === "fr"
+    ? "Comptes du personnel de l'institut. Les comptes stagiaires sont gérés dans la plateforme pédagogique."
+    : lang === "ar" ? "حسابات موظفي المعهد. تُدار حسابات المتدربين في المنصة البيداغوجية."
+    : "Institute staff accounts. Trainee accounts are managed in the pedagogical platform.";
 
-  const btnLabel = creatableRoles.length === 0
-    ? null
-    : isAdmin
-    ? "Nouveau compte"
-    : "Créer un compte Étudiant";
+  const btnLabel = creatableRoles.length === 0 ? null : "Nouveau compte";
 
   return (
     <>
@@ -379,11 +371,7 @@ function UsersPage() {
 
 <div>
         <PageHead
-          eyebrow={
-            isAdmin
-              ? (lang === "fr" ? "Administration" : lang === "ar" ? "الإدارة" : "Administration")
-              : (lang === "fr" ? "Encadrement" : lang === "ar" ? "الإشراف" : "Mentoring")
-          }
+          eyebrow={lang === "fr" ? "Administration" : lang === "ar" ? "الإدارة" : "Administration"}
           title={pageTitle}
           sub={pageSubtitle}
           actions={
@@ -414,7 +402,7 @@ function UsersPage() {
           const L = (fr: string, ar: string, en: string) => lang === "fr" ? fr : lang === "ar" ? ar : en;
           const stats: { key: AppRole | "all"; l: string; v: number; icon: typeof Users; tone: string }[] = [
             { key: "all", l: L("Comptes", "الحسابات", "Accounts"), v: rows.length, icon: Users, tone: "var(--pal-primary)" },
-            { key: "student", l: L("Étudiants", "الطلبة", "Students"), v: rows.filter(r => r.roles.includes("student")).length, icon: GraduationCap, tone: "oklch(58% 0.12 245)" },
+            { key: "rh", l: L("Ressources humaines", "الموارد البشرية", "Human resources"), v: rows.filter(r => r.roles.includes("rh") || r.roles.includes("assistant_rh")).length, icon: UserCog, tone: "oklch(58% 0.12 245)" },
             { key: "professor", l: L("Professeurs", "الأساتذة", "Professors"), v: rows.filter(r => r.roles.includes("professor")).length, icon: BookOpen, tone: "oklch(62% 0.13 75)" },
             { key: "admin", l: L("Administrateurs", "المشرفون", "Admins"), v: rows.filter(r => r.roles.includes("admin")).length, icon: ShieldCheck, tone: "oklch(48% 0.085 175)" },
           ];
@@ -483,7 +471,6 @@ function UsersPage() {
                   <TableHead className="font-mono text-[11px] font-semibold uppercase tracking-[.08em]">{t("users.col.user")}</TableHead>
                   <TableHead className="hidden font-mono text-[11px] font-semibold uppercase tracking-[.08em] md:table-cell">{t("users.col.email")}</TableHead>
                   <TableHead className="font-mono text-[11px] font-semibold uppercase tracking-[.08em]">{t("users.col.roles")}</TableHead>
-                  <TableHead className="hidden font-mono text-[11px] font-semibold uppercase tracking-[.08em] sm:table-cell">{t("users.col.ref")}</TableHead>
                   <TableHead className="hidden font-mono text-[11px] font-semibold uppercase tracking-[.08em] lg:table-cell">{t("users.col.created")}</TableHead>
                   {isAdmin && <TableHead className="text-right font-mono text-[11px] font-semibold uppercase tracking-[.08em]">{t("users.col.actions")}</TableHead>}
                 </TableRow>
@@ -532,11 +519,6 @@ function UsersPage() {
                             );
                           })()}
                         </div>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        {r.enrollment_number
-                          ? <span className="chip-c chip-c-blue font-mono text-[11px]">{r.enrollment_number}</span>
-                          : <span className="text-xs text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="hidden font-mono text-[11px] text-muted-foreground lg:table-cell">{fmt(r.created_at)}</TableCell>
                       {isAdmin && (

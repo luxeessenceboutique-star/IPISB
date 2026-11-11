@@ -1179,7 +1179,7 @@ function InterviewerPoolManager({ onChanged }: { onChanged: () => void }) {
 
   function load() {
     api.get("/api/rh/recruitment/interviewer-pool").then(setMembers).catch(() => {});
-    api.get("/api/users").then(setAllUsers).catch(() => {});
+    api.get("/api/users?scope=staff").then(setAllUsers).catch(() => {});
   }
   useEffect(() => { if (open) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open]);
 

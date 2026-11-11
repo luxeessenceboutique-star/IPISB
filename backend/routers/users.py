@@ -6,6 +6,7 @@ from models import RoleAction, CreateUserRequest
 from datetime import datetime, timezone
 
 VALID_ROLES = {"admin", "professor", "rh", "assistant_rh", "comptabilite", "cashier", "accountant", "student"}
+STAFF_ROLES = VALID_ROLES - {"student"}
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -14,7 +15,11 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def list_users(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
+    scope: str | None = None,
 ):
+    """`scope=staff` : uniquement le personnel — les comptes stagiaires sont
+    gérés par la plateforme pédagogique et n'apparaissent pas dans la
+    plateforme administrative. Sans `scope`, comportement inchangé."""
     if not user.is_admin() and not user.is_prof() and not user.is_cashier():
         raise HTTPException(403, "Admin or professor only")
 
@@ -42,6 +47,15 @@ async def list_users(
     role_map: dict[str, list[str]] = {}
     for r in all_roles:
         role_map.setdefault(r["user_id"], []).append(r["role"])
+
+    if scope == "staff":
+        # Un compte qui n'a que le rôle stagiaire est exclu ; un compte sans
+        # rôle (en attente d'attribution) reste visible pour l'administrateur.
+        profiles = [
+            p for p in profiles
+            if not ("student" in role_map.get(p["id"], []) and not STAFF_ROLES.intersection(role_map.get(p["id"], [])))
+        ]
+        return [{**p, "roles": role_map.get(p["id"], []), "enrollment_number": None} for p in profiles]
 
     # N° d'inscription (ex. 001/IP/2026) — porté par class_students. Un élève peut
     # être inscrit dans plusieurs promos ; on retient le 1er numéro (ordre d'ajout).
