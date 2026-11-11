@@ -1,9 +1,9 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Plus, Trash2, Megaphone, X, Users, Send, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Megaphone, X, Users, Send, MessageSquare, ShieldCheck, GraduationCap, BookOpen, ListChecks, ChevronRight } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint, SegTabs } from "@/components/dashboard/ui";
 import { useDeepLinkModal } from "@/lib/deep-link";
 
@@ -63,6 +63,39 @@ type GroupMessage = {
 
 function memberLabel(m: GroupMember): string {
   return m.full_name || m.email || "—";
+}
+
+const ROLE_ICON: Record<string, typeof Users> = { admin: ShieldCheck, professor: BookOpen, student: GraduationCap };
+
+function initials(name: string | null | undefined): string {
+  const parts = (name ?? "").replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "·";
+}
+
+// Teinte stable par personne, dans la gamme de la palette (vert → bleu → ambre).
+function hueOf(key: string): number {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+  return [175, 195, 215, 245, 150, 70, 30][h % 7];
+}
+
+function relTime(iso: string): string {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return "à l'instant";
+  if (diff < 3600) return `il y a ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `il y a ${Math.floor(diff / 3600)} h`;
+  if (diff < 86400 * 7) return `il y a ${Math.floor(diff / 86400)} j`;
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function Avatar({ name, size = 28 }: { name: string | null | undefined; size?: number }) {
+  const h = hueOf(name ?? "");
+  return (
+    <span className="cm-av" title={name ?? undefined}
+      style={{ width: size, height: size, fontSize: size * 0.38, background: `oklch(93% 0.04 ${h})`, color: `oklch(38% 0.09 ${h})` }}>
+      {initials(name)}
+    </span>
+  );
 }
 
 // ── Annonces ─────────────────────────────────────────────────────────────────
@@ -191,35 +224,47 @@ function AnnouncementsPanel({ isAdmin }: { isAdmin: boolean }) {
           <EmptyHint icon={<Megaphone size={28} strokeWidth={1.7} />} text="Aucune annonce pour l'instant." />
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {items.map(a => (
-            <div key={a.id} className="dash-card" style={{ padding: "18px 22px" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: PAL.ink }}>{a.titre}</div>
-                  <p style={{ margin: "6px 0 0", fontSize: 13, color: PAL.muted, lineHeight: 1.5 }}>{a.corps}</p>
-                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {a.audience_roles.map(r => (
-                      <span key={r} className="chip-c" style={{ fontSize: 10 }}>
-                        {ROLES.find(x => x.value === r)?.label ?? r}
-                      </span>
-                    ))}
+        <div className="cm-feed">
+          {items.map((a, i) => {
+            const d = new Date(a.created_at);
+            const fresh = Date.now() - d.getTime() < 48 * 3600 * 1000;
+            return (
+              <article key={a.id} className={fresh ? "cm-ann is-fresh" : "cm-ann"} style={{ ["--i" as string]: i } as React.CSSProperties}>
+                <div className="cm-date" aria-hidden>
+                  <b>{d.getDate()}</b>
+                  <span>{d.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "")}</span>
+                </div>
+                <div className="dash-card cm-ann-card">
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="cm-ann-meta">
+                        <Megaphone size={12} strokeWidth={1.9} />
+                        <span>{relTime(a.created_at)}</span>
+                        {fresh && <span className="chip-c chip-c-green cm-new">Nouveau</span>}
+                      </div>
+                      <h3 className="cm-ann-title">{a.titre}</h3>
+                      <p className="cm-ann-body">{a.corps}</p>
+                      <div className="cm-aud">
+                        {a.audience_roles.map(r => {
+                          const Icon = ROLE_ICON[r] ?? Users;
+                          return (
+                            <span key={r} className="chip-c">
+                              <Icon size={11} strokeWidth={1.9} />{ROLES.find(x => x.value === r)?.label ?? r}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <button type="button" onClick={() => remove(a.id)} className="cm-del" aria-label="Supprimer" title="Supprimer">
+                        <Trash2 size={14} strokeWidth={1.7} />
+                      </button>
+                    )}
                   </div>
                 </div>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => remove(a.id)}
-                    className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive"
-                    aria-label="Supprimer"
-                    title="Supprimer"
-                  >
-                    <Trash2 size={14} strokeWidth={1.7} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
     </>
@@ -228,11 +273,15 @@ function AnnouncementsPanel({ isAdmin }: { isAdmin: boolean }) {
 
 // ── Groupes de discussion (liés à une tâche multi-assignés) ──────────────────
 
-function GroupDetailModal({ groupId, groupName, onClose }: { groupId: string; groupName: string; onClose: () => void }) {
+function GroupDetailModal({ groupId, groupName, members, onClose }: { groupId: string; groupName: string; members: GroupMember[]; onClose: () => void }) {
   const [messages, setMessages] = useState<GroupMessage[]>([]);
+  const [me, setMe] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { supabase.auth.getSession().then(({ data }) => setMe(data.session?.user.id ?? null)); }, []);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages, loading]);
 
   async function load() {
     setLoading(true);
@@ -263,43 +312,64 @@ function GroupDetailModal({ groupId, groupName, onClose }: { groupId: string; gr
 
   return (
     <div className="anim-fade" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(2px)" }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="anim-pop" style={{ background: PAL.paper, borderRadius: 16, padding: 28, width: 520, maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(0,0,0,.18)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-          <h2 style={{ fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', fontSize: 21, fontWeight: 700, color: PAL.ink, margin: 0, minWidth: 0 }}>{groupName}</h2>
-          <button onClick={onClose} style={{ background: "none", border: 0, cursor: "pointer", color: PAL.muted, flexShrink: 0 }}><X size={18} strokeWidth={1.7} /></button>
+      <div className="anim-pop cm-chat">
+        <div className="cm-chat-head">
+          <span className="cm-chat-ico"><MessageSquare size={17} strokeWidth={1.8} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mono-eyebrow">Groupe de tâche · {members.length} membre{members.length !== 1 ? "s" : ""}</div>
+            <h2 className="cm-chat-title">{groupName}</h2>
+          </div>
+          <div className="cm-stack">{members.slice(0, 4).map(m => <Avatar key={m.id} name={memberLabel(m)} size={26} />)}</div>
+          <button type="button" onClick={onClose} aria-label="Fermer" className="cm-close"><X size={18} strokeWidth={1.7} /></button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, minHeight: 220 }}>
+        <div className="cm-thread">
           {loading ? (
-            <div className="shimmer" style={{ height: 90, borderRadius: 10 }} />
+            <>
+              <div className="shimmer" style={{ height: 42, width: "60%", borderRadius: 14 }} />
+              <div className="shimmer" style={{ height: 42, width: "45%", borderRadius: 14, alignSelf: "flex-end" }} />
+            </>
           ) : messages.length === 0 ? (
-            <div style={{ fontSize: 13, color: PAL.muted, textAlign: "center", padding: "24px 0" }}>Aucun message — lancez la discussion !</div>
+            <div className="cm-empty"><MessageSquare size={22} strokeWidth={1.6} />Aucun message — lancez la discussion !</div>
           ) : (
-            messages.map(m => (
-              <div key={m.id} className="dash-card" style={{ padding: "9px 12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 3 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: PAL.ink }}>{m.author_name ?? "—"}</span>
-                  <span style={{ fontSize: 10.5, color: PAL.muted, flexShrink: 0 }}>{new Date(m.created_at).toLocaleString("fr-FR")}</span>
+            messages.map((m, i) => {
+              const mine = !!me && m.author_id === me;
+              const prev = messages[i - 1];
+              const day = new Date(m.created_at).toDateString();
+              const newDay = !prev || new Date(prev.created_at).toDateString() !== day;
+              const grouped = !newDay && prev && prev.author_id === m.author_id;
+              return (
+                <div key={m.id} style={{ display: "contents" }}>
+                  {newDay && (
+                    <div className="cm-day"><span>{new Date(m.created_at).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}</span></div>
+                  )}
+                  <div className={["cm-msg", mine && "is-mine", grouped && "is-grouped"].filter(Boolean).join(" ")}>
+                    {!mine && (grouped ? <span className="cm-av-gap" /> : <Avatar name={m.author_name} />)}
+                    <div className="cm-bubble">
+                      {!mine && !grouped && <div className="cm-author">{m.author_name ?? "—"}</div>}
+                      <div className="cm-text">{m.text}</div>
+                      <time className="cm-time">{new Date(m.created_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</time>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 13, color: PAL.ink, lineHeight: 1.5, whiteSpace: "pre-wrap" as const }}>{m.text}</div>
-              </div>
-            ))
+              );
+            })
           )}
+          <div ref={endRef} />
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <form className="cm-compose" onSubmit={e => { e.preventDefault(); send(); }}>
           <input
             value={text}
             onChange={e => setText(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && send()}
             placeholder="Votre message…"
             className="u-input"
-            style={{ flex: 1, padding: "10px 14px", border: `1px solid ${PAL.line}`, borderRadius: 10, fontFamily: sans, fontSize: 14, color: PAL.ink, background: PAL.paper, outline: "none", boxSizing: "border-box" as const }}
+            aria-label="Message"
           />
-          <button onClick={send} disabled={sending || !text.trim()} className="btn-c btn-c-primary" style={{ flexShrink: 0, opacity: sending ? .6 : 1 }}>
-            <Send size={14} strokeWidth={1.8} />
+          <button type="submit" disabled={sending || !text.trim()} className="btn-c btn-c-primary cm-send" aria-label="Envoyer">
+            <Send size={15} strokeWidth={1.9} />
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
@@ -329,7 +399,7 @@ function GroupsPanel() {
 
   return (
     <>
-      {openGroup && <GroupDetailModal groupId={openGroup.id} groupName={openGroup.name} onClose={() => setOpenGroup(null)} />}
+      {openGroup && <GroupDetailModal groupId={openGroup.id} groupName={openGroup.name} members={openGroup.members} onClose={() => { setOpenGroup(null); load(); }} />}
 
       <SectionLabel>{groups.length} groupe{groups.length !== 1 ? "s" : ""}</SectionLabel>
       <p style={{ margin: "4px 0 14px", fontSize: 12.5, color: PAL.muted, lineHeight: 1.5 }}>
@@ -343,35 +413,26 @@ function GroupsPanel() {
       ) : groups.length === 0 ? (
         <div className="dash-card"><EmptyHint icon={<Users size={28} strokeWidth={1.7} />} text="Aucun groupe pour l'instant — assignez une tâche à 2 personnes ou plus pour en créer un." /></div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {groups.map(g => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => setOpenGroup(g)}
-              className="dash-card"
-              style={{ padding: "16px 20px", textAlign: "left" as const, cursor: "pointer", border: 0, width: "100%", fontFamily: sans }}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+        <div className="cm-groups">
+          {groups.map((g, i) => (
+            <button key={g.id} type="button" onClick={() => setOpenGroup(g)} className="dash-card cm-group" style={{ ["--i" as string]: i } as React.CSSProperties}>
+              <div className="cm-group-top">
+                <span className="cm-chat-ico"><MessageSquare size={16} strokeWidth={1.8} /></span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <MessageSquare size={15} strokeWidth={1.8} style={{ color: PAL.primary, flexShrink: 0 }} />
-                    <span style={{ fontWeight: 700, fontSize: 14.5, color: PAL.ink }}>{g.name}</span>
-                  </div>
-                  <div style={{ marginTop: 6, fontSize: 12, color: PAL.muted }}>
-                    {g.members.map(memberLabel).join(", ")}
-                  </div>
-                  {g.last_message && (
-                    <p style={{ margin: "8px 0 0", fontSize: 12.5, color: PAL.ink, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>
-                      {g.last_message.text}
-                    </p>
-                  )}
+                  <div className="cm-group-name">{g.name}</div>
+                  {g.task_title && <div className="cm-group-task"><ListChecks size={11} strokeWidth={1.9} />{g.task_title}</div>}
                 </div>
-                {g.last_message && (
-                  <span style={{ fontSize: 10.5, color: PAL.muted, flexShrink: 0 }}>
-                    {new Date(g.last_message.created_at).toLocaleDateString("fr-FR")}
-                  </span>
-                )}
+                <ChevronRight size={16} strokeWidth={1.8} className="cm-go" />
+              </div>
+              <div className="cm-preview">
+                {g.last_message ? g.last_message.text : <em>Pas encore de message</em>}
+              </div>
+              <div className="cm-group-foot">
+                <div className="cm-stack">
+                  {g.members.slice(0, 4).map(m => <Avatar key={m.id} name={memberLabel(m)} size={24} />)}
+                  {g.members.length > 4 && <span className="cm-av cm-av-more" style={{ width: 24, height: 24, fontSize: 9.5 }}>+{g.members.length - 4}</span>}
+                </div>
+                <span className="cm-when">{g.last_message ? relTime(g.last_message.created_at) : `${g.members.length} membres`}</span>
               </div>
             </button>
           ))}
@@ -412,7 +473,9 @@ function CommunicationPage() {
 
       <SegTabs items={TABS} value={tab} onChange={k => setTab(k)} />
 
-      {tab === "announcements" ? <AnnouncementsPanel isAdmin={isAdmin} /> : <GroupsPanel />}
+      <div className="pouls-pane" key={tab}>
+        {tab === "announcements" ? <AnnouncementsPanel isAdmin={isAdmin} /> : <GroupsPanel />}
+      </div>
     </div>
   );
 }
