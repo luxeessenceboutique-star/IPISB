@@ -242,7 +242,7 @@ export function PlatformCopilot() {
     setLangState(l); setLangMenu(false);
     try { localStorage.setItem("copilot-lang", l); } catch { /* ignore */ }
   }
-  function flash(msg: string) { setToast(msg); setTimeout(() => setToast(null), 2600); }
+  function flash(msg: string) { setToast(msg); setTimeout(() => setToast(null), msg.length > 60 ? 6000 : 2600); }
 
   // ── Chargements ──
   const loadConversations = useCallback(async (q = "") => {
@@ -300,7 +300,11 @@ export function PlatformCopilot() {
         method: "POST", headers: await authHeaders(),
         body: JSON.stringify({ message: text, conversation_id: activeIdRef.current, language: lang, deep, voice: !!opts.voice }),
       });
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok || !res.body) {
+        let detail = "";
+        try { const j = await res.json(); detail = typeof j?.detail === "string" ? j.detail : JSON.stringify(j?.detail ?? j); } catch { /* corps non JSON */ }
+        throw new Error(`HTTP ${res.status}${detail ? ` — ${detail}` : ""}`);
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -337,6 +341,8 @@ export function PlatformCopilot() {
             setStreaming(false);
           } else if (ev.title) {
             setConversations(prev => prev.map(c => c.id === ev.title.id ? { ...c, title: ev.title.title } : c));
+          } else if (ev.warning) {
+            flash(ev.warning);
           } else if (ev.memory) {
             const facts = ev.memory as Memory[];
             setMemories(prev => [...facts, ...prev]);
@@ -346,7 +352,10 @@ export function PlatformCopilot() {
       }
     } catch (err) {
       console.error("Copilot error:", err);
-      full = full || t.error;
+      const reason = err instanceof TypeError
+        ? "Serveur injoignable (backend arrêté ou adresse VITE_API_URL incorrecte)."
+        : err instanceof Error ? err.message : String(err);
+      full = full || `${t.error}\n\n\`${reason}\``;
       const snap = full;
       patchLast(m => ({ ...m, content: snap }));
     } finally {

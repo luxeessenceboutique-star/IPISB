@@ -27,7 +27,6 @@ from datetime import date
 from typing import Any, Optional, TypedDict
 
 from fastapi import HTTPException
-from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.config import get_stream_writer
@@ -80,8 +79,10 @@ class CopilotState(TypedDict, total=False):
 
 
 def _llm(model: str = CHAT_MODEL, temperature: float = 0.3, max_tokens: int = 900, streaming: bool = True) -> ChatOpenAI:
+    # stream_usage=False : certaines passerelles OpenAI-compatibles refusent
+    # l'option stream_options envoyée sinon par langchain-openai 1.x.
     return ChatOpenAI(model=model, base_url=BASE_URL, api_key=API_KEY, temperature=temperature,
-                      max_tokens=max_tokens, streaming=streaming)
+                      max_tokens=max_tokens, streaming=streaming, stream_usage=False)
 
 
 def _context_block(state: CopilotState) -> str:
@@ -253,6 +254,7 @@ def _specialist_prompt(state: CopilotState, domain: str) -> str:
 def _make_specialist(domain: str, tool_names: tuple[str, ...]):
     async def node(state: CopilotState, config) -> dict:
         writer = get_stream_writer()
+        from langchain.agents import create_agent  # import paresseux : une dépendance manquante ne bloque pas le démarrage
         tools = config["configurable"]["read_tools"]
         agent = create_agent(_llm(), [tools[n] for n in tool_names], system_prompt=_specialist_prompt(state, domain))
         answer = await _run_agent(agent, _lc_history(state), writer)
@@ -381,3 +383,23 @@ async def stream_team(state: CopilotState, user: CurrentUser, db: Client):
     config = {"configurable": {"user": user, "db": db, "read_tools": build_read_tools(user, db)}}
     async for event in copilot_team.astream(state, config=config, stream_mode="custom"):
         yield event
+
+
+async def fallback_stream(state: CopilotState):
+    """Repli si l'équipe d'agents échoue (passerelle LLM incompatible avec un
+    paramètre, dépendance absente…) : réponse directe du Guide plateforme via
+    le client OpenAI, comme l'ancien Copilote."""
+    system = (
+        _context_block(state) + "\n\nTu es le Copilote IPISB Connect (plateforme administrative). "
+        "Aide l'utilisateur à utiliser la plateforme. Modules accessibles :\n\n" + _knowledge(state)
+    )
+    client = AsyncOpenAI(api_key=API_KEY, base_url=BASE_URL)
+    stream = await client.chat.completions.create(
+        model=CHAT_MODEL, temperature=0.4, max_tokens=800, stream=True,
+        messages=[{"role": "system", "content": system}] + (state.get("history") or []),
+    )
+    yield {"agent": {"key": "plateforme", "label": AGENTS["plateforme"]["label"]}}
+    async for chunk in stream:
+        delta = chunk.choices[0].delta if chunk.choices else None
+        if delta and delta.content:
+            yield {"text": delta.content}

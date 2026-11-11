@@ -17,7 +17,7 @@ from copilot.memory import (
     add_message, create_conversation, extract_memories, get_conversation, load_history,
     load_memories, make_title, maybe_summarize, render_memories, save_memory,
 )
-from copilot.multi_agent import stream_team
+from copilot.multi_agent import fallback_stream, stream_team
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 log = logging.getLogger(__name__)
@@ -62,6 +62,36 @@ def _load_pending(db: Client, user: CurrentUser, action_id: str) -> dict:
     return row
 
 
+def _err_detail(e: Exception) -> str:
+    return f"{type(e).__name__}: {str(e)[:180]}"
+
+
+async def _run_team(state: dict, user: CurrentUser, db: Client):
+    """Équipe d'agents ; si elle échoue avant d'avoir répondu, repli sur une
+    réponse directe. Ne lève jamais : l'erreur finale est renvoyée en texte."""
+    produced = False
+    try:
+        async for ev in stream_team(state, user, db):
+            if ev.get("text"):
+                produced = True
+            yield ev
+        return
+    except Exception as e:
+        log.error("Copilot team error: %s", e, exc_info=True)
+        if produced:
+            yield {"text": f"\n\n⚠️ Réponse interrompue ({_err_detail(e)})."}
+            return
+        first = e
+    try:
+        yield {"reset": True}
+        async for ev in fallback_stream(state):
+            yield ev
+    except Exception as e:
+        log.error("Copilot fallback error: %s", e, exc_info=True)
+        yield {"text": "Désolé, le service d'IA ne répond pas pour le moment.\n\n"
+                       f"Détail technique : {_err_detail(first)} — puis {_err_detail(e)}"}
+
+
 def _sse(obj: Any) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
@@ -85,12 +115,8 @@ async def copilot_stream(
                  "memory": "", "summary": "", "force_agent": "analyste" if req.deep else None}
 
         async def legacy():
-            try:
-                async for ev in stream_team(state, user, db):
-                    yield _sse(ev)
-            except Exception as e:
-                log.error("Copilot team error: %s", e)
-                yield _sse({"text": "Désolé, une erreur est survenue. Réessayez dans un instant."})
+            async for ev in _run_team(state, user, db):
+                yield _sse(ev)
             yield "data: [DONE]\n\n"
         return StreamingResponse(legacy(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -100,11 +126,24 @@ async def copilot_stream(
     if not text:
         raise HTTPException(422, "message vide")
     is_new = not req.conversation_id
-    conversation = (create_conversation(db, user.id, text[:60], req.language) if is_new
-                    else get_conversation(db, user.id, req.conversation_id))
-    add_message(db, conversation["id"], "user", text, {"voice": True} if req.voice else {})
-    history, total = load_history(db, conversation["id"])
-    memories = load_memories(db, user.id)
+    persist, warning = True, None
+    try:
+        conversation = (create_conversation(db, user.id, text[:60], req.language) if is_new
+                        else get_conversation(db, user.id, req.conversation_id))
+        add_message(db, conversation["id"], "user", text, {"voice": True} if req.voice else {})
+        history, total = load_history(db, conversation["id"])
+        memories = load_memories(db, user.id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Tables L90 absentes (migration non exécutée) ou base indisponible :
+        # le Copilote répond quand même, sans historique ni mémoire.
+        log.error("Copilot persistence unavailable: %s", e)
+        persist = False
+        warning = ("Historique et mémoire indisponibles — exécutez la migration "
+                   "sql/supabase_l90_copilot_conversations_memory.sql dans Supabase.")
+        conversation = {"id": None, "title": text[:60], "summary": ""}
+        history, total, memories = [{"role": "user", "content": text}], 1, []
     state = {
         "history": history, "roles": roles, "language": req.language,
         "memory": render_memories(memories), "summary": conversation.get("summary") or "",
@@ -113,31 +152,36 @@ async def copilot_stream(
 
     async def generate():
         client = _openai_client()
-        yield _sse({"conversation": {"id": conversation["id"], "title": conversation["title"], "new": is_new}})
+        if persist:
+            yield _sse({"conversation": {"id": conversation["id"], "title": conversation["title"], "new": is_new}})
+        if warning:
+            yield _sse({"warning": warning})
         answer, meta = "", {"steps": []}
-        try:
-            async for ev in stream_team(state, user, db):
-                if "text" in ev:
-                    answer += ev["text"]
-                elif ev.get("reset"):
-                    answer = ""
-                elif "agent" in ev:
-                    meta["agent"] = ev["agent"]
-                elif "step" in ev:
-                    meta["steps"].append(ev["step"])
-                elif "todos" in ev:
-                    meta["todos"] = ev["todos"]
-                elif "action_proposal" in ev:
-                    meta["action"] = ev["action_proposal"]
-                yield _sse(ev)
-        except Exception as e:
-            log.error("Copilot team error: %s", e)
-            msg = "Désolé, une erreur est survenue. Réessayez dans un instant."
-            answer += ("\n\n" if answer else "") + msg
-            yield _sse({"text": msg})
+        async for ev in _run_team(state, user, db):
+            if "text" in ev:
+                answer += ev["text"]
+            elif ev.get("reset"):
+                answer = ""
+            elif "agent" in ev:
+                meta["agent"] = ev["agent"]
+            elif "step" in ev:
+                meta["steps"].append(ev["step"])
+            elif "todos" in ev:
+                meta["todos"] = ev["todos"]
+            elif "action_proposal" in ev:
+                meta["action"] = ev["action_proposal"]
+            yield _sse(ev)
 
-        saved = add_message(db, conversation["id"], "assistant", answer, meta)
-        yield _sse({"done": {"message_id": saved["id"]}})
+        if not persist:
+            yield _sse({"done": {"message_id": None}})
+            yield "data: [DONE]\n\n"
+            return
+        try:
+            saved = add_message(db, conversation["id"], "assistant", answer, meta)
+            yield _sse({"done": {"message_id": saved["id"]}})
+        except Exception as e:
+            log.error("Copilot save answer failed: %s", e)
+            yield _sse({"done": {"message_id": None}})
 
         if is_new and answer:
             title = await make_title(client, FAST_MODEL, text, answer)
