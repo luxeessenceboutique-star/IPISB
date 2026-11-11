@@ -1,8 +1,9 @@
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from supabase import Client
@@ -10,23 +11,37 @@ from openai import AsyncOpenAI
 
 from deps import get_current_user, get_db, CurrentUser
 from security import validate_chat_messages
-from copilot.agent import copilot_graph, LANG_SYSTEM, BASE_URL, API_KEY, CHAT_MODEL
-from copilot.actions import (
-    ACTIONS, build_tool_schemas, split_arguments, validate_body, summarize_action, execute_action,
+from copilot.agent import LANG_SYSTEM, BASE_URL, API_KEY, CHAT_MODEL, FAST_MODEL
+from copilot.actions import ACTIONS, execute_action
+from copilot.memory import (
+    add_message, create_conversation, extract_memories, get_conversation, load_history,
+    load_memories, make_title, maybe_summarize, render_memories, save_memory,
 )
+from copilot.multi_agent import stream_team
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 log = logging.getLogger(__name__)
 
 
 class CopilotRequest(BaseModel):
-    messages: list[dict]
-    language: str = Field("fr", max_length=5)
+    # Mode conversation (persisté) : `message` + `conversation_id` optionnel
+    # (absent → nouvelle conversation). Ancien mode sans état : `messages`.
+    message: Optional[str] = Field(None, max_length=4000)
+    conversation_id: Optional[str] = None
+    messages: Optional[list[dict]] = None
+    language: str = Field("fr", max_length=8)
+    deep: bool = False                      # « Analyse approfondie » → Deep Agent
+    voice: bool = False                     # message dicté à la voix (affichage)
 
     @field_validator("messages")
     @classmethod
     def _check_messages(cls, v):
-        return validate_chat_messages(v)
+        return validate_chat_messages(v) if v is not None else None
+
+    @field_validator("language")
+    @classmethod
+    def _check_lang(cls, v):
+        return v if v in LANG_SYSTEM else "fr"
 
 
 def _openai_client() -> AsyncOpenAI:
@@ -47,140 +62,271 @@ def _load_pending(db: Client, user: CurrentUser, action_id: str) -> dict:
     return row
 
 
+def _sse(obj: Any) -> str:
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
 @router.post("/stream")
 async def copilot_stream(
     req: CopilotRequest,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_db)],
 ):
-    """SSE streaming endpoint for the in-app platform copilot, available to every
-    authenticated role. Yields `data: {"text": "..."}` chunks, or a single
-    `data: {"action_proposal": {...}}` when the user asked to perform a real
-    action — nothing is ever executed here, only proposed (see /actions/{id}/confirm)."""
-    try:
-        state = await copilot_graph.ainvoke({
-            "messages": req.messages,
-            "roles": user.roles or ["student"],
-            "language": req.language,
-            "intent": "",
-            "system_prompt": "",
-        })
-        system_prompt = state.get("system_prompt", "")
-        intent = state.get("intent", "general")
-    except Exception as exc:
-        log.warning("Copilot graph failed: %s", exc)
-        system_prompt = "Tu es le Copilote IPISB Connect, assistant d'aide à l'utilisation de la plateforme."
-        intent = "general"
+    """SSE du Copilote multi-agents. Événements : conversation, agent, step,
+    todos, text, reset, action_proposal, title, memory, done, puis [DONE].
+    Rien n'est jamais exécuté ici : une action est seulement proposée."""
+    roles = user.roles or ["student"]
 
-    lang_instr = LANG_SYSTEM.get(req.language, LANG_SYSTEM["fr"])
-    full_system = f"{lang_instr}\n\n{system_prompt}"
+    # ── Mode sans état (compatibilité) ──
+    if not req.message:
+        if not req.messages:
+            raise HTTPException(422, "message requis")
+        state = {"history": req.messages, "roles": roles, "language": req.language,
+                 "memory": "", "summary": "", "force_agent": "analyste" if req.deep else None}
 
-    if intent == "action":
-        return await _action_response(req, user, db, full_system)
+        async def legacy():
+            try:
+                async for ev in stream_team(state, user, db):
+                    yield _sse(ev)
+            except Exception as e:
+                log.error("Copilot team error: %s", e)
+                yield _sse({"text": "Désolé, une erreur est survenue. Réessayez dans un instant."})
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(legacy(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # ── Mode conversation (persisté, isolé par conversation) ──
+    text = req.message.strip()
+    if not text:
+        raise HTTPException(422, "message vide")
+    is_new = not req.conversation_id
+    conversation = (create_conversation(db, user.id, text[:60], req.language) if is_new
+                    else get_conversation(db, user.id, req.conversation_id))
+    add_message(db, conversation["id"], "user", text, {"voice": True} if req.voice else {})
+    history, total = load_history(db, conversation["id"])
+    memories = load_memories(db, user.id)
+    state = {
+        "history": history, "roles": roles, "language": req.language,
+        "memory": render_memories(memories), "summary": conversation.get("summary") or "",
+        "force_agent": "analyste" if req.deep else None,
+    }
 
     async def generate():
         client = _openai_client()
+        yield _sse({"conversation": {"id": conversation["id"], "title": conversation["title"], "new": is_new}})
+        answer, meta = "", {"steps": []}
         try:
-            stream = await client.chat.completions.create(
-                model=CHAT_MODEL,
-                messages=[{"role": "system", "content": full_system}] + req.messages,
-                max_tokens=700,
-                temperature=0.4,
-                stream=True,
-            )
-            async for chunk in stream:
-                delta = chunk.choices[0].delta if chunk.choices else None
-                if delta and delta.content:
-                    yield f"data: {json.dumps({'text': delta.content})}\n\n"
+            async for ev in stream_team(state, user, db):
+                if "text" in ev:
+                    answer += ev["text"]
+                elif ev.get("reset"):
+                    answer = ""
+                elif "agent" in ev:
+                    meta["agent"] = ev["agent"]
+                elif "step" in ev:
+                    meta["steps"].append(ev["step"])
+                elif "todos" in ev:
+                    meta["todos"] = ev["todos"]
+                elif "action_proposal" in ev:
+                    meta["action"] = ev["action_proposal"]
+                yield _sse(ev)
         except Exception as e:
-            log.error("Copilot LLM stream error: %s", e)
-            yield f"data: {json.dumps({'text': f'Erreur: {type(e).__name__}: {e}'})}\n\n"
+            log.error("Copilot team error: %s", e)
+            msg = "Désolé, une erreur est survenue. Réessayez dans un instant."
+            answer += ("\n\n" if answer else "") + msg
+            yield _sse({"text": msg})
+
+        saved = add_message(db, conversation["id"], "assistant", answer, meta)
+        yield _sse({"done": {"message_id": saved["id"]}})
+
+        if is_new and answer:
+            title = await make_title(client, FAST_MODEL, text, answer)
+            if title:
+                db.from_("copilot_conversations").update({"title": title}).eq("id", conversation["id"]).execute()
+                yield _sse({"title": {"id": conversation["id"], "title": title}})
+        if answer:
+            new_facts = await extract_memories(client, FAST_MODEL, db, user.id, conversation["id"], text, answer)
+            if new_facts:
+                yield _sse({"memory": [{"id": m["id"], "content": m["content"]} for m in new_facts]})
+        await maybe_summarize(client, FAST_MODEL, db, conversation, total + 1)
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-async def _action_response(req: CopilotRequest, user: CurrentUser, db: Client, full_system: str):
-    """Non-streaming tool-calling turn : le LLM choisit un outil (ou pose une
-    question de clarification en texte libre) — aucune écriture n'a lieu
-    ici, seulement la création d'une proposition en attente si un outil est
-    appelé avec des arguments valides."""
-    client = _openai_client()
+# ── Historique des conversations ─────────────────────────────────────────────
 
-    async def generate():
-        try:
-            resp = await client.chat.completions.create(
-                model=CHAT_MODEL,
-                messages=[{"role": "system", "content": full_system}] + req.messages,
-                max_tokens=500,
-                temperature=0.2,
-                tools=build_tool_schemas(),
-                tool_choice="auto",
-            )
-            choice = resp.choices[0]
-            tool_calls = choice.message.tool_calls or []
+class ConversationPatch(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=80)
+    pinned: Optional[bool] = None
 
-            if not tool_calls:
-                text = choice.message.content or "Je n'ai pas assez d'informations pour effectuer cette action — pouvez-vous préciser ?"
-                yield f"data: {json.dumps({'text': text})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
 
-            call = tool_calls[0]
-            spec = ACTIONS.get(call.function.name)
-            if spec is None:
-                yield f"data: {json.dumps({'text': 'Action inconnue — reformulez votre demande.'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+@router.get("/conversations")
+async def list_conversations(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+    q: Optional[str] = None,
+):
+    query = (db.from_("copilot_conversations").select("id, title, language, pinned, created_at, updated_at")
+             .eq("user_id", user.id))
+    if q:
+        query = query.ilike("title", f"%{q.strip()[:60]}%")
+    return query.order("pinned", desc=True).order("updated_at", desc=True).limit(200).execute().data or []
 
-            try:
-                arguments: dict[str, Any] = json.loads(call.function.arguments or "{}")
-            except json.JSONDecodeError:
-                yield f"data: {json.dumps({'text': 'Je n’ai pas pu interpréter les paramètres — reformulez votre demande.'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
 
-            path_params, body_fields = split_arguments(spec, arguments)
-            try:
-                validated = validate_body(spec, body_fields)
-            except HTTPException as e:
-                yield f"data: {json.dumps({'text': str(e.detail)})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-            clean_body = validated.model_dump(mode="json") if validated is not None else {}
+@router.get("/conversations/{conversation_id}/messages")
+async def conversation_messages(
+    conversation_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    conv = get_conversation(db, user.id, conversation_id)
+    rows = (db.from_("copilot_messages").select("id, role, content, meta, created_at")
+            .eq("conversation_id", conv["id"]).order("created_at").limit(500).execute().data or [])
+    # Statut à jour des actions proposées (confirmées/annulées depuis).
+    ids = [r["meta"]["action"]["id"] for r in rows if (r.get("meta") or {}).get("action")]
+    if ids:
+        st = {a["id"]: a["status"] for a in (db.from_("copilot_pending_actions").select("id, status")
+                                              .in_("id", ids).eq("user_id", user.id).execute().data or [])}
+        for r in rows:
+            act = (r.get("meta") or {}).get("action")
+            if act:
+                act["status"] = st.get(act["id"], "pending")
+    return {"conversation": conv, "messages": rows}
 
-            missing_path = [p for p in spec.path_params if not path_params.get(p)]
-            if missing_path:
-                missing_text = f"Il me manque : {', '.join(missing_path)}. Pouvez-vous préciser ?"
-                yield f"data: {json.dumps({'text': missing_text})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
 
-            summary = summarize_action(spec, path_params, clean_body)
-            res = db.from_("copilot_pending_actions").insert({
-                "user_id": user.id,
-                "action_key": spec.key,
-                "path_params": path_params,
-                "payload": clean_body,
-                "summary": summary,
-            }).execute()
-            pending = res.data[0]
-            yield f"data: {json.dumps({'action_proposal': {'id': pending['id'], 'label': spec.label, 'summary': summary}})}\n\n"
-            yield "data: [DONE]\n\n"
-        except Exception as e:
-            log.error("Copilot action proposal error: %s", e)
-            yield f"data: {json.dumps({'text': f'Erreur: {type(e).__name__}: {e}'})}\n\n"
-            yield "data: [DONE]\n\n"
+@router.patch("/conversations/{conversation_id}")
+async def update_conversation(
+    conversation_id: str,
+    body: ConversationPatch,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    get_conversation(db, user.id, conversation_id)
+    patch = body.model_dump(exclude_none=True)
+    if not patch:
+        raise HTTPException(400, "Rien à modifier.")
+    return db.from_("copilot_conversations").update(patch).eq("id", conversation_id).execute().data[0]
 
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    get_conversation(db, user.id, conversation_id)
+    db.from_("copilot_conversations").delete().eq("id", conversation_id).execute()
+    return {"ok": True}
+
+
+# ── Mémoire à long terme ─────────────────────────────────────────────────────
+
+class MemoryCreate(BaseModel):
+    content: str = Field(..., min_length=2, max_length=300)
+
+
+@router.get("/memories")
+async def list_memories(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    return load_memories(db, user.id)
+
+
+@router.post("/memories")
+async def add_memory(
+    body: MemoryCreate,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    return save_memory(db, user.id, body.content)
+
+
+@router.delete("/memories/{memory_id}")
+async def delete_memory(
+    memory_id: str,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    db.from_("copilot_memories").delete().eq("id", memory_id).eq("user_id", user.id).execute()
+    return {"ok": True}
+
+
+@router.delete("/memories")
+async def clear_memories(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[Client, Depends(get_db)],
+):
+    db.from_("copilot_memories").delete().eq("user_id", user.id).execute()
+    return {"ok": True}
+
+
+# ── Voix : dictée (darija, français, anglais, arabe) et lecture à voix haute ─
+
+STT_MODEL = os.environ.get("COPILOT_STT_MODEL", "whisper-1")
+TTS_MODEL = os.environ.get("COPILOT_TTS_MODEL", "gpt-4o-mini-tts")
+TTS_VOICE = os.environ.get("COPILOT_TTS_VOICE", "nova")
+STT_HINT = {
+    "darija": ("ar", "Darija marocaine (dialecte marocain), mélange possible avec du français : "
+                     "salam, wakha, bghit, chno, kifach, dyal, l'congé, la paie, la comptabilité."),
+    "ar": ("ar", None), "fr": ("fr", None), "en": ("en", None),
+}
+MAX_AUDIO_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/transcribe")
+async def transcribe(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    audio: UploadFile = File(...),
+    language: str = Form("fr"),
+):
+    data = await audio.read()
+    if not data:
+        raise HTTPException(400, "Enregistrement vide.")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(413, "Enregistrement trop long (10 Mo maximum).")
+    lang, hint = STT_HINT.get(language, STT_HINT["fr"])
+    try:
+        res = await _openai_client().audio.transcriptions.create(
+            model=STT_MODEL, file=(audio.filename or "voice.webm", data, audio.content_type or "audio/webm"),
+            language=lang, **({"prompt": hint} if hint else {}),
+        )
+        return {"text": (getattr(res, "text", "") or "").strip()}
+    except Exception as e:
+        log.warning("Copilot transcription failed: %s", e)
+        raise HTTPException(503, "Transcription indisponible.")
+
+
+class SpeechRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4000)
+    language: str = Field("fr", max_length=8)
+
+
+TTS_STYLE = {
+    "darija": "Parle en darija marocaine, avec un accent marocain naturel, chaleureux et posé.",
+    "ar": "تحدث بالعربية الفصحى بوضوح وهدوء.",
+    "fr": "Parle en français, ton clair, chaleureux et professionnel.",
+    "en": "Speak in English with a clear, warm and professional tone.",
+}
+
+
+@router.post("/speech")
+async def speech(
+    body: SpeechRequest,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+):
+    text = body.text.replace("**", "").replace("#", "")[:1500]
+    try:
+        kwargs = {"model": TTS_MODEL, "voice": TTS_VOICE, "input": text, "response_format": "mp3"}
+        if "tts-1" not in TTS_MODEL:
+            kwargs["instructions"] = TTS_STYLE.get(body.language, TTS_STYLE["fr"])
+        res = await _openai_client().audio.speech.create(**kwargs)
+        return Response(content=res.content, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        log.warning("Copilot speech failed: %s", e)
+        raise HTTPException(503, "Synthèse vocale indisponible.")
 
 
 @router.post("/actions/{action_id}/confirm")

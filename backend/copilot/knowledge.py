@@ -41,6 +41,14 @@ PLATFORM_SECTIONS: list[dict] = [
                 "une session directement depuis la plateforme sans logiciel externe.",
     },
     {
+        "key": "salle_conference", "title": "Salle de conférence", "path": "/dashboard/salle-conference", "roles": ["all"],
+        "body": "Visioconférence Jitsi pour le personnel (Gestion → Salle de conférence) : salles permanentes "
+                "toujours ouvertes (Salle principale ; Direction, Pédagogique et Administration selon le rôle) et "
+                "réunions instantanées — « Nouvelle réunion » crée un code xxxx-xxxx-xxxx à partager par lien ; "
+                "« Rejoindre avec un code » pour entrer. Avant d'entrer : aperçu caméra/micro. Dans la salle : "
+                "micro, caméra, partage d'écran, mosaïque, discussion, inviter, quitter.",
+    },
+    {
         "key": "communication", "title": "Communication", "path": "/dashboard/communication", "roles": ["all"],
         "body": "Deux onglets : Annonces (diffusion interne ciblée par rôle — admin, professeurs, "
                 "stagiaires — publiée uniquement par un administrateur) et Groupes (discussions liées aux "
@@ -62,11 +70,11 @@ PLATFORM_SECTIONS: list[dict] = [
                 "à un assigné ou à un administrateur.",
     },
     {
-        "key": "users", "title": "Utilisateurs", "path": "/dashboard/users", "roles": ["staff"],
+        "key": "users", "title": "Utilisateurs", "path": "/dashboard/users", "roles": ["admin"],
         "body": "Gestion des comptes de la plateforme. Un administrateur crée un compte par CANAL de "
                 "permission (V2 = administrateur, V1 = comptabilité, V0 = formateurs/assistantes "
                 "RH/comptable — V0 attribue les 3 rôles à la fois) plutôt qu'un rôle brut, et peut ajouter/"
-                "retirer un canal à un compte existant. Un professeur n'y crée que des comptes stagiaires.",
+                "retirer un canal à un compte existant. Les comptes stagiaires sont gérés dans la plateforme pédagogique.",
     },
     {
         "key": "documents", "title": "Documents", "path": "/dashboard/documents", "roles": ["admin"],
