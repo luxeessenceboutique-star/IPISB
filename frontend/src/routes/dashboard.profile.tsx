@@ -89,6 +89,13 @@ function ProfilePage() {
 
   const topRole = isAdmin ? "admin" : isProf ? "professor" : "student";
 
+  // Robustesse indicative du nouveau mot de passe (0 à 4).
+  const pwScore = !newPw ? 0 : Math.min(4,
+    (newPw.length >= 8 ? 1 : 0) + (newPw.length >= 12 ? 1 : 0) +
+    (/[A-Z]/.test(newPw) && /[a-z]/.test(newPw) ? 1 : 0) + (/\d/.test(newPw) && /[^A-Za-z0-9]/.test(newPw) ? 1 : 0));
+  const pwLabel = ["", lang === "fr" ? "Faible" : "Weak", lang === "fr" ? "Moyen" : "Fair", lang === "fr" ? "Bon" : "Good", lang === "fr" ? "Excellent" : "Strong"][pwScore];
+  const pwMatch = !!confirmPw && confirmPw === newPw;
+
   const fieldLabel = (txt: string) => (
     <div className="eyebrow" style={{ fontSize: 9.5, marginBottom: 6 }}>{txt}</div>
   );
@@ -103,7 +110,11 @@ function ProfilePage() {
 
       <div className="grid items-start gap-4 lg:[grid-template-columns:320px_1fr]">
         {/* Identity card */}
-        <div className="dash-card card-pop flex flex-col items-center gap-3 px-5 py-7 text-center">
+        <div className="dash-card card-pop pf-id flex flex-col items-center gap-3 px-5 pb-7 text-center">
+          <div className="pf-banner paper-ecg" aria-hidden>
+            <svg viewBox="0 0 320 60" preserveAspectRatio="none"><path className="pf-trace" d="M0 34 H110 l8 -14 l8 26 l8 -30 l8 18 H320" /></svg>
+          </div>
+          <div className="pf-av">
           {avatarUrl ? (
             <img
               src={avatarUrl}
@@ -115,8 +126,9 @@ function ProfilePage() {
           ) : (
             <DashAvatar name={fullName || user?.email || "?"} size={76} tone="primary" />
           )}
+          </div>
           <div>
-            <div className="h-serif" style={{ fontSize: 24 }}>{fullName || user?.email || "—"}</div>
+            <div className="pf-name">{fullName || user?.email || "—"}</div>
             <div className="mt-1" style={{ color: "var(--pal-muted)", fontSize: 13 }}>{user?.email}</div>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-1.5">
@@ -125,7 +137,7 @@ function ProfilePage() {
               <span key={r} className={`chip-c ${ROLE_CHIPS[r] ?? ""}`}>{t(`dash.role.${r}` as any)}</span>
             ))}
           </div>
-          <div className="flex flex-col items-center gap-1" style={{ fontSize: 12, color: "var(--pal-muted)" }}>
+          <div className="pf-facts">
             <span className="flex items-center gap-1.5">
               <Calendar size={13} strokeWidth={1.7} />{memberSince}
             </span>
@@ -217,10 +229,21 @@ function ProfilePage() {
                 </div>
               </div>
             </div>
+            {newPw && (
+              <div className="pf-strength" data-score={pwScore}>
+                <div className="pf-strength-bars">{[1, 2, 3, 4].map(i => <i key={i} className={i <= pwScore ? "on" : undefined} />)}</div>
+                <span>{pwLabel}</span>
+                {confirmPw && (
+                  <span className={pwMatch ? "pf-match ok" : "pf-match"}>
+                    {pwMatch ? (lang === "fr" ? "✓ Identiques" : "✓ Match") : (lang === "fr" ? "Ne correspondent pas" : "Don't match")}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="mt-5">
               <button
                 type="button"
-                className="btn-c btn-c-ghost btn-c-sm"
+                className="btn-c btn-c-primary btn-c-sm"
                 disabled={changingPw || !newPw || !confirmPw}
                 onClick={changePassword}
               >

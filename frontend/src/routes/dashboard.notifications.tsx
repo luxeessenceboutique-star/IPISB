@@ -5,9 +5,9 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { toast } from "sonner";
-import { Bell, Loader2, CheckCheck, Info, CheckCircle2, AlertTriangle, XCircle, Trash2 } from "lucide-react";
+import { Bell, Loader2, CheckCheck, Info, CheckCircle2, AlertTriangle, XCircle, Trash2, BellDot, Inbox, ChevronRight } from "lucide-react";
 import { ListSkeleton } from "@/components/Skeletons";
-import { PageHead, EmptyHint } from "@/components/dashboard/ui";
+import { PageHead, EmptyHint, SegTabs } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/notifications")({
   beforeLoad: async () => {
@@ -114,11 +114,18 @@ function NotificationsPage() {
     return new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   };
 
-  const pill = (active: boolean): React.CSSProperties => ({
-    padding: "9px 20px", borderRadius: 999, fontSize: 13.5, fontWeight: 700, cursor: "pointer",
-    border: "1px solid " + (active ? "var(--pal-ink)" : "var(--pal-line, oklch(88% 0.02 165))"),
-    background: active ? "var(--pal-ink)" : "#fff", color: active ? "#fff" : "var(--pal-ink)",
-  });
+  // Regroupement par période : Aujourd'hui / Hier / Cette semaine / Plus ancien.
+  const L = (fr: string, ar: string, en: string) => lang === "fr" ? fr : lang === "ar" ? ar : en;
+  const bucketOf = (d: string) => {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const t0 = new Date(d).getTime();
+    if (t0 >= start.getTime()) return 0;
+    if (t0 >= start.getTime() - 86400000) return 1;
+    if (t0 >= start.getTime() - 6 * 86400000) return 2;
+    return 3;
+  };
+  const BUCKETS = [L("Aujourd'hui", "اليوم", "Today"), L("Hier", "أمس", "Yesterday"), L("Cette semaine", "هذا الأسبوع", "This week"), L("Plus ancien", "أقدم", "Older")];
+  const groups = BUCKETS.map((label, i) => ({ label, items: visible.filter(n => bucketOf(n.created_at) === i) })).filter(g => g.items.length > 0);
 
   return (
     <div>
@@ -128,33 +135,35 @@ function NotificationsPage() {
         sub={t("notifications.subtitle")}
       />
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2">
-          <button type="button" style={pill(filter === "all")} onClick={() => setFilter("all")}>
-            {lang === "fr" ? "Toutes" : lang === "ar" ? "الكل" : "All"}
-          </button>
-          <button type="button" style={pill(filter === "unread")} onClick={() => setFilter("unread")}>
-            {lang === "fr" ? "Non lues" : lang === "ar" ? "غير المقروءة" : "Unread"}
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="nt-bar">
+        <SegTabs
+          label={L("Filtre", "تصفية", "Filter")}
+          value={filter}
+          onChange={k => setFilter(k)}
+          items={[
+            { key: "all", label: <>{L("Toutes", "الكل", "All")} <span className="nt-count">{notifications.length}</span></>, icon: Inbox },
+            { key: "unread", label: <>{L("Non lues", "غير المقروءة", "Unread")} <span className="nt-count is-hot">{unreadCount}</span></>, icon: BellDot },
+          ]}
+        />
+        <div className="nt-actions">
           {unreadCount > 0 && (
-            <button type="button" onClick={markAllRead} style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-primary-deep)" }}>
+            <button type="button" onClick={markAllRead} className="btn-c btn-c-sm btn-c-soft">
+              <CheckCheck size={14} strokeWidth={1.8} />
               {t("notifications.mark_all_read")}
             </button>
           )}
           {readCount > 0 && (
-            <button type="button" onClick={() => bulkDelete("read")} style={{ fontSize: 13.5, fontWeight: 700, color: "var(--pal-primary-deep)" }}>
+            <button type="button" onClick={() => bulkDelete("read")} className="btn-c btn-c-sm btn-c-ghost">
               {t("notifications.delete_read")}
             </button>
           )}
           {notifications.length > 0 && (
-            <button type="button" onClick={() => bulkDelete("mine")} className="inline-flex items-center gap-1" style={{ fontSize: 13.5, fontWeight: 700, color: "oklch(55% 0.2 25)" }}>
+            <button type="button" onClick={() => bulkDelete("mine")} className="btn-c btn-c-sm btn-c-danger">
               <Trash2 className="h-3.5 w-3.5" /> {t("notifications.delete_all")}
             </button>
           )}
           {isAdmin && (
-            <button type="button" onClick={() => bulkDelete("all")} className="inline-flex items-center gap-1" style={{ fontSize: 13.5, fontWeight: 700, color: "oklch(55% 0.2 25)" }}>
+            <button type="button" onClick={() => bulkDelete("all")} className="btn-c btn-c-sm btn-c-danger">
               <Trash2 className="h-3.5 w-3.5" /> {t("notifications.purge_all")}
             </button>
           )}
@@ -168,54 +177,52 @@ function NotificationsPage() {
           <EmptyHint icon={<Bell size={28} strokeWidth={1.7} />} text={t("notifications.empty")} />
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {visible.map(n => {
-            const Icon = TYPE_ICON[n.type] ?? Info;
-            return (
-              <div
-                key={n.id}
-                className="group flex items-center gap-4 transition-shadow hover:shadow-md"
-                style={{
-                  padding: "16px 20px", borderRadius: 18, background: "oklch(99% 0.006 165)",
-                  border: "1px solid oklch(80% 0.05 165)", opacity: n.read ? 0.78 : 1,
-                  cursor: n.link ? "pointer" : undefined,
-                }}
-                onClick={() => {
-                  if (!n.link) return;
-                  if (!n.read) markRead(n.id);
-                  // `href` (et non `to`) : TanStack Router découpe la chaîne en
-                  // pathname + search + hash. Indispensable pour les liens du type
-                  // "/dashboard/accounting?tab=validations".
-                  navigate({ href: n.link });
-                }}
-              >
-                <span
-                  className="flex shrink-0 items-center justify-center"
-                  style={{ width: 44, height: 44, borderRadius: 12, background: "oklch(22% 0.025 175)", color: "#fff" }}
-                >
-                  <Icon size={19} strokeWidth={1.7} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p style={{ fontSize: 15, fontWeight: 800, color: "var(--pal-ink)" }}>{n.title}</p>
-                  {n.message && <p className="mt-0.5" style={{ fontSize: 13, color: "var(--pal-muted)" }}>{n.message}</p>}
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <span className="whitespace-nowrap" style={{ fontSize: 12, color: "var(--pal-muted)" }}>{fmtAgo(n.created_at)}</span>
-                  <div className="flex items-center gap-1">
-                    {!n.read && (
-                      <button type="button" disabled={marking === n.id} onClick={e => { e.stopPropagation(); markRead(n.id); }} className="rounded-lg p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100" title={t("notifications.mark_read")}>
-                        {marking === n.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
-                    <button type="button" onClick={e => { e.stopPropagation(); deleteNotification(n.id); }} className="rounded-lg p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" aria-label="Delete">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                    {!n.read && <span className="rounded-full" style={{ width: 8, height: 8, background: "oklch(62% 0.2 25)" }} />}
-                  </div>
-                </div>
+        <div className="nt-groups" key={filter}>
+          {groups.map(g => (
+            <section key={g.label}>
+              <div className="nt-group-label mono-eyebrow">{g.label} · {g.items.length}</div>
+              <div className="dash-card nt-list">
+                {g.items.map((n, i) => {
+                  const Icon = TYPE_ICON[n.type] ?? Info;
+                  return (
+                    <div
+                      key={n.id}
+                      className={["nt-item", `nt-${TYPE_ICON[n.type] ? n.type : "info"}`, !n.read && "is-unread", n.link && "is-link"].filter(Boolean).join(" ")}
+                      style={{ ["--i" as string]: i } as React.CSSProperties}
+                      onClick={() => {
+                        if (!n.link) return;
+                        if (!n.read) markRead(n.id);
+                        // `href` (et non `to`) : TanStack Router découpe la chaîne en
+                        // pathname + search + hash (ex. "/dashboard/accounting?tab=validations").
+                        navigate({ href: n.link });
+                      }}
+                    >
+                      <span className="nt-ico"><Icon size={17} strokeWidth={1.8} /></span>
+                      <div className="min-w-0 flex-1">
+                        <p className="nt-title">{n.title}</p>
+                        {n.message && <p className="nt-msg">{n.message}</p>}
+                      </div>
+                      <div className="nt-side">
+                        <span className="nt-time">{fmtAgo(n.created_at)}</span>
+                        <div className="nt-btns">
+                          {!n.read && (
+                            <button type="button" disabled={marking === n.id} onClick={e => { e.stopPropagation(); markRead(n.id); }} className="doc-ibtn" title={t("notifications.mark_read")} aria-label={t("notifications.mark_read")}>
+                              {marking === n.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                          <button type="button" onClick={e => { e.stopPropagation(); deleteNotification(n.id); }} className="doc-ibtn is-danger" aria-label="Delete" title="Supprimer">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      {!n.read && <span className="nt-dot" aria-hidden />}
+                      {n.link && <ChevronRight size={15} strokeWidth={1.8} className="nt-go" />}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </div>
       )}
     </div>

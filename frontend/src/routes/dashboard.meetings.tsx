@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { Video, Plus, Clock, User as UserIcon, Trash2, X } from "lucide-react";
+import { Video, Plus, Clock, User as UserIcon, Trash2, X, Radio, History } from "lucide-react";
 import { PageHead, SectionLabel, EmptyHint } from "@/components/dashboard/ui";
 import { useDeepLinkFocus } from "@/lib/deep-link";
 
@@ -60,6 +60,14 @@ function meetingStatus(m: Meeting, now: Date): "live" | "upcoming" | "past" {
   if (now > end)    return "past";
   if (now >= start) return "live";
   return "upcoming";
+}
+
+// « dans 2 h 15 », « dans 3 j », « dans 12 min »
+function countdown(iso: string, now: Date): string {
+  const mins = Math.max(0, Math.round((new Date(iso).getTime() - now.getTime()) / 60000));
+  if (mins < 60) return `dans ${mins} min`;
+  if (mins < 1440) return `dans ${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")}`;
+  return `dans ${Math.round(mins / 1440)} j`;
 }
 
 function fmtDate(d: string) {
@@ -259,9 +267,10 @@ function MeetingsPage() {
     const isHost = m.created_by === user!.id;
     const canDelete = !isStudent && canCreate && (isHost || isAdmin) && !inHistory;
     return (
-      <div key={m.id} ref={m.id === focusId ? attachFocus : undefined} className="row-c flex-wrap" style={inHistory ? { opacity: 0.72 } : undefined}>
-        <span className="flex shrink-0" style={{ color: inHistory ? "var(--pal-muted)" : "var(--pal-primary)" }}>
-          <Video size={20} strokeWidth={1.7} />
+      <div key={m.id} ref={m.id === focusId ? attachFocus : undefined} className={["row-c flex-wrap mt-row", inHistory && "is-past", status === "live" && "is-live"].filter(Boolean).join(" ")}>
+        <span className="mt-date" aria-hidden>
+          <b>{new Date(m.scheduled_at).getDate()}</b>
+          <span>{new Date(m.scheduled_at).toLocaleDateString("fr-FR", { month: "short" }).replace(".", "")}</span>
         </span>
         <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: inHistory ? "var(--pal-muted)" : "var(--pal-ink)" }}>{m.title}</div>
@@ -296,11 +305,11 @@ function MeetingsPage() {
           <button
             type="button"
             onClick={() => { if (window.confirm("Supprimer cette réunion ?")) deleteMeeting(m.id); }}
-            className="rounded-lg p-1.5 text-muted-foreground hover:text-destructive"
+            className="doc-ibtn is-danger"
             aria-label="Supprimer"
             title="Supprimer"
           >
-            <Trash2 size={14} strokeWidth={1.7} />
+            <Trash2 size={14} strokeWidth={1.8} />
           </button>
         )}
       </div>
@@ -346,20 +355,24 @@ function MeetingsPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
           {/* Hero — imminent / live session (ink card) */}
           {hero && (
-            <div className="dash-card card-pop" style={{ background: "var(--pal-ink)", border: 0, padding: 26, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 260 }}>
-                <span className="eyebrow" style={{ color: "var(--pal-soft)" }}>
-                  {meetingStatus(hero, now) === "live" ? "En direct · " : "Prochaine session · "}{fmtDate(hero.scheduled_at)}
+            <div className={meetingStatus(hero, now) === "live" ? "dash-card paper-ecg mt-hero is-live" : "dash-card paper-ecg mt-hero"}>
+              <span className="mt-hero-cam" aria-hidden><Video size={26} strokeWidth={1.6} /></span>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <span className="mono-eyebrow mt-hero-eyebrow">
+                  {meetingStatus(hero, now) === "live"
+                    ? <><Radio size={12} strokeWidth={2} /> En direct</>
+                    : <>Prochaine session · {countdown(hero.scheduled_at, now)}</>}
+                  {" · "}{fmtDate(hero.scheduled_at)}
                 </span>
-                <h2 className="h-serif" style={{ fontSize: 27, color: "var(--pal-paper)", margin: "8px 0 6px" }}>{hero.title}</h2>
-                <div style={{ color: "oklch(75% 0.03 170)", fontSize: 13, display: "flex", gap: 16, flexWrap: "wrap" }}>
-                  {hero.host_name && <span style={{ display: "flex", alignItems: "center", gap: 6 }}><UserIcon size={14} strokeWidth={1.7} />{hero.host_name}</span>}
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clock size={14} strokeWidth={1.7} />{hero.duration_minutes} min</span>
-                  {hero.course_title && <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Video size={14} strokeWidth={1.7} />{hero.course_title}</span>}
+                <h2 className="mt-hero-title">{hero.title}</h2>
+                <div className="mt-hero-meta">
+                  {hero.host_name && <span><UserIcon size={14} strokeWidth={1.8} />{hero.host_name}</span>}
+                  <span><Clock size={14} strokeWidth={1.8} />{hero.duration_minutes} min</span>
+                  {hero.course_title && <span><Video size={14} strokeWidth={1.8} />{hero.course_title}</span>}
                 </div>
               </div>
-              <button type="button" disabled={joining} className="btn-c btn-c-green" style={{ fontSize: 14, padding: "12px 24px" }} onClick={() => joinMeeting(hero)}>
-                <Video size={17} strokeWidth={1.7} />{joining ? "Connexion…" : "Rejoindre la salle"}
+              <button type="button" disabled={joining} className="btn-c btn-c-primary mt-hero-join" onClick={() => joinMeeting(hero)}>
+                <Video size={17} strokeWidth={1.8} />{joining ? "Connexion…" : "Rejoindre la salle"}
               </button>
             </div>
           )}
@@ -367,19 +380,19 @@ function MeetingsPage() {
           {planned.length > 0 && (
             <div>
               <SectionLabel>Sessions planifiées</SectionLabel>
-              <div className="dash-card overflow-hidden">{planned.map(m => meetingRow(m))}</div>
+              <div className="dash-card overflow-hidden pouls-pane">{planned.map(m => meetingRow(m))}</div>
             </div>
           )}
 
           {past.length > 0 && (
             <div>
               <SectionLabel>
-                Historique
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><History size={13} strokeWidth={1.8} />Historique</span>
                 <span style={{ marginInlineStart: 8, fontFamily: "var(--font-mono, monospace)", fontSize: 10, fontWeight: 600, color: "var(--pal-muted)", letterSpacing: ".06em", verticalAlign: "middle" }}>
                   · lecture seule
                 </span>
               </SectionLabel>
-              <div className="dash-card overflow-hidden" style={{ borderStyle: "dashed", opacity: 0.9 }}>
+              <div className="dash-card overflow-hidden pouls-pane mt-history">
                 {past.map(m => meetingRow(m, true))}
               </div>
             </div>
