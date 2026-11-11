@@ -237,3 +237,66 @@
 .task-tr.late td:first-child { box-shadow: inset 3px 0 0 var(--pal-danger); }
 @keyframes task-land { 0% { opacity: 0; transform: translateY(-14px) rotate(-1.5deg) scale(1.02); } 60% { opacity: 1; transform: translateY(3px) rotate(.4deg); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .task-col, .task-card, .task-tr { animation: none !important; } }
+
+/* ═══ Comptabilité — langage « Pouls » pour tous les onglets ═══════════
+   Portée : .compta-pane (le contenu de l'onglet actif, fenêtres comprises).
+   Les styles en ligne des composants sont surchargés avec !important. */
+.compta-pane { animation: fade-in-soft .35s ease both; }
+
+/* Sur-titre de section : point teal qui pulse */
+.section-label { display: inline-flex; align-items: center; gap: 8px; }
+.section-label::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pal-primary); box-shadow: 0 0 0 3px oklch(48% .085 175 / .14); }
+
+/* Titres de fenêtres / formulaires */
+.compta-pane h2 { font-family: "Plus Jakarta Sans", system-ui, sans-serif !important; font-weight: 800 !important; letter-spacing: -.02em !important; font-size: clamp(19px, 2vw, 23px) !important; }
+
+/* Tableaux : en-têtes en sur-titre mono, lignes en cascade, survol teal */
+.compta-pane table { border-collapse: separate; border-spacing: 0; }
+.compta-pane thead th {
+  font-family: "JetBrains Mono", ui-monospace, monospace !important; font-size: 10.5px !important; font-weight: 600 !important;
+  letter-spacing: .1em !important; text-transform: uppercase !important; color: var(--pal-muted) !important;
+  background: oklch(97.5% .008 165); white-space: nowrap;
+}
+.compta-pane tbody tr { transition: background-color .2s, box-shadow .2s; animation: fade-in-soft .4s ease backwards; }
+.compta-pane tbody tr:hover { background: var(--pal-cream); }
+.compta-pane tbody tr:hover > td:first-child { box-shadow: inset 3px 0 0 var(--pal-primary); }
+
+/* Lignes de liste (.row-c) : cascade + liseré teal au survol */
+.compta-pane .row-c { position: relative; animation: rise .45s var(--ease-pouls) backwards; }
+.compta-pane .row-c:hover { background: var(--pal-cream); box-shadow: inset 3px 0 0 var(--pal-primary); }
+
+/* Cascade (tableaux et listes) — 12 premiers éléments */
+.compta-pane tbody tr:nth-child(1), .compta-pane .row-c:nth-child(1) { animation-delay: .04s; }
+.compta-pane tbody tr:nth-child(2), .compta-pane .row-c:nth-child(2) { animation-delay: .07s; }
+.compta-pane tbody tr:nth-child(3), .compta-pane .row-c:nth-child(3) { animation-delay: .10s; }
+.compta-pane tbody tr:nth-child(4), .compta-pane .row-c:nth-child(4) { animation-delay: .13s; }
+.compta-pane tbody tr:nth-child(5), .compta-pane .row-c:nth-child(5) { animation-delay: .16s; }
+.compta-pane tbody tr:nth-child(6), .compta-pane .row-c:nth-child(6) { animation-delay: .19s; }
+.compta-pane tbody tr:nth-child(7), .compta-pane .row-c:nth-child(7) { animation-delay: .22s; }
+.compta-pane tbody tr:nth-child(8), .compta-pane .row-c:nth-child(8) { animation-delay: .25s; }
+.compta-pane tbody tr:nth-child(9), .compta-pane .row-c:nth-child(9) { animation-delay: .28s; }
+.compta-pane tbody tr:nth-child(10), .compta-pane .row-c:nth-child(10) { animation-delay: .31s; }
+.compta-pane tbody tr:nth-child(11), .compta-pane .row-c:nth-child(11) { animation-delay: .34s; }
+.compta-pane tbody tr:nth-child(n+12), .compta-pane .row-c:nth-child(n+12) { animation-delay: .37s; }
+
+/* Tuiles de totaux (Journal de caisse, Notes de caisse, Chèques, Frais de mission) */
+.stat-tile { position: relative; overflow: hidden; padding: 16px 18px 18px !important; }
+.stat-tile::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg, var(--pal-primary), var(--pal-mid), transparent);
+  transform-origin: left; animation: pouls-bar 1.2s var(--ease-pouls) .3s backwards;
+}
+.stat-tile > div:first-child { font-family: "JetBrains Mono", ui-monospace, monospace !important; letter-spacing: .1em !important; }
+.stat-tile-v { font-family: "Plus Jakarta Sans", system-ui, sans-serif !important; font-size: 24px !important; font-weight: 800 !important; letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-top: 8px !important; }
+
+/* Champs de saisie et filtres dans les onglets */
+.compta-pane input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .compta-pane select, .compta-pane textarea {
+  transition: border-color .18s, box-shadow .18s;
+}
+.compta-pane input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus, .compta-pane select:focus, .compta-pane textarea:focus {
+  border-color: var(--pal-primary) !important; box-shadow: 0 0 0 3px oklch(48% .085 175 / .14); outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compta-pane, .compta-pane tbody tr, .compta-pane .row-c, .stat-tile::after { animation: none !important; }
+}

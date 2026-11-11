@@ -147,26 +147,28 @@ function AccountingPage() {
 
       <SegTabs items={visibleTabs} value={tab} onChange={k => setTab(k)} />
 
-      {tab === "validations"       && <AccountingValidations onNavigate={t => setTab(t as Tab)} />}
-      {tab === "mine"              && <MySubmissions />}
-      {tab === "overview"          && <AccountingOverview />}
-      {tab === "tuition"           && <AccountingTuitionTracking readOnly={readOnly} />}
-      {tab === "revenues"          && <AccountingRevenues key={scope ?? "all"} initialScope={scope} />}
-      {tab === "invoices"          && <AccountingInvoices />}
-      {tab === "purchase_requests" && <AccountingPurchaseRequests />}
-      {tab === "purchases"         && <AccountingPurchases />}
-      {tab === "payments"          && <AccountingPayments />}
-      {tab === "inventory"         && <AccountingInventory />}
-      {tab === "locaux"            && <AccountingLocaux />}
-      {tab === "budgets"           && <AccountingBudgets />}
-      {tab === "suppliers"         && <AccountingSuppliers />}
-      {tab === "categories"        && <AccountingCategories />}
-      {tab === "cash_journal"      && <AccountingCashJournal />}
-      {tab === "bank_journal"      && <AccountingBankJournal />}
-      {tab === "cheques"           && <AccountingCheques />}
-      {tab === "cash_notes"        && <AccountingCashNotes />}
-      {tab === "mission_notes"     && <AccountingMissionNotes />}
-      {tab === "journal"           && <AccountingJournal />}
+      <div className="compta-pane" key={tab}>
+        {tab === "validations"       && <AccountingValidations onNavigate={t => setTab(t as Tab)} />}
+        {tab === "mine"              && <MySubmissions />}
+        {tab === "overview"          && <AccountingOverview />}
+        {tab === "tuition"           && <AccountingTuitionTracking readOnly={readOnly} />}
+        {tab === "revenues"          && <AccountingRevenues key={scope ?? "all"} initialScope={scope} />}
+        {tab === "invoices"          && <AccountingInvoices />}
+        {tab === "purchase_requests" && <AccountingPurchaseRequests />}
+        {tab === "purchases"         && <AccountingPurchases />}
+        {tab === "payments"          && <AccountingPayments />}
+        {tab === "inventory"         && <AccountingInventory />}
+        {tab === "locaux"            && <AccountingLocaux />}
+        {tab === "budgets"           && <AccountingBudgets />}
+        {tab === "suppliers"         && <AccountingSuppliers />}
+        {tab === "categories"        && <AccountingCategories />}
+        {tab === "cash_journal"      && <AccountingCashJournal />}
+        {tab === "bank_journal"      && <AccountingBankJournal />}
+        {tab === "cheques"           && <AccountingCheques />}
+        {tab === "cash_notes"        && <AccountingCashNotes />}
+        {tab === "mission_notes"     && <AccountingMissionNotes />}
+        {tab === "journal"           && <AccountingJournal />}
+      </div>
     </div>
   );
 }

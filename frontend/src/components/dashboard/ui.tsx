@@ -84,7 +84,7 @@ export function SectionLabel({ children, action }: { children: ReactNode; action
     <div
       style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}
     >
-      <span className="eyebrow" style={{ color: "var(--pal-primary-deep)" }}>
+      <span className="mono-eyebrow section-label" style={{ color: "var(--pal-primary-deep)" }}>
         {children}
       </span>
       {action ?? null}

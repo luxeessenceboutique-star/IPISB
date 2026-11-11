@@ -107,9 +107,9 @@ function H2({ children }: { children: React.ReactNode }) {
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="dash-card" style={{ padding: "14px 18px", flex: "1 1 160px", minWidth: 0 }}>
+    <div className="dash-card stat-tile" style={{ padding: "14px 18px", flex: "1 1 160px", minWidth: 0 }}>
       <div style={{ ...labelStyle }}>{label}</div>
-      <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: PAL.ink, marginTop: 6 }}>{value}</div>
+      <div className="stat-tile-v" style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color: PAL.ink, marginTop: 6 }}>{value}</div>
     </div>
   );
 }

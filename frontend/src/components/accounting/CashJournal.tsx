@@ -115,9 +115,9 @@ function H2({ children }: { children: React.ReactNode }) {
 function StatTile({ label, value, tone }: { label: string; value: string; tone?: "green" | "red" | "ink" }) {
   const color = tone === "green" ? "var(--pal-primary)" : tone === "red" ? "var(--pal-danger)" : PAL.ink;
   return (
-    <div className="dash-card" style={{ padding: "14px 18px", flex: "1 1 160px", minWidth: 0 }}>
+    <div className="dash-card stat-tile" style={{ padding: "14px 18px", flex: "1 1 160px", minWidth: 0 }}>
       <div style={{ ...labelStyle }}>{label}</div>
-      <div style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color, marginTop: 6 }}>{value}</div>
+      <div className="stat-tile-v" style={{ fontFamily: mono, fontSize: 18, fontWeight: 700, color, marginTop: 6 }}>{value}</div>
     </div>
   );
 }
