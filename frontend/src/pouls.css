@@ -180,3 +180,26 @@
 .appr-abs { position: absolute; inset-inline-start: 18px; top: 16px; }
 [dir="rtl"] .appr-row { padding: 16px 68px 16px 20px; }
 @media (max-width: 520px) { .appr-row { padding: 56px 16px 16px; } .appr-abs { top: 14px; inset-inline-start: 16px; } }
+
+/* ── DI / DA : pipeline par étape + frise de progression ───────── */
+.pr-pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 10px; margin-bottom: 18px; }
+.pr-stg {
+  position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 14px 14px 16px; border-radius: 14px; border: 1px solid var(--pal-line-soft); background: var(--pal-paper);
+  font-family: inherit; color: var(--pal-ink); text-align: start; cursor: pointer; box-shadow: var(--shadow-card-2);
+  transition: transform .35s var(--ease-pouls), border-color .25s, box-shadow .35s, background-color .25s;
+  animation: pouls-pop .5s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+.pr-stg:hover { transform: translateY(-3px); border-color: var(--pal-soft); box-shadow: var(--shadow-pop); }
+.pr-stg.on { border-color: var(--pal-primary); background: linear-gradient(160deg, var(--pal-pale), var(--pal-paper) 70%); box-shadow: 0 0 0 3px var(--pal-pale), var(--shadow-card-2); }
+.pr-stg-n { font-size: 30px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+.pr-flow { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--pal-line-soft); overflow: hidden; }
+.pr-flow i { position: absolute; top: 0; left: 0; width: 28px; height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--pal-mid), transparent); animation: pr-flow 2.6s linear infinite; animation-delay: calc(var(--i, 0) * 300ms); }
+@keyframes pr-flow { from { transform: translateX(-30px); } to { transform: translateX(240px); } }
+.pr-row { animation: rise .5s var(--ease-pouls) backwards; animation-delay: calc(var(--i, 0) * 35ms + 100ms); }
+.pr-dots { display: inline-flex; align-items: center; gap: 4px; }
+.pr-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--pal-line); }
+.pr-dots i.done { background: var(--pal-primary); }
+.pr-dots i.cur { background: var(--pal-paper); box-shadow: 0 0 0 2px var(--pal-primary); animation: pouls-beat 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pr-stg, .pr-flow i, .pr-row, .pr-dots i.cur { animation: none !important; } }

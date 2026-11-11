@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Odometer } from "@/components/pouls/Odometer";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
@@ -1269,6 +1270,26 @@ function PaymentSchedule({ prId, total, canEdit, totalLabel = "Commande", locked
 // La décision (valider besoin/devis, émettre commande) suit le barème par
 // montant de "accounting.purchase_requests" (voir DetailModal) — plus un
 // simple booléen admin/non-admin passé en prop.
+// Pipeline « Pouls » : les 5 étapes du circuit d'une DA, dans l'ordre.
+const PIPELINE: { key: string; label: string }[] = [
+  { key: "brouillon", label: "Brouillon" },
+  { key: "besoin_valide", label: "Besoin validé" },
+  { key: "en_consultation", label: "En consultation" },
+  { key: "devis_valide", label: "Devis validé" },
+  { key: "commande_emise", label: "Commande émise" },
+];
+const STEP_OF: Record<string, number> = { brouillon: 0, retournee: 0, besoin_valide: 1, en_consultation: 2, devis_valide: 3, commande_emise: 4 };
+
+function StepDots({ status }: { status: string }) {
+  const at = STEP_OF[status];
+  if (at == null) return null;
+  return (
+    <span className="pr-dots" aria-label={`Étape ${at + 1} sur ${PIPELINE.length}`}>
+      {PIPELINE.map((st, i) => <i key={st.key} className={i < at ? "done" : i === at ? "cur" : ""} />)}
+    </span>
+  );
+}
+
 export function AccountingPurchaseRequests() {
   const [items, setItems] = useState<PR[]>([]);
   const [total, setTotal] = useState(0);
@@ -1281,6 +1302,7 @@ export function AccountingPurchaseRequests() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [stageCounts, setStageCounts] = useState<Record<string, number | null>>({});
 
   // Deep-link depuis une notification (?focus=<id>) — ouvre directement la
   // fiche visée, indépendamment de la page/du filtre courant (le détail se
@@ -1302,6 +1324,16 @@ export function AccountingPurchaseRequests() {
       setItems(res.items ?? []); setTotal(res.total ?? 0);
     } catch (err: any) { toast.error(err?.message ?? "Erreur lors du chargement."); }
     finally { setLoading(false); }
+    loadStageCounts();
+  }
+
+  // Compte par étape du pipeline : une requête légère (page_size=1) par étape.
+  function loadStageCounts() {
+    Promise.all(PIPELINE.map(st =>
+      api.get(`/api/accounting/purchase-requests?page=1&page_size=1&status=${st.key}`)
+        .then((r: { total?: number }) => [st.key, r?.total ?? 0] as const)
+        .catch(() => [st.key, null] as const),
+    )).then(pairs => setStageCounts(Object.fromEntries(pairs)));
   }
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, statusFilter, page]);
   useEffect(() => { api.get("/api/accounting/suppliers").then((d: Supplier[]) => setSuppliers(d ?? [])).catch(() => {}); }, []);
@@ -1313,6 +1345,24 @@ export function AccountingPurchaseRequests() {
     <div>
       {createOpen && <CreateModal categories={categories} onClose={() => setCreateOpen(false)} onSaved={load} />}
       {detailId && <DetailModal prId={detailId} suppliers={suppliers} categories={categories} onClose={() => setDetailId(null)} onChanged={load} />}
+
+      {/* Pipeline : une carte par étape, cliquable pour filtrer la liste */}
+      <div className="pr-pipe" role="group" aria-label="Filtrer par étape">
+        {PIPELINE.map((st, i) => {
+          const on = statusFilter === st.key;
+          const n = stageCounts[st.key];
+          return (
+            <button key={st.key} type="button" aria-pressed={on} className={on ? "pr-stg on" : "pr-stg"}
+              style={{ ["--i" as string]: i } as React.CSSProperties}
+              onClick={() => { setPage(1); setStatusFilter(on ? "" : st.key); }}>
+              <span className={`chip-c ${STATUS[st.key]?.tone ?? ""}`}>{st.label}</span>
+              <span className="pr-stg-n">{n == null ? "—" : <Odometer value={n} delayIndex={i} />}</span>
+              <span className="mono-eyebrow" style={{ letterSpacing: ".08em" }}>Étape {i + 1}</span>
+              <span className="pr-flow" aria-hidden><i /></span>
+            </button>
+          );
+        })}
+      </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "1 1 220px" }}>
@@ -1335,10 +1385,10 @@ export function AccountingPurchaseRequests() {
       ) : (
         <>
           <div className="dash-card overflow-hidden">
-            {items.map(pr => {
+            {items.map((pr, ri) => {
               const st = STATUS[pr.status];
               return (
-                <div key={pr.id} className="row-c flex-wrap" style={{ cursor: "pointer" }} onClick={() => setDetailId(pr.id)}>
+                <div key={pr.id} className="row-c flex-wrap pr-row" style={{ cursor: "pointer", ["--i" as string]: ri } as React.CSSProperties} onClick={() => setDetailId(pr.id)}>
                   <span className="flex shrink-0" style={{ color: "var(--pal-primary)" }}><ClipboardList size={18} strokeWidth={1.7} /></span>
                   <div className="min-w-0 flex-1" style={{ minWidth: 180 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: PAL.ink }}>{pr.request_number}</div>
@@ -1346,6 +1396,7 @@ export function AccountingPurchaseRequests() {
                       {categories.find(c => c.id === pr.category_id)?.name ?? "—"} · {pr.justification || "—"}
                     </div>
                   </div>
+                  <StepDots status={pr.status} />
                   <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 700, color: PAL.ink }}>{fmtMAD(pr.budget_estimate)}</span>
                   <span className={`chip-c ${st?.tone}`}>{st?.label ?? pr.status}</span>
                 </div>
