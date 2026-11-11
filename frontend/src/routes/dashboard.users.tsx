@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Plus, X, Loader2, UserPlus, Trash2, Search } from "lucide-react";
+import { Plus, X, Loader2, UserPlus, Trash2, Search, GraduationCap, BookOpen, ShieldCheck, Users, KeyRound } from "lucide-react";
+import { Odometer } from "@/components/pouls/Odometer";
 import { PageHead, DashAvatar } from "@/components/dashboard/ui";
 
 export const Route = createFileRoute("/dashboard/users")({
@@ -271,6 +272,7 @@ function UsersPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showModal,  setShowModal]  = useState(false);
   const [q,          setQ]          = useState("");
+  const [roleFilter, setRoleFilter] = useState<AppRole | "all">("all");
 
   const isAdmin = roles.includes("admin");
   const isProf  = roles.includes("professor");
@@ -338,11 +340,11 @@ function UsersPage() {
     d ? new Date(d).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
 
   const needle = q.trim().toLowerCase();
-  const filtered = needle
-    ? rows.filter(r =>
-        (r.full_name ?? "").toLowerCase().includes(needle) ||
-        (r.email ?? "").toLowerCase().includes(needle))
-    : rows;
+  const filtered = rows.filter(r =>
+    (roleFilter === "all" || r.roles.includes(roleFilter)) &&
+    (!needle ||
+      (r.full_name ?? "").toLowerCase().includes(needle) ||
+      (r.email ?? "").toLowerCase().includes(needle)));
 
   const roleColor = (r: AppRole) =>
     r === "admin"
@@ -408,46 +410,62 @@ function UsersPage() {
           }
         />
 
-        {!loading && isAdmin && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: 12,
-              marginBottom: 20,
-            }}
-          >
-            {[
-              { l: lang === "fr" ? "Étudiants" : lang === "ar" ? "الطلبة" : "Students", v: rows.filter(r => r.roles.includes("student")).length },
-              { l: lang === "fr" ? "Professeurs" : lang === "ar" ? "الأساتذة" : "Professors", v: rows.filter(r => r.roles.includes("professor")).length },
-              { l: lang === "fr" ? "Administrateurs" : lang === "ar" ? "المشرفون" : "Admins", v: rows.filter(r => r.roles.includes("admin")).length },
-              { l: lang === "fr" ? "Comptes" : lang === "ar" ? "الحسابات" : "Accounts", v: rows.length },
-            ].map(s => (
-              <div key={s.l} className="dash-card" style={{ padding: "14px 18px" }}>
-                <div style={{ fontSize: 11, color: "var(--pal-muted)", fontWeight: 600, fontFamily: sans }}>{s.l}</div>
-                <div className="stat-num" style={{ fontSize: 30 }}>{s.v}</div>
+        {!loading && isAdmin && (() => {
+          const L = (fr: string, ar: string, en: string) => lang === "fr" ? fr : lang === "ar" ? ar : en;
+          const stats: { key: AppRole | "all"; l: string; v: number; icon: typeof Users; tone: string }[] = [
+            { key: "all", l: L("Comptes", "الحسابات", "Accounts"), v: rows.length, icon: Users, tone: "var(--pal-primary)" },
+            { key: "student", l: L("Étudiants", "الطلبة", "Students"), v: rows.filter(r => r.roles.includes("student")).length, icon: GraduationCap, tone: "oklch(58% 0.12 245)" },
+            { key: "professor", l: L("Professeurs", "الأساتذة", "Professors"), v: rows.filter(r => r.roles.includes("professor")).length, icon: BookOpen, tone: "oklch(62% 0.13 75)" },
+            { key: "admin", l: L("Administrateurs", "المشرفون", "Admins"), v: rows.filter(r => r.roles.includes("admin")).length, icon: ShieldCheck, tone: "oklch(48% 0.085 175)" },
+          ];
+          const total = Math.max(1, rows.length);
+          const chanCount = (ch: Channel) => rows.filter(r => channelFor(r.roles) === ch).length;
+          return (
+            <>
+              <div className="usr-stats" role="tablist" aria-label={L("Filtrer par rôle", "تصفية حسب الدور", "Filter by role")}>
+                {stats.map((s, i) => {
+                  const Icon = s.icon;
+                  const on = roleFilter === s.key;
+                  return (
+                    <button key={s.key} type="button" role="tab" aria-selected={on}
+                      className={on ? "dash-card usr-stat is-on" : "dash-card usr-stat"}
+                      style={{ ["--tone" as string]: s.tone, ["--i" as string]: i } as React.CSSProperties}
+                      onClick={() => setRoleFilter(on && s.key !== "all" ? "all" : s.key)}>
+                      <div className="usr-stat-top">
+                        <span className="usr-stat-ico"><Icon size={15} strokeWidth={1.9} /></span>
+                        <span className="usr-stat-l">{s.l}</span>
+                      </div>
+                      <div className="usr-stat-v"><Odometer value={s.v} delayIndex={i} /></div>
+                      <span className="usr-bar"><i style={{ width: `${Math.round((s.v / total) * 100)}%` }} /></span>
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        )}
 
-        {!loading && isAdmin && (
-          <div className="dash-card" style={{ padding: "12px 18px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 11, color: "var(--pal-muted)", fontWeight: 600, fontFamily: sans, letterSpacing: ".05em", textTransform: "uppercase" as const }}>
-              {lang === "fr" ? "Canal de permission Comptabilité" : lang === "ar" ? "قناة صلاحيات المحاسبة" : "Accounting permission channel"}
-            </div>
-            {(["v2", "v1", "v0"] as Channel[]).map(ch => (
-              <div key={ch} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5 }}>
-                <Badge className={`${CHANNEL_STYLE[ch]} border-dashed font-mono text-[10px] shrink-0`} variant="outline">
-                  {t(`users.channel.${ch}.label`)}
-                </Badge>
-                <span style={{ color: "var(--pal-muted)", lineHeight: 1.5 }}>{t(`users.channel.${ch}.desc`)}</span>
+              <div className="dash-card usr-chans">
+                <div className="usr-chans-head">
+                  <KeyRound size={14} strokeWidth={1.9} />
+                  <span className="mono-eyebrow">{L("Canal de permission Comptabilité", "قناة صلاحيات المحاسبة", "Accounting permission channel")}</span>
+                </div>
+                <div className="usr-chans-grid">
+                  {(["v2", "v1", "v0"] as Channel[]).map(ch => (
+                    <div key={ch} className={`usr-chan usr-chan-${ch}`}>
+                      <div className="usr-chan-top">
+                        <Badge className={`${CHANNEL_STYLE[ch]} border-dashed font-mono text-[10px] shrink-0`} variant="outline">
+                          {t(`users.channel.${ch}.label`)}
+                        </Badge>
+                        <b>{chanCount(ch)}</b>
+                      </div>
+                      <p>{t(`users.channel.${ch}.desc`)}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
+            </>
+          );
+        })()}
 
-        <div className="dash-card" style={{ overflow: "hidden" }}>
+        <div className="dash-card pouls-pane usr-table" style={{ overflow: "hidden" }} key={roleFilter}>
           {loading ? (
             <div className="flex items-center justify-center p-12 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -544,16 +562,9 @@ function UsersPage() {
                                 onClick={() => deleteUser(r.id, r.email)}
                                 disabled={deletingId === r.id}
                                 title="Supprimer ce compte"
-                                style={{
-                                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                                  width: 30, height: 30, borderRadius: 8, border: `1px solid ${PAL.line}`,
-                                  background: "transparent", cursor: deletingId === r.id ? "not-allowed" : "pointer",
-                                  color: deletingId === r.id ? PAL.muted : "oklch(55% 0.18 25)",
-                                  transition: "background .15s, color .15s",
-                                  flexShrink: 0,
-                                }}
-                                onMouseEnter={e => { if (deletingId !== r.id) { (e.currentTarget as HTMLButtonElement).style.background = "oklch(97% 0.01 25)"; } }}
-                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                                aria-label="Supprimer ce compte"
+                                className="doc-ibtn is-danger"
+                                style={{ border: `1px solid ${PAL.line}` }}
                               >
                                 {deletingId === r.id
                                   ? <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
