@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
 import { RealtimeVoice, browserVoice, type CallPhase } from "@/lib/realtimeVoice";
+import { describeMediaError, mediaAvailable } from "@/lib/media";
 import {
   X, Send, Check, Loader2, Mic, Square, Phone, PhoneOff, Brain, SquarePen, PanelLeft,
   Maximize2, Minimize2, Search, Pin, PinOff, Pencil, Trash2, Copy, Volume2, VolumeX, Sparkles,
@@ -468,8 +469,10 @@ export function PlatformCopilot() {
     // micro, le navigateur le laisserait suspendu (niveau toujours à 0).
     const ctx = new AudioContext();
     ctx.resume().catch(() => {});
+    const pre = mediaAvailable();
+    if (!pre.ok) { ctx.close().catch(() => {}); return Promise.reject(Object.assign(new Error(pre.reason), { mic: true })); }
     return new Promise((resolve, reject) => {
-      navigator.mediaDevices?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(stream => {
+      navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(stream => {
         ctx.resume().catch(() => {});
         const mime = pickMime();
         const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -514,7 +517,7 @@ export function PlatformCopilot() {
         recRef.current = { stop: finish };
         mr.start(250);
         loop();
-      }).catch(() => { ctx.close().catch(() => {}); reject(new Error("mic")); });
+      }).catch(err => { ctx.close().catch(() => {}); reject(Object.assign(new Error(describeMediaError(err)), { mic: true })); });
     });
   }, [lang]);
 
@@ -528,7 +531,7 @@ export function PlatformCopilot() {
       if (text) await send(text, { voice: true });
     } catch (e) {
       setRecording(null);
-      flash(e instanceof Error && e.message === "mic" ? t.micDenied : "Transcription indisponible — réessayez (bascule sur la dictée du navigateur).");
+      flash(e instanceof Error && "mic" in e ? e.message : "Transcription indisponible — réessayez (bascule sur la dictée du navigateur).");
     }
   }
   function stopVoiceMessage(sendIt: boolean) {
@@ -560,7 +563,7 @@ export function PlatformCopilot() {
       onUtterance: text => { void runTurn(text); },
       onVoice: voice => setCall(c => c ? { ...c, voice } : c),
       onError: (kind, detail) => {
-        if (kind === "mic") { flash(t.micDenied); endCall(); }
+        if (kind === "mic") { flash(detail || t.micDenied); endCall(); }
         else if (kind === "tts") flash(`Aucune voix disponible pour ${LANGS.find(l => l.code === lang)?.label ?? detail} : ni sur le serveur, ni dans ce navigateur. La réponse reste affichée en texte.`);
         else flash(`Transcription indisponible${detail ? ` (${detail})` : ""} — réessayez.`);
       },

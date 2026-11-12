@@ -15,6 +15,8 @@
  * après une attente, le navigateur le laisse suspendu et le micro paraît muet.
  */
 
+import { describeMediaError, mediaAvailable } from "./media";
+
 export type CallPhase = "connecting" | "listening" | "hearing" | "thinking" | "speaking";
 
 type SR = {
@@ -122,12 +124,14 @@ export class RealtimeVoice {
   async start() {
     this.active = true;
     this.setPhase("connecting");
+    const pre = mediaAvailable();
+    if (!pre.ok) { this.o.onError("mic", pre.reason); this.stop(); return; }
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-    } catch {
-      this.o.onError("mic");
+    } catch (err) {
+      this.o.onError("mic", describeMediaError(err));
       this.stop();
       return;
     }

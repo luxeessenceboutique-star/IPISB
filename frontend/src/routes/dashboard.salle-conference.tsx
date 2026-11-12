@@ -11,6 +11,7 @@ import {
   Sparkles, LogIn, Copy, Loader2, Hash,
 } from "lucide-react";
 import { PageHead, SectionLabel } from "@/components/dashboard/ui";
+import { describeMediaError, mediaAvailable } from "@/lib/media";
 
 const STAFF_ROLES = ["admin", "professor", "rh", "assistant_rh", "comptabilite", "cashier", "accountant"];
 
@@ -222,7 +223,7 @@ function DevicePreview({ mic, cam, onMic, onCam, name }: {
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [level, setLevel] = useState(0);
-  const [denied, setDenied] = useState(false);
+  const [denied, setDenied] = useState<string | null>(null);
 
   useEffect(() => {
     if (!mic && !cam) return;
@@ -230,9 +231,11 @@ function DevicePreview({ mic, cam, onMic, onCam, name }: {
     let raf = 0;
     let ctx: AudioContext | null = null;
     let cancelled = false;
-    navigator.mediaDevices?.getUserMedia({ video: cam, audio: mic }).then(s => {
+    const pre = mediaAvailable();
+    if (!pre.ok) { setDenied(pre.reason); return; }
+    navigator.mediaDevices.getUserMedia({ video: cam, audio: mic }).then(s => {
       if (cancelled) { s.getTracks().forEach(t => t.stop()); return; }
-      stream = s; setDenied(false);
+      stream = s; setDenied(null);
       if (videoRef.current && cam) videoRef.current.srcObject = s;
       if (mic && s.getAudioTracks().length) {
         ctx = new AudioContext();
@@ -246,7 +249,7 @@ function DevicePreview({ mic, cam, onMic, onCam, name }: {
         };
         loop();
       }
-    }).catch(() => { if (!cancelled) setDenied(true); });
+    }).catch(err => { if (!cancelled) setDenied(describeMediaError(err, cam ? "caméra et micro" : "micro")); });
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
@@ -264,7 +267,7 @@ function DevicePreview({ mic, cam, onMic, onCam, name }: {
         {cam && !denied ? <video ref={videoRef} autoPlay playsInline muted /> : (
           <div className="cf-video-off">
             <span className="cf-avatar">{initials}</span>
-            <small>{denied ? "Accès à la caméra / au micro refusé par le navigateur" : "Caméra désactivée"}</small>
+            <small>{denied ?? "Caméra désactivée"}</small>
           </div>
         )}
         <div className="cf-name-tag">{name}</div>
