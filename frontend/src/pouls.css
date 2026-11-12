@@ -1045,3 +1045,4 @@ body.sb-resizing iframe { pointer-events: none; }
 .cp-call-btn:disabled { opacity: .35; cursor: default; transform: none; }
 .cp-call-btn.is-off { background: oklch(58% 0.21 25 / .85); }
 .cp-call-lang.is-warn { background: oklch(58% 0.21 25 / .35); }
+.cp-call-tap { margin-top: -10px; font: 700 10.5px/1 "JetBrains Mono", monospace; letter-spacing: .06em; text-transform: uppercase; color: oklch(80% 0.08 165); animation: cp-blink 2s steps(2) infinite; }

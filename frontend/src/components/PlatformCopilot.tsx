@@ -221,7 +221,7 @@ export function PlatformCopilot() {
   const [recording, setRecording] = useState<{ start: number; level: number } | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | number | null>(null);
-  const [call, setCall] = useState<null | { phase: CallPhase; level: number; interim: string; heard: string; muted: boolean; voice?: string }>(null);
+  const [call, setCall] = useState<null | { phase: CallPhase; level: number; interim: string; heard: string; muted: boolean; voice?: string; half?: boolean }>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -569,7 +569,7 @@ export function PlatformCopilot() {
       },
     });
     voiceRef.current = engine;
-    setCall({ phase: "connecting", level: 0, interim: "", heard: "", muted: false });
+    setCall({ phase: "connecting", level: 0, interim: "", heard: "", muted: false, half: engine.halfDuplex });
     void engine.start();
   }
 
@@ -948,10 +948,13 @@ export function PlatformCopilot() {
                 </span>
               </button>
               <div className="cp-call-status" aria-live="polite">{call.muted ? "Micro coupé" : status}</div>
+              {call.half && call.phase === "speaking" && <div className="cp-call-tap">Touchez l'orbe pour l'interrompre</div>}
               <div className="cp-call-text">
                 {call.interim ? <span className="cp-call-interim">{call.interim}</span>
                   : caption ? <span className="cp-call-caption">{caption}</span>
-                  : call.heard ? <span>« {call.heard} »</span> : <span className="cp-call-hint">Parlez naturellement — vous pouvez couper la parole au Copilote à tout moment (un casque évite que le micro capte sa voix).</span>}
+                  : call.heard ? <span>« {call.heard} »</span> : <span className="cp-call-hint">{call.half
+                    ? "Parlez naturellement. Sur iPhone, touchez l'orbe pour interrompre le Copilote. Vérifiez que le volume est monté."
+                    : "Parlez naturellement — vous pouvez couper la parole au Copilote à tout moment (un casque évite que le micro capte sa voix)."}</span>}
               </div>
               <div className="cp-call-btns">
                 <button type="button" className={call.muted ? "cp-call-btn is-off" : "cp-call-btn"} onClick={toggleMute} aria-label={call.muted ? "Activer le micro" : "Couper le micro"} aria-pressed={call.muted}>

@@ -69,6 +69,15 @@ function pickMime(): string {
   return "";
 }
 
+/** iPhone / iPad (tous les navigateurs iOS utilisent WebKit). */
+export function isIOS(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+// 50 ms de silence : jouée pendant le clic « Appel » pour débloquer la lecture
+// audio (iOS refuse sinon de jouer un son déclenché plus tard, sans geste).
+const SILENT_WAV = "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
+
 const SENTENCE = /[^.!?؟…\n]+(?:[.!?؟…]+|\n+)/g;
 
 export class RealtimeVoice {
@@ -104,6 +113,12 @@ export class RealtimeVoice {
   private speakingNow = false;
   private ended = false;
   private audio: HTMLAudioElement | null = null;
+  private player: HTMLAudioElement;          // un seul lecteur, débloqué dans le clic
+  /** iOS : micro fermé pendant que le Copilote parle (sinon iOS coupe ou
+   *  baisse fortement le son) ; on l'interrompt en touchant l'orbe. */
+  readonly halfDuplex = isIOS();
+  private source: MediaStreamAudioSourceNode | null = null;
+  private reacquiring: Promise<boolean> | null = null;
   private serverTts = true;
   private prefetch: Promise<Blob | null> | null = null;
   private prefetchText = "";
@@ -117,6 +132,18 @@ export class RealtimeVoice {
     // Synchrone, dans le geste utilisateur.
     this.ctx = new AudioContext();
     this.ctx.resume().catch(() => {});
+    // Déblocage de la lecture (iOS, Safari) : un lecteur réutilisé pour toute
+    // la conversation + une synthèse vocale vide, lancés pendant le clic.
+    this.player = new Audio();
+    this.player.setAttribute("playsinline", "");
+    this.player.preload = "auto";
+    this.player.src = SILENT_WAV;
+    this.player.play().catch(() => {});
+    try {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      window.speechSynthesis?.speak(u);
+    } catch { /* pas de synthèse vocale */ }
   }
 
   get currentPhase() { return this.phase; }
@@ -138,7 +165,8 @@ export class RealtimeVoice {
     await this.ctx.resume().catch(() => {});
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 1024;
-    this.ctx.createMediaStreamSource(this.stream).connect(this.analyser);
+    this.source = this.ctx.createMediaStreamSource(this.stream);
+    this.source.connect(this.analyser);
     // Les deux tournent en parallèle : la reconnaissance du navigateur donne le
     // texte en direct ; l'enregistrement sert de filet (transcription serveur)
     // si elle ne renvoie rien (réseau, langue non prise en charge…).
@@ -159,6 +187,8 @@ export class RealtimeVoice {
     this.recorder = null;
     this.stream?.getTracks().forEach(t => t.stop());
     this.stream = null;
+    this.player.pause();
+    this.player.removeAttribute("src");
     this.ctx.close().catch(() => {});
   }
 
@@ -175,7 +205,46 @@ export class RealtimeVoice {
     if (!this.active) return;
     this.setPhase("listening");
     this.finalText = ""; this.interim = "";
+    if (this.halfDuplex && !this.stream) { void this.reacquireMic(); return; }
     this.restartRecorder();
+  }
+
+  /** iOS : ferme le micro (et la reconnaissance) pendant que le Copilote parle. */
+  private releaseMic() {
+    if (!this.stream) return;
+    const sr = this.sr; this.sr = null;
+    try { sr?.abort(); } catch { /* ignore */ }
+    const rec = this.recorder; this.recorder = null;
+    if (rec && rec.state !== "inactive") { rec.onstop = null; rec.stop(); }
+    try { this.source?.disconnect(); } catch { /* ignore */ }
+    this.source = null;
+    this.stream.getTracks().forEach(t => t.stop());
+    this.stream = null;
+    this.inSpeech = false; this.speechSince = 0; this.silenceSince = 0;
+  }
+
+  private reacquireMic(): Promise<boolean> {
+    if (this.reacquiring) return this.reacquiring;
+    this.reacquiring = (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (!this.active) { stream.getTracks().forEach(t => t.stop()); return false; }
+        this.stream = stream;
+        if (this.muted) stream.getAudioTracks().forEach(t => { t.enabled = false; });
+        if (this.analyser) { this.source = this.ctx.createMediaStreamSource(stream); this.source.connect(this.analyser); }
+        if (this.srWorks) this.startRecognition();
+        this.restartRecorder();
+        return true;
+      } catch (err) {
+        this.o.onError("mic", describeMediaError(err));
+        return false;
+      } finally {
+        this.reacquiring = null;
+      }
+    })();
+    return this.reacquiring;
   }
 
   // ── Lecture en continu ──
@@ -206,7 +275,7 @@ export class RealtimeVoice {
     this.audioStartedAt = 0;
     this.queue = []; this.pending = ""; this.ended = false;
     this.prefetch = null; this.prefetchText = "";
-    this.audio?.pause(); this.audio = null;
+    this.player.pause(); this.audio = null;
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
     this.speakingNow = false;
     this.onSpeechDone = null;
@@ -221,6 +290,7 @@ export class RealtimeVoice {
     }
     this.speakingNow = true;
     this.setPhase("speaking");
+    if (this.halfDuplex) this.releaseMic();
     const token = this.onSpeechDone;
     try {
       await this.say(next);
@@ -254,12 +324,18 @@ export class RealtimeVoice {
         this.reportVoice("serveur");
         const url = URL.createObjectURL(blob);
         const played = await new Promise<boolean>(resolve => {
-          const a = new Audio(url);
+          // Toujours le même lecteur : il a été débloqué pendant le clic.
+          const a = this.player;
           this.audio = a;
+          const done = (ok: boolean) => {
+            a.onplaying = a.onended = a.onpause = a.onerror = null;
+            this.markAudio(false); URL.revokeObjectURL(url); resolve(ok);
+          };
           a.onplaying = () => this.markAudio(true);
-          a.onended = a.onpause = () => { this.markAudio(false); URL.revokeObjectURL(url); resolve(true); };
-          a.onerror = () => { this.markAudio(false); URL.revokeObjectURL(url); resolve(false); };
-          a.play().catch(() => resolve(false));
+          a.onended = a.onpause = () => done(true);
+          a.onerror = () => done(false);
+          a.src = url;
+          a.play().catch(() => done(false));
         });
         if (played) return;
       }
@@ -298,7 +374,8 @@ export class RealtimeVoice {
 
     // Calibration du bruit de fond sur ~0,6 s, puis suivi lent.
     if (this.calib.length < 36) { this.calib.push(rms); this.floor = Math.max(0.004, this.calib.reduce((a, b) => a + b, 0) / this.calib.length); }
-    else if (!this.inSpeech && this.phase !== "speaking") this.floor = this.floor * 0.995 + rms * 0.005;
+    // Suivi lent du bruit de fond, uniquement pendant l'écoute silencieuse.
+    else if (this.phase === "listening" && !this.inSpeech && !this.speechSince) this.floor = this.floor * 0.995 + rms * 0.005;
 
     const speaking = this.phase === "speaking";
     // Pendant que le Copilote parle, le micro capte aussi sa voix (surtout sans
@@ -309,9 +386,11 @@ export class RealtimeVoice {
     const audioAge = speaking && this.audioStartedAt ? now - this.audioStartedAt : -1;
     let threshold = base;
     if (audioAge >= 0) {
+      // Écho mesuré seulement sur la fenêtre de calibration : le suivre ensuite
+      // absorberait les creux de la voix de l'utilisateur et rendrait le seuil
+      // inatteignable.
       if (audioAge < 500) this.echoPeak = Math.max(this.echoPeak, rms);
-      threshold = Math.max(base * 2, this.echoPeak * 1.6, 0.03);
-      if (audioAge >= 500 && rms < threshold) this.echoPeak = Math.max(this.echoPeak * 0.997, rms);
+      threshold = Math.max(base * 1.6, this.echoPeak * 1.6, 0.03);
     }
     this.o.onLevel(Math.min(1, rms / Math.max(0.05, threshold * 3)));
 
