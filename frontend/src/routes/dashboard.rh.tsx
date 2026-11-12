@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Users, CalendarClock, Wallet, TrendingUp, Briefcase, UserPlus, GraduationCap, Target, Network, Boxes, Settings } from "lucide-react";
@@ -54,6 +54,15 @@ function RhPage() {
     const t = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
     return TABS.some(x => x.key === t) ? (t as Tab) : "employees";
   });
+  // « Voir la source » du Copilote : ouvre un onglet précis sans recharger.
+  useEffect(() => {
+    const open = (e: Event) => {
+      const t = (e as CustomEvent<{ tab?: string }>).detail?.tab;
+      if (t && TABS.some(x => x.key === t)) setTab(t as Tab);
+    };
+    window.addEventListener("ipisb:open-tab", open);
+    return () => window.removeEventListener("ipisb:open-tab", open);
+  }, []);
   const { roles } = useAuth();
   const canSeePayroll = roles.includes("admin") || roles.includes("rh");
   const visibleTabs = canSeePayroll ? TABS : TABS.filter(t => t.key !== "payroll");

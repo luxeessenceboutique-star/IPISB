@@ -39,6 +39,7 @@ from .agent import API_KEY, BASE_URL, CHAT_MODEL, FAST_MODEL, LANG_SYSTEM
 from .actions import ACTIONS, build_tool_schemas, split_arguments, summarize_action, validate_body
 from .knowledge import render_sections, role_label_for, sections_for_role
 from .tools import FINANCE_TOOLS, RH_TOOLS, build_read_tools
+from .sources import dedupe, sources_from_text, sources_from_tools
 
 log = logging.getLogger(__name__)
 
@@ -198,7 +199,7 @@ def _unwrap(value: Any) -> Any:
     return getattr(value, "value", None)
 
 
-async def _run_agent(agent, messages: list, writer, deep: bool = False) -> str:
+async def _run_agent(agent, messages: list, writer, deep: bool = False, used: Optional[list] = None) -> str:
     """Diffuse la réponse finale token par token (niveau racine uniquement —
     les sous-agents du Deep Agent travaillent en coulisse) et publie les
     étapes : outils consultés, plan (todos), délégations aux sous-agents."""
@@ -241,6 +242,8 @@ async def _run_agent(agent, messages: list, writer, deep: bool = False) -> str:
                             if call["id"] in seen_calls:
                                 continue
                             seen_calls.add(call["id"])
+                            if used is not None:
+                                used.append(call["name"])
                             label = TOOL_LABEL.get(call["name"], call["name"])
                             if call["name"] == "task":
                                 sub = (call.get("args") or {}).get("subagent_type", "")
@@ -272,6 +275,9 @@ async def plateforme_node(state: CopilotState) -> dict:
         if chunk.content:
             answer += chunk.content
             writer({"text": chunk.content})
+    srcs = sources_from_text(answer, state.get("roles") or [])
+    if srcs:
+        writer({"sources": srcs})
     return {"answer": answer}
 
 
@@ -293,7 +299,11 @@ def _make_specialist(domain: str, tool_names: tuple[str, ...]):
         from langchain.agents import create_agent  # import paresseux : une dépendance manquante ne bloque pas le démarrage
         tools = config["configurable"]["read_tools"]
         agent = create_agent(_llm(), [tools[n] for n in tool_names], system_prompt=_specialist_prompt(state, domain))
-        answer = await _run_agent(agent, _lc_history(state), writer)
+        used: list[str] = []
+        answer = await _run_agent(agent, _lc_history(state), writer, used=used)
+        srcs = dedupe(sources_from_tools(used) + sources_from_text(answer, state.get("roles") or []))
+        if srcs:
+            writer({"sources": srcs})
         return {"answer": answer}
     return node
 
@@ -340,7 +350,11 @@ async def analyste_node(state: CopilotState, config) -> dict:
             + _knowledge(state)
         ),
     )
-    answer = await _run_agent(agent, _lc_history(state), writer, deep=True)
+    used: list[str] = []
+    answer = await _run_agent(agent, _lc_history(state), writer, deep=True, used=used)
+    srcs = dedupe(sources_from_tools(used) + sources_from_text(answer, state.get("roles") or []))
+    if srcs:
+        writer({"sources": srcs})
     return {"answer": answer}
 
 

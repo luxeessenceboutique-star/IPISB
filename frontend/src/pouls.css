@@ -1107,3 +1107,34 @@ body.sb-resizing iframe { pointer-events: none; }
 @media (max-width: 760px) {
   .cf-side-wrap { position: absolute; inset: auto 0 0 0; width: auto; height: 72%; z-index: 5; border-left: 0; border-radius: 18px 18px 0 0; overflow: hidden; box-shadow: 0 -20px 50px -20px rgba(0,0,0,.6); }
 }
+.cp-sources { display: flex; flex-wrap: wrap; gap: 5px; }
+.cp-source { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 10px; border-radius: 999px; border: 1px solid oklch(85% 0.05 165); background: var(--pal-pale); color: var(--pal-primary-deep); font: 700 11px "Plus Jakarta Sans", sans-serif; cursor: pointer; text-align: start; transition: transform .15s, box-shadow .2s; animation: pouls-pop .35s var(--ease-pouls) both; }
+.cp-source:hover { transform: translateY(-1px); box-shadow: 0 6px 14px -10px var(--pal-primary-deep); }
+
+/* ── Vue « Source » (navigation guidée pendant la réunion) ─────────── */
+.cf-stage.has-source .cf-host { inset: auto 14px 14px auto; width: 240px; height: 150px; z-index: 6; border-radius: 14px; overflow: hidden; box-shadow: 0 16px 40px -12px rgba(0,0,0,.7), 0 0 0 1px oklch(100% 0 0 / .15); transition: all .35s var(--ease-pouls); }
+.sv-root { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; background: oklch(20% 0.02 175); animation: fade-in-soft .3s ease both; }
+.sv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: oklch(24% 0.025 175); border-bottom: 1px solid oklch(100% 0 0 / .08); color: #fff; }
+.sv-pin { color: oklch(78% 0.13 160); flex-shrink: 0; }
+.sv-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; font: 700 12.5px "Plus Jakarta Sans", sans-serif; color: oklch(70% 0.02 170); }
+.sv-crumbs span { transition: color .3s; }
+.sv-crumbs span + span::before { content: "›"; margin-right: 4px; color: oklch(55% 0.02 170); }
+.sv-crumbs span.is-done { color: #fff; }
+.sv-btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border-radius: 9px; border: 1px solid oklch(100% 0 0 / .12); background: oklch(100% 0 0 / .06); color: #fff; font: 700 12px "Plus Jakarta Sans", sans-serif; cursor: pointer; flex-shrink: 0; }
+.sv-btn:hover { background: oklch(100% 0 0 / .14); }
+.sv-btn.is-share { background: var(--pal-primary); border-color: transparent; }
+.sv-btn.is-live { background: oklch(55% 0.2 25); border-color: transparent; }
+.sv-hint { padding: 7px 12px; font-size: 12px; color: oklch(88% 0.03 165); background: oklch(30% 0.04 175); }
+.sv-frame-wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--pal-cream); }
+.sv-frame-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--pal-cream); }
+.sv-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: var(--pal-muted); }
+.sv-cursor { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; transition: transform .8s cubic-bezier(.65, 0, .25, 1); }
+.sv-cursor-icon { color: #fff; fill: var(--pal-primary-deep); filter: drop-shadow(0 4px 8px rgba(0,0,0,.35)); transform: translate(-4px, -3px); }
+.sv-ripple { position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; border-radius: 999px; border: 3px solid var(--pal-primary); animation: sv-ripple .7s ease-out both; }
+@keyframes sv-ripple { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.8); opacity: 0; } }
+.sv-bubble { position: absolute; left: 22px; top: 22px; white-space: nowrap; padding: 6px 11px; border-radius: 10px; background: var(--pal-ink); color: #fff; font: 700 12px "Plus Jakarta Sans", sans-serif; box-shadow: 0 10px 24px -10px rgba(0,0,0,.6); animation: pouls-pop .3s var(--ease-pouls) both; }
+@media (max-width: 760px) {
+  .cf-stage.has-source .cf-host { width: 130px; height: 90px; inset: auto 8px 8px auto; }
+  .sv-btn span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .sv-cursor { transition: none; } .sv-ripple { animation: none; } }

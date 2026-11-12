@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  X, Send, Mic, Square, MessageSquareText, Volume2, VolumeX, Sparkles, ListChecks, Gavel, FileText, Captions, Power,
+  X, Send, Mic, Square, MessageSquareText, MapPin, MonitorPlay, Volume2, VolumeX, Sparkles, ListChecks, Gavel, FileText, Captions, Power,
 } from "lucide-react";
 import { streamCopilot, transcribeAudio, synthesizeSpeech, SPEECH_LANG, type CopilotLang } from "@/lib/copilotClient";
 import { browserVoice } from "@/lib/realtimeVoice";
 import { describeMediaError, mediaAvailable } from "@/lib/media";
+import type { CopilotSource } from "@/lib/sources";
 
 /** Sous-ensemble de l'API Jitsi (External API) utilisé par le Copilote. */
 export type MeetingApi = {
@@ -14,7 +15,7 @@ export type MeetingApi = {
 };
 
 type Line = { id: string; name: string; text: string; at: number };
-type Item = { id: number; q: string; asker: string; via: "panneau" | "chat" | "voix" | "action"; answer: string; status: "pending" | "streaming" | "done" | "error"; agent?: string };
+type Item = { id: number; q: string; asker: string; via: "panneau" | "chat" | "voix" | "action"; answer: string; status: "pending" | "streaming" | "done" | "error"; agent?: string; sources?: CopilotSource[] };
 
 const BOT_TAG = "🤖 Copilote IPISB";
 const JOIN_MARK = "a rejoint la réunion";
@@ -37,13 +38,15 @@ function pickMime(): string {
   return "";
 }
 
-export function MeetingCopilot({ api, roomLabel, myName, onClose, onActiveChange }: {
+export function MeetingCopilot({ api, roomLabel, myName, onClose, onActiveChange, onShowSource }: {
   api: MeetingApi | null; roomLabel: string; myName: string; onClose: () => void; onActiveChange?: (a: boolean) => void;
+  onShowSource?: (s: CopilotSource) => void;
 }) {
   const [lang, setLang] = useState<CopilotLang>(() => { try { return (localStorage.getItem("copilot-lang") as CopilotLang) || "fr"; } catch { return "fr"; } });
   const [active, setActive] = useState(false);
   const [toChat, setToChat] = useState(true);
   const [aloud, setAloud] = useState(true);
+  const [autoShow, setAutoShow] = useState(true);
   const [items, setItems] = useState<Item[]>([]);
   const [input, setInput] = useState("");
   const [lines, setLines] = useState<Line[]>([]);
@@ -69,8 +72,10 @@ export function MeetingCopilot({ api, roomLabel, myName, onClose, onActiveChange
   activeRef.current = active;
   const otherBotRef = useRef<string | null>(null);
   otherBotRef.current = otherBot;
-  const settings = useRef({ toChat, aloud, lang });
-  settings.current = { toChat, aloud, lang };
+  const settings = useRef({ toChat, aloud, lang, autoShow });
+  settings.current = { toChat, aloud, lang, autoShow };
+  const showRef = useRef(onShowSource);
+  showRef.current = onShowSource;
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { onActiveChange?.(active); }, [active, onActiveChange]);
@@ -115,6 +120,7 @@ export function MeetingCopilot({ api, roomLabel, myName, onClose, onActiveChange
     const patch = (p: Partial<Item>) => setItems(prev => prev.map(x => x.id === it.id ? { ...x, ...p } : x));
     patch({ status: "streaming" });
     let answer = "";
+    let sources: CopilotSource[] = [];
     try {
       answer = await streamCopilot({
         message: it.q,
@@ -131,12 +137,16 @@ export function MeetingCopilot({ api, roomLabel, myName, onClose, onActiveChange
         if (ev.agent?.label) patch({ agent: ev.agent.label });
         if (ev.reset) answer = "";
         if (typeof ev.text === "string") { answer += ev.text; patch({ answer }); }
+        if (Array.isArray(ev.sources)) { sources = ev.sources; patch({ sources }); }
       });
       patch({ status: "done", answer });
+      // Montre où se trouve l'information (navigation guidée dans la vue Source).
+      if (sources.length && settings.current.autoShow) showRef.current?.(sources[0]);
       // Publication dans le chat de la réunion : lisible par tous les participants.
       if (answer && settings.current.toChat && api) {
         const who = it.asker && it.asker !== myName ? `@${it.asker} ` : "";
-        api.executeCommand("sendChatMessage", `${BOT_TAG} — ${who}${answer.replace(/\*\*/g, "")}`.slice(0, 2000), "", true);
+        const where = sources.length ? `\n📍 Source : ${sources.map(x => x.label).join(" ; ")}` : "";
+        api.executeCommand("sendChatMessage", `${BOT_TAG} — ${who}${answer.replace(/\*\*/g, "")}${where}`.slice(0, 2000), "", true);
       }
       if (answer && settings.current.aloud) void speak(answer);
     } catch (e) {
@@ -345,12 +355,24 @@ export function MeetingCopilot({ api, roomLabel, myName, onClose, onActiveChange
                   {it.agent && <span className="mc-agent">{it.agent}</span>}
                   {it.answer || (it.status === "error" ? "Erreur" : <span className="cp-typing"><i /><i /><i /></span>)}
                 </div>
+                {it.sources && it.sources.length > 0 && (
+                  <div className="cp-sources">
+                    {it.sources.map(src => (
+                      <button key={src.label} type="button" className="cp-source" onClick={() => onShowSource?.(src)} title="Montrer d'où vient l'information">
+                        <MapPin size={12} strokeWidth={2.2} />{src.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
           <div className="mc-opts">
             <label><input type="checkbox" checked={toChat} onChange={e => setToChat(e.target.checked)} />Publier les réponses dans le chat</label>
+            <button type="button" className={autoShow ? "mc-opt is-on" : "mc-opt"} onClick={() => setAutoShow(v => !v)} aria-pressed={autoShow} title="Ouvrir automatiquement la page d'où vient l'information">
+              <MonitorPlay size={13} />Source
+            </button>
             <button type="button" className={aloud ? "mc-opt is-on" : "mc-opt"} onClick={() => setAloud(v => !v)} aria-pressed={aloud}>
               {aloud ? <Volume2 size={13} /> : <VolumeX size={13} />}Voix
             </button>

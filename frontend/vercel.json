@@ -22,7 +22,7 @@
         },
         {
           "key": "X-Frame-Options",
-          "value": "DENY"
+          "value": "SAMEORIGIN"
         },
         {
           "key": "Referrer-Policy",
@@ -31,6 +31,10 @@
         {
           "key": "Permissions-Policy",
           "value": "camera=(self \"https://8x8.vc\"), microphone=(self \"https://8x8.vc\"), display-capture=(self \"https://8x8.vc\"), fullscreen=(self \"https://8x8.vc\"), autoplay=(self \"https://8x8.vc\"), speaker-selection=(self \"https://8x8.vc\"), clipboard-write=(self \"https://8x8.vc\"), geolocation=()"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self'"
         }
       ]
     }

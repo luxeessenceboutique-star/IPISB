@@ -45,6 +45,9 @@ export const Route = createFileRoute("/dashboard")({
 });
 
 function DashboardLayout() {
+  // Affiché dans la « vue Source » du Copilote de réunion (iframe) : pas de
+  // second Copilote à l'intérieur.
+  const embedded = typeof window !== "undefined" && window.self !== window.top;
   const { user, roles, signOut } = useAuth();
   const { t, lang } = useI18n();
   const { isTablet } = useBreakpoint();
@@ -328,7 +331,7 @@ function DashboardLayout() {
               <span className="pl"><LayoutGrid size={20} strokeWidth={1.8} /></span>Menu
             </button>
           </nav>
-          <PlatformCopilot />
+          {!embedded && <PlatformCopilot />}
         </div>
       </BreadcrumbLabelProvider>
     );
@@ -363,7 +366,7 @@ function DashboardLayout() {
             </div>
           </main>
         </div>
-        <PlatformCopilot />
+        {!embedded && <PlatformCopilot />}
       </div>
     </BreadcrumbLabelProvider>
   );

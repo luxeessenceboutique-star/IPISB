@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as RKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useBreakpoint } from "@/lib/useBreakpoint";
+import { useNavigate } from "@tanstack/react-router";
+import { sourceHref, type CopilotSource } from "@/lib/sources";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +11,7 @@ import { describeMediaError, mediaAvailable } from "@/lib/media";
 import {
   X, Send, Check, Loader2, Mic, Square, Phone, PhoneOff, Brain, SquarePen, PanelLeft,
   Maximize2, Minimize2, Search, Pin, PinOff, Pencil, Trash2, Copy, Volume2, VolumeX, Sparkles,
-  Compass, UserCog, Wallet, Zap, ChevronDown, ListChecks, CircleCheck, Circle, Plus, AudioLines, MicOff,
+  Compass, UserCog, Wallet, Zap, ChevronDown, ListChecks, CircleCheck, Circle, Plus, AudioLines, MicOff, MapPin,
 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:9000";
@@ -24,7 +26,7 @@ type ActionProposal = {
 };
 type Step = { label: string; sub?: boolean };
 type Todo = { content: string; status: string };
-type Meta = { agent?: { key: AgentKey; label: string }; steps?: Step[]; todos?: Todo[]; action?: ActionProposal; voice?: boolean };
+type Meta = { agent?: { key: AgentKey; label: string }; steps?: Step[]; todos?: Todo[]; action?: ActionProposal; voice?: boolean; sources?: CopilotSource[] };
 type Msg = { id?: string; role: "user" | "assistant"; content: string; meta?: Meta; streaming?: boolean; note?: string };
 type Conversation = { id: string; title: string; language: string; pinned: boolean; updated_at: string };
 type Memory = { id: string; content: string; created_at: string };
@@ -201,6 +203,7 @@ async function speak(text: string, lang: Lang, onEnd?: () => void) {
 export function PlatformCopilot() {
   const { roles, user } = useAuth();
   const { isMobile } = useBreakpoint();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(() => { try { return localStorage.getItem("copilot-expanded") === "1"; } catch { return false; } });
   const [lang, setLangState] = useState<Lang>(() => { try { return (localStorage.getItem("copilot-lang") as Lang) || "fr"; } catch { return "fr"; } });
@@ -360,6 +363,8 @@ export function PlatformCopilot() {
             setStreaming(false);
           } else if (ev.title) {
             setConversations(prev => prev.map(c => c.id === ev.title.id ? { ...c, title: ev.title.title } : c));
+          } else if (ev.sources) {
+            patchLast(m => ({ ...m, meta: { ...m.meta, sources: ev.sources } }));
           } else if (ev.warning) {
             flash(ev.warning);
           } else if (ev.memory) {
@@ -615,6 +620,13 @@ export function PlatformCopilot() {
     });
   }
 
+  /** « Voir la source » : ouvre la page et l'onglet d'où vient l'information. */
+  function openSource(src: CopilotSource) {
+    navigate({ href: sourceHref(src) });
+    if (src.tab) setTimeout(() => window.dispatchEvent(new CustomEvent("ipisb:open-tab", { detail: { tab: src.tab } })), 60);
+    if (isMobile || !expanded) setOpen(false);
+  }
+
   async function toggleListen(m: Msg, key: string | number) {
     if (speakingId === key) { stopSpeaking(); setSpeakingId(null); return; }
     setSpeakingId(key);
@@ -838,6 +850,15 @@ export function PlatformCopilot() {
                           ? <div className="cp-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
                           : <span className="cp-typing"><i /><i /><i /></span>}
                         {m.streaming && m.content && <span className="cp-caret" />}
+                      </div>
+                    )}
+                    {!m.streaming && (m.meta?.sources?.length ?? 0) > 0 && (
+                      <div className="cp-sources">
+                        {m.meta!.sources!.map(src => (
+                          <button key={src.label} type="button" className="cp-source" onClick={() => openSource(src)} title="Ouvrir la page d'où vient l'information">
+                            <MapPin size={12} strokeWidth={2.2} />{src.label}
+                          </button>
+                        ))}
                       </div>
                     )}
                     {!m.streaming && m.content && (

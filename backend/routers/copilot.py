@@ -184,6 +184,8 @@ async def copilot_stream(
                 meta["todos"] = ev["todos"]
             elif "action_proposal" in ev:
                 meta["action"] = ev["action_proposal"]
+            elif "sources" in ev:
+                meta["sources"] = ev["sources"]
             yield _sse(ev)
 
         if not persist:

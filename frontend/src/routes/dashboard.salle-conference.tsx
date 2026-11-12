@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { PageHead, SectionLabel } from "@/components/dashboard/ui";
 import { MeetingCopilot, type MeetingApi } from "@/components/meeting/MeetingCopilot";
+import { SourceViewer } from "@/components/meeting/SourceViewer";
+import type { CopilotSource } from "@/lib/sources";
 import { describeMediaError, mediaAvailable } from "@/lib/media";
 
 const STAFF_ROLES = ["admin", "professor", "rh", "assistant_rh", "comptabilite", "cashier", "accountant"];
@@ -104,6 +106,7 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
   const [meetingApi, setMeetingApi] = useState<MeetingApi | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotActive, setCopilotActive] = useState(false);
+  const [source, setSource] = useState<CopilotSource | null>(null);
 
   const leave = useCallback(() => {
     if (leftRef.current) return;
@@ -184,7 +187,10 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
       </div>
 
       <div className="cf-body">
-      <div className="cf-stage">
+      <div className={source ? "cf-stage has-source" : "cf-stage"}>
+        {source && (
+          <SourceViewer source={source} sharing={sharing} onShare={() => cmd("toggleShareScreen")} onClose={() => setSource(null)} />
+        )}
         {fallback ? (
           <iframe src={iframeSrc} title={targetLabel(session.target)}
             allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write; speaker-selection; screen-wake-lock" />
@@ -205,7 +211,7 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
       {!fallback && (
         <div className={copilotOpen ? "cf-side-wrap" : "cf-side-wrap is-hidden"}>
           <MeetingCopilot api={meetingApi} roomLabel={targetLabel(session.target)} myName={session.displayName}
-            onClose={() => setCopilotOpen(false)} onActiveChange={setCopilotActive} />
+            onClose={() => setCopilotOpen(false)} onActiveChange={setCopilotActive} onShowSource={setSource} />
         </div>
       )}
       </div>
