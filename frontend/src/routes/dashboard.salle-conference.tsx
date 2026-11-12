@@ -174,7 +174,7 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
       <div className="cf-stage">
         {fallback ? (
           <iframe src={iframeSrc} title={targetLabel(session.target)}
-            allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write" />
+            allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write; speaker-selection; screen-wake-lock" />
         ) : (
           <>
             <div ref={hostRef} className="cf-host" />

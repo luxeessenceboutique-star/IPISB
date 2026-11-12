@@ -108,7 +108,7 @@ function JitsiRoom({ meeting, userName, appId, token, onLeave }: { meeting: Meet
       </div>
       <iframe
         src={src}
-        allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
+        allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write; speaker-selection; screen-wake-lock"
         style={{ flex: 1, border: 0, width: "100%", background: "#0a0a0a" }}
         title={meeting.title}
       />
