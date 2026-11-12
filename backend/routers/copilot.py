@@ -23,6 +23,15 @@ router = APIRouter(prefix="/copilot", tags=["copilot"])
 log = logging.getLogger(__name__)
 
 
+class MeetingContext(BaseModel):
+    """Contexte d'une réunion en cours (Salle de conférence) : le Copilote y
+    participe et répond aux questions des participants."""
+    room: str = Field(..., max_length=120)
+    participants: list[str] = Field(default_factory=list, max_length=60)
+    transcript: str = Field("", max_length=16000)   # derniers échanges « Nom : texte »
+    asker: Optional[str] = Field(None, max_length=120)  # participant qui pose la question
+
+
 class CopilotRequest(BaseModel):
     # Mode conversation (persisté) : `message` + `conversation_id` optionnel
     # (absent → nouvelle conversation). Ancien mode sans état : `messages`.
@@ -33,6 +42,7 @@ class CopilotRequest(BaseModel):
     deep: bool = False                      # « Analyse approfondie » → Deep Agent
     voice: bool = False                     # message dicté à la voix (affichage)
     call: bool = False                      # appel vocal temps réel : réponses courtes, à l'oral
+    meeting: Optional[MeetingContext] = None  # le Copilote assiste une réunion
 
     @field_validator("messages")
     @classmethod
@@ -113,7 +123,8 @@ async def copilot_stream(
         if not req.messages:
             raise HTTPException(422, "message requis")
         state = {"history": req.messages, "roles": roles, "language": req.language,
-                 "memory": "", "summary": "", "force_agent": "analyste" if req.deep else None, "voice_mode": req.call}
+                 "memory": "", "summary": "", "force_agent": "analyste" if req.deep else None, "voice_mode": req.call,
+                 "meeting": req.meeting.model_dump() if req.meeting else None}
 
         async def legacy():
             async for ev in _run_team(state, user, db):
@@ -150,6 +161,7 @@ async def copilot_stream(
         "memory": render_memories(memories), "summary": conversation.get("summary") or "",
         "force_agent": "analyste" if req.deep else None,
         "voice_mode": req.call,
+        "meeting": req.meeting.model_dump() if req.meeting else None,
     }
 
     async def generate():

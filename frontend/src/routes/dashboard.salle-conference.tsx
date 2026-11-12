@@ -11,6 +11,7 @@ import {
   Sparkles, LogIn, Copy, Loader2, Hash,
 } from "lucide-react";
 import { PageHead, SectionLabel } from "@/components/dashboard/ui";
+import { MeetingCopilot, type MeetingApi } from "@/components/meeting/MeetingCopilot";
 import { describeMediaError, mediaAvailable } from "@/lib/media";
 
 const STAFF_ROLES = ["admin", "professor", "rh", "assistant_rh", "comptabilite", "cashier", "accountant"];
@@ -59,6 +60,7 @@ async function copy(text: string, ok: string) {
 type JitsiApi = {
   executeCommand: (cmd: string, ...args: unknown[]) => void;
   addListener: (ev: string, fn: (...a: any[]) => void) => void;
+  removeListener?: (ev: string, fn: (...a: any[]) => void) => void;
   getNumberOfParticipants: () => number;
   dispose: () => void;
 };
@@ -99,6 +101,9 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
   const [sharing, setSharing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const leftRef = useRef(false);
+  const [meetingApi, setMeetingApi] = useState<MeetingApi | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotActive, setCopilotActive] = useState(false);
 
   const leave = useCallback(() => {
     if (leftRef.current) return;
@@ -126,6 +131,7 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
         interfaceConfigOverwrite: { SHOW_JITSI_WATERMARK: false, SHOW_POWERED_BY: false, MOBILE_APP_PROMO: false },
       });
       apiRef.current = api;
+      setMeetingApi(api);
       const count = () => setPeople(Math.max(1, api.getNumberOfParticipants()));
       api.addListener("videoConferenceJoined", () => { setJoined(true); count(); });
       api.addListener("participantJoined", count);
@@ -135,7 +141,7 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
       api.addListener("screenSharingStatusChanged", (e: { on: boolean }) => setSharing(e.on));
       api.addListener("readyToClose", leave);
     }).catch(() => { if (!disposed) setFallback(true); });
-    return () => { disposed = true; apiRef.current?.dispose(); apiRef.current = null; };
+    return () => { disposed = true; apiRef.current?.dispose(); apiRef.current = null; setMeetingApi(null); };
   }, [session, startMuted, leave]);
 
   useEffect(() => {
@@ -163,6 +169,11 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
           </div>
         </div>
         <div className="cf-bar-actions">
+          {!fallback && (
+            <button type="button" className={copilotOpen ? "cf-btn is-copilot is-on" : "cf-btn is-copilot"} onClick={() => setCopilotOpen(v => !v)} aria-pressed={copilotOpen} title="Copilote de réunion">
+              <Sparkles size={16} strokeWidth={1.9} /><span>Copilote</span>{copilotActive && <i className="cf-bot-dot" />}
+            </button>
+          )}
           <button type="button" className="cf-btn" onClick={() => copy(inviteLink(session.target), "Lien d'invitation copié.")} title="Copier le lien d'invitation">
             <Link2 size={16} strokeWidth={1.9} /><span>Inviter</span>
           </button>
@@ -172,6 +183,7 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
         </div>
       </div>
 
+      <div className="cf-body">
       <div className="cf-stage">
         {fallback ? (
           <iframe src={iframeSrc} title={targetLabel(session.target)}
@@ -188,6 +200,14 @@ function ConferenceRoom({ session, startMuted, onLeave }: {
             )}
           </>
         )}
+      </div>
+
+      {!fallback && (
+        <div className={copilotOpen ? "cf-side-wrap" : "cf-side-wrap is-hidden"}>
+          <MeetingCopilot api={meetingApi} roomLabel={targetLabel(session.target)} myName={session.displayName}
+            onClose={() => setCopilotOpen(false)} onActiveChange={setCopilotActive} />
+        </div>
+      )}
       </div>
 
       {!fallback && (

@@ -68,6 +68,9 @@ def _token_for(user: CurrentUser, db: Client, room_id: str, moderator: bool) -> 
     try:
         token = generate_jaas_token(
             room=room_id, user_id=user.id, name=name, email=user.email, moderator=moderator,
+            # Tout participant peut activer les sous-titres : le Copilote de
+            # réunion s'en sert pour suivre la conversation.
+            transcription=True,
         )
         app_id = jaas_app_id()
     except JaasNotConfigured as e:

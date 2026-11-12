@@ -48,6 +48,7 @@ def generate_jaas_token(
     email: str,
     moderator: bool,
     ttl_seconds: int = 3 * 60 * 60,
+    transcription: bool | None = None,
 ) -> str:
     """Build a signed JaaS JWT so the room is authenticated from the start,
     which removes meet.jit.si's 5-minute limit on anonymous group calls."""
@@ -71,7 +72,8 @@ def generate_jaas_token(
             "features": {
                 "livestreaming": moderator,
                 "recording": moderator,
-                "transcription": moderator,
+                # Transcription (sous-titres) : utilisée par le Copilote de réunion.
+                "transcription": moderator if transcription is None else transcription,
                 "outbound-call": False,
             },
         },

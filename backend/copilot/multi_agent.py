@@ -74,6 +74,7 @@ class CopilotState(TypedDict, total=False):
     summary: str                 # résumé glissant de cette conversation
     force_agent: Optional[str]   # ex. « analyste » quand l'utilisateur active l'analyse approfondie
     voice_mode: bool             # appel vocal : réponse courte, à dire à voix haute
+    meeting: Optional[dict]      # réunion en cours : salle, participants, transcription
     agent: str
     answer: str
     meta: dict
@@ -96,6 +97,24 @@ def _context_block(state: CopilotState) -> str:
         parts.append(state["memory"])
     if state.get("summary"):
         parts.append("RÉSUMÉ DES ÉCHANGES PRÉCÉDENTS DE CETTE CONVERSATION :\n" + state["summary"])
+    meeting = state.get("meeting")
+    if meeting:
+        people = ", ".join(meeting.get("participants") or []) or "non communiqués"
+        transcript = (meeting.get("transcript") or "").strip()
+        parts.append(
+            f"RÉUNION EN COURS — tu participes à la réunion « {meeting.get('room', '')} » (Salle de "
+            f"conférence IPISB). Participants : {people}."
+            + (f" Question posée par : {meeting['asker']}." if meeting.get("asker") else "")
+            + " Tes réponses sont publiées dans le chat de la réunion, lues par tous : réponds "
+            "brièvement (2 à 5 phrases), sans titre, au besoin avec une courte liste. Tu peux "
+            "répondre aux questions sur la plateforme et ses données (selon les droits de la "
+            "personne qui t'a activé), ET sur la réunion elle-même : résumer, lister les "
+            "décisions, les tâches à faire (qui / quoi / quand), retrouver qui a dit quoi. "
+            "Ne t'appuie que sur la transcription ci-dessous pour la réunion ; si elle ne "
+            "contient pas l'information, dis-le."
+            + ("\n\nTRANSCRIPTION RÉCENTE DE LA RÉUNION :\n" + transcript if transcript
+               else "\n\n(Pas encore de transcription disponible pour cette réunion.)")
+        )
     if state.get("voice_mode"):
         parts.append(
             "MODE APPEL VOCAL : ta réponse est lue à voix haute pendant qu'elle s'écrit. Réponds comme à "
@@ -135,6 +154,9 @@ async def supervisor_node(state: CopilotState) -> dict:
         choice = forced
     else:
         menu = "\n".join(f"- {k} : {AGENTS[k]['desc']}" for k in allowed)
+        if state.get("meeting"):
+            menu += ("\n(Une réunion est en cours : une question sur la réunion elle-même — résumé, "
+                     "décisions, qui a dit quoi — va à « plateforme ».)")
         recent = "\n".join(f"{m['role']}: {m['content'][:400]}" for m in (state.get("history") or [])[-6:])
         try:
             resp = await _llm(FAST_MODEL, temperature=0, max_tokens=40, streaming=False).ainvoke([
@@ -241,7 +263,9 @@ async def plateforme_node(state: CopilotState) -> dict:
         "RÈGLES : n'invente aucun bouton/onglet/champ absent de la liste ; pour un « comment faire », "
         "donne des étapes numérotées avec le chemin exact (ex. « Gestion → Ressources humaines → "
         "Congés ») ; pour un module hors de ses droits, dis-le et oriente vers un administrateur ; "
-        "si tu ne sais pas, dis-le. Les comptes stagiaires sont gérés dans la plateforme pédagogique."
+        "si tu ne sais pas, dis-le. Les comptes stagiaires sont gérés dans la plateforme pédagogique. "
+        "Si une réunion est en cours (voir plus haut), tu réponds aussi aux questions sur la réunion "
+        "à partir de sa transcription."
     )
     answer = ""
     async for chunk in _llm().astream([SystemMessage(system)] + _lc_history(state)):
